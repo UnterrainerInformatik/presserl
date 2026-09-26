@@ -10,6 +10,8 @@ Adding or extending tests alongside code changes does not need permission.
 **Why:** Gerald said so explicitly. Tests are a default part of the work.
 
 **How to apply:** Backend: JUnit 5 + AssertJ, `@QuarkusTest` where the container is needed
-(see the `java-test-quality` and `tdd` skills). Frontend: Vitest + Vue Test Utils. Cover the
+(see the `java-test-quality` and `tdd` skills); Qute reader pages via `@QuarkusTest` against the
+rendered HTML. Admin app (`admin/`, Compose Multiplatform): Kotlin tests (`kotlin.test`,
+Compose UI tests where useful). Cover the
 path you touched; no coverage bikeshedding. For pure config/wiring, use judgment. Never strip
 existing tests to simplify a refactor without flagging it.

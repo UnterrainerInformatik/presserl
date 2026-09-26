@@ -6,10 +6,12 @@
 - [Check open-proposals when asked what to do](feedback_check_open_proposals.md) — Read ./ai/open-proposals.md first; delete an entry (never tick it off) once it becomes an opsx change
 - [Chat language is German](feedback_conversation_language_german.md) — Replies in German from the first message; repo content stays English
 - [Code in English only](feedback_english_only.md) — Identifiers, comments, logs, docs, commits: English
-- [Tests are welcome](feedback_tests_welcome.md) — Write backend (JUnit 5 + AssertJ) and frontend (Vitest) tests freely; no need to ask
-- [Keep endpoints primer in sync](feedback_endpoints_primer.md) — REST contract change ⇒ update ./ai/primer/endpoints.md and the frontend client in the same change
+- [Tests are welcome](feedback_tests_welcome.md) — Write backend (JUnit 5 + AssertJ) and admin (Kotlin) tests freely; no need to ask
+- [Keep endpoints primer in sync](feedback_endpoints_primer.md) — REST contract change ⇒ update ./ai/primer/endpoints.md and the admin API client in the same change
 - [Always add .http test files for REST endpoints](feedback_http_tests.md) — Create/update .http files and run them against a live backend
 - [Evidence over speculation](feedback_evidence_over_speculation.md) — When the cause is not in the logs, add targeted diagnostic logging and wait for a reproduction instead of theorising
 - [Never edit applied DB migrations](feedback_immutable_migrations.md) — Applied Flyway/Liquibase migrations are immutable; add a correction migration
-- [Product vision in docs/](project_vision.md) — Principles, roles, review rule, config layers, design guidelines; proposals must fit them
-- [Machine JDK setup](reference_machine_jdk.md) — Default javac on this machine is too new for Lombok; pin JAVA_HOME to JDK 21 for Maven
+- [Product vision in docs/](project_vision.md) — Principles, roles, approval chain, config layers, design guidelines; proposals must fit them
+- [Deployment repo](project_deployment_repo.md) — Real fork at ../presserl-deployment (name, .env, theme); maintained by Claude, planned via this repo's OpenSpec
+- [Machine JDK setup](reference_machine_jdk.md) — Default JDK is 21 (Lombok-safe); JDK 26 installed but not default
+- [Diagrams always PlantUML](feedback_diagrams_plantuml.md) — .puml + rendered SVG; render via plantuml.unterrainer.info with -L and charset=utf-8

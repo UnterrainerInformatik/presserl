@@ -6,69 +6,83 @@ skinparam classAttributeIconSize 0
 hide empty members
 hide circle
 
-class "Operator" as Operator <<technical>> #EEEEEE {
-  parents / admin – outside the newsroom
-  --
-  + create/lock accounts (Keycloak)
-  + emergency brake: take anything offline
-  + deployment, theme, backups
+package "Keycloak (groups, newspaper-wide)" #F8F8F8 {
+  class "Publisher\n(Herausgeber)" as Publisher #F8CECC {
+    parents / administrator (1..*)
+    --
+    + create/lock accounts, reset passwords
+    + theme, backups
+    + emergency brake (lock offline)
+    + final approval level
+  }
+
+  class "Editor-in-chief\n(Chefredakteur)" as Chief #FFF2CC {
+    the child who owns the newspaper (1..*)
+    --
+    + creates sections
+    + approves section editors' articles
+    + stands in for sections
+      without a section editor
+  }
+
+  class "Reader\n(Leser)" as Reader {
+    only needed for private newspapers
+    --
+    + read published articles
+  }
+}
+
+package "Presserl DB (per section)" #F8F8F8 {
+  class "Section editor\n(Ressortleiter)" as SectionEditor #DAE8FC {
+    leads 1..n sections
+    --
+    + approves reporters of own sections
+  }
+
+  class "Reporter\n(Redakteur)" as Reporter #D5E8D4 {
+    writes for 1..n sections
+    --
+    + write drafts, upload images
+    + submit
+    + take own articles offline
+  }
+
+  class "Section" as Section {
+    e.g. Sports, Animals, Puzzles
+    default: "General"
+  }
+
+  class "Trust" as Trust {
+    approving level × trusted person
+    default: off
+  }
 }
 
 class "Newspaper" as Newspaper {
-  name, subtitle, logo
-  visibility: private | public
+  singleton (one per server)
+  visibility: public | private
 }
 
-class "Section" as Section {
-  e.g. Sports, Animals, Puzzles
-  default: "General"
-}
-
-class "Publisher" as Publisher #FFF2CC {
-  head of the newspaper (1..*)
-  --
-  + publishes directly, everywhere
-  + takes anything offline
-  + creates sections, assigns roles
-  + reviews sections without a section editor
-}
-
-class "Section editor" as Chief #DAE8FC {
-  leads exactly one section
-  --
-  + publishes directly in own section
-  + reviews own section's reporters
-  + takes offline in own section
-}
-
-class "Reporter" as Reporter #D5E8D4 {
-  writes for 1..n sections
-  --
-  + write drafts, upload images
-  + submit
-  + take own articles offline
-}
-
-class "Reader" as Reader {
-  only needed for private newspapers
-  --
-  + read published articles
-}
-
-Operator ..> Newspaper : operates
-Publisher "1..*" -- "1" Newspaper : heads >
-Newspaper "1" *-- "1..*" Section
-Chief "0..1" -- "1" Section : leads >
-Reporter "0..*" -- "1..*" Section : writes for >
+Publisher "1..*" -- "1" Newspaper : administers >
+Chief "1..*" -- "1" Newspaper : owns >
 Reader "0..*" -- "1" Newspaper : reads >
+Newspaper "1" *-- "1..*" Section
+SectionEditor "0..*" -- "1..*" Section : leads >
+Reporter "0..*" -- "1..*" Section : writes for >
+Chief ..> Section : creates
 
-Publisher -[hidden]down- Chief
-Chief -[hidden]down- Reporter
+Publisher -down-|> Chief : includes
+Chief -down-|> SectionEditor : includes
+SectionEditor -down-|> Reporter : includes
+Reporter -down-|> Reader : includes
+
+Trust ..> Reporter : skips one level\nfor one person
 
 note right of Publisher
-  Hierarchy:
-  Publisher > Section editor > Reporter
-  Every higher role may do everything
-  the roles below it may do.
+  Roles are cumulative.
+  Delegation: anyone may create accounts
+  and assign roles at or below their own
+  level, within their own scope.
+  No confirmation step.
 end note
 @enduml

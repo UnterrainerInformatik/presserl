@@ -5,7 +5,7 @@ metadata:
   type: feedback
 ---
 
-Code changes — backend and frontend alike — are only made inside an OpenSpec change
+Code changes — backend, reader and admin app alike — are only made inside an OpenSpec change
 (`/opsx:propose`, then `/opsx:apply`, `/opsx:verify`, `/opsx:archive`). Do not edit source
 directly, not even for an obvious one-line bugfix.
 
@@ -20,6 +20,9 @@ what the system does; a direct patch leaves the spec silently out of date.
   checklist does not count.
 - Amend specs by proposing, not inline: a new field or behaviour that the delta spec lacks is
   a change of its own. Ticking `tasks.md` checkboxes and adding findings files is fine.
-- In this monorepo, a change that alters the REST contract covers backend, frontend and
+- In this monorepo, a change that alters the REST contract covers backend, admin API client and
   `ai/primer/endpoints.md` in one change ([[feedback_endpoints_primer]]).
+- This includes plan/doc revisions (`docs/`, diagrams, README, project config): Gerald
+  (2026-09-26): "Alles wird bei uns über openspec abgewickelt." Memory files are the only
+  exception.
 - Read-only diagnostics are not restricted.

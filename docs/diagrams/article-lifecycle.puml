@@ -6,23 +6,32 @@ hide empty description
 
 [*] --> Draft : new article
 
-Draft --> Published : publish\n[author may publish in section]
-Draft --> Submitted : publish\n[author may not publish]
-Submitted --> Published : approve\n(section editor / publisher)
+Draft --> Published : publish\n[no approval level remains]
+Draft --> Submitted : publish\n[an approval level applies]
+Submitted --> Submitted : approve\n[next level applies]
+Submitted --> Published : approve\n[last level]
 Submitted --> Draft : reject with note
 Submitted --> Draft : withdraw (author)
 
-Published --> Offline : take offline\n(author, section editor, publisher, operator)
-Offline --> Published : back online\n[same rule as publish]
+Published --> Offline : take offline\n(author, section editor,\neditor-in-chief)
+Published --> Locked : emergency brake\n(publisher)
+Offline --> Published : back online\n[approval chain]
+Offline --> Submitted : back online\n[approval chain]
+Locked --> Offline : release\n(publisher only)
 Offline --> Draft : revise
 Offline --> [*] : delete
 
+Submitted : waits for one level:
+Submitted : section editor → editor-in-chief → publisher
 Published : Edits create a new revision;
-Published : the live revision stays until the next publish.
+Published : the live revision stays until
+Published : the new one passes the chain.
+Locked : offline, only a publisher
+Locked : can release it
 
 note right of Draft
-  Simplest case (publisher only):
+  Simplest case (first account, all roles):
   Draft → Published → Offline
-  One click, no review.
+  One click, no approval.
 end note
 @enduml

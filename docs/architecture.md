@@ -6,46 +6,52 @@
 
 | Part | Choice |
 |---|---|
-| Backend | Quarkus (current LTS), **Quarkus REST** (reactive), **Hibernate Reactive with Panache**, reactive PostgreSQL client, `quarkus-oidc` (bearer tokens from Keycloak), Flyway (runs at startup via an additional JDBC datasource — Flyway is not reactive), SmallRye OpenAPI |
+| Backend | Quarkus (current LTS), **Quarkus REST** (reactive), **Hibernate Reactive with Panache**, reactive PostgreSQL client, `quarkus-oidc` (bearer tokens for `/api`, code flow + session cookie for the reader), Flyway (runs at startup via an additional JDBC datasource — Flyway is not reactive), SmallRye OpenAPI, Keycloak Admin API client |
+| Reader | Server-rendered HTML from **Qute** templates inside the backend — front page, sections, articles, print views; design tokens and fork theme |
+| Administration app | **Compose Multiplatform** (Kotlin, Gradle), **Wasm web target** first, Android/iOS later from the same code base; OIDC auth code + PKCE (KMP OIDC library chosen in M0) |
 | Database | **PostgreSQL** |
-| Identity | **Keycloak** (realm `presserl`, realm import in `deploy/`) |
-| Frontend | Vue 3 + TypeScript, Vite, Pinia, `keycloak-js`, Tiptap editor |
+| Identity | **Keycloak** (realm `presserl`, realm import in `deploy/`); newspaper-wide roles as groups; the backend manages users and groups through a **service account** |
 | Development | **Quarkus Dev Services** start PostgreSQL and Keycloak automatically — `quarkus dev` needs no configuration |
-| CI/CD | UnterrainerInformatik workflows (`docker-build-workflow`, `npm-build-workflow`, `deploy-workflow`, `bump-semver-workflow`) |
-| Operations | docker compose (web, backend, keycloak, postgres) |
+| CI/CD | UnterrainerInformatik workflows (`docker-build-workflow`, `deploy-workflow`, `bump-semver-workflow`); the admin Wasm bundle is built with Gradle and packaged into the backend image |
+| Operations | docker compose: `presserl` (API + reader + static admin bundle), `keycloak`, `postgres` — no separate web server |
 
 Java toolchain: pinned at scaffolding time (see `ai/memory/reference_machine_jdk.md` — Lombok constraints).
+
+Why the split: the reader needs a real DOM for print (`@page`), CSS theming, accessibility, search engines and link sharing — plain HTML, no second frontend build. The administration app is one Compose code base for web, Android and iOS (store release and QR scanning later). Rejected: Vue + Capacitor (two paradigms once native features grow) and Compose for the reader (canvas rendering breaks print, theming and accessibility).
 
 ## Repository layout
 
 ```
-presserl/
-├── backend/            # Quarkus
-├── frontend/           # Vue 3 + TS
-├── deploy/             # the only folder a fork needs to touch
+presserl/                     # monorepo (upstream)
+├── backend/                  # Quarkus (Maven): API + Qute reader
+├── admin/                    # Compose Multiplatform (Gradle): administration app
+├── deploy/                   # reference deployment and templates
+│   ├── INSTALL.md            # step-by-step installation guide
 │   ├── compose.yaml
-│   ├── .env.example    # only passwords and hostname are mandatory
+│   ├── .env.example          # mandatory values only: hostname, passwords, first publisher
 │   ├── keycloak/presserl-realm.json
-│   └── theme/          # optional; overrides the default theme
+│   └── theme/                # template; overrides the default reader theme
 │       ├── custom.css
 │       ├── logo.svg
 │       └── fonts/
-├── http/               # .http files for the REST API
+├── http/                     # .http files for the REST API
 ├── docs/
 ├── openspec/
 └── ai/
+
+../presserl-deployment/       # the real fork: name, .env, theme — nothing else
 ```
 
-A fork uses the upstream container images and customises only `deploy/`. Updates are an image-tag bump.
+A fork copies the templates from `deploy/`, sets name, `.env` and theme, and runs the upstream container images. Updates are an image-tag bump. `../presserl-deployment` is maintained alongside this repository; changes to it are recorded in this repository's OpenSpec changes.
 
 ## Configuration
 
 Four layers; the later one wins:
 
 1. **Code default** — `application.properties` (Quarkus / SmallRye Config)
-2. **Deployment** — environment variable in `deploy/.env` (`PRESSERL_REVIEW_MODE=always` overrides `presserl.review.mode`)
-3. **Newspaper** — setting changed in the app by the publisher (database)
-4. **Section** — setting per section (database)
+2. **Deployment** — environment variable in `deploy/.env` (`PRESSERL_NEWSPAPER_VISIBILITY=private` overrides `presserl.newspaper.visibility`)
+3. **Newspaper** — setting changed in the administration app by a publisher (database)
+4. **Section** — setting per section (database; kept for future per-section overrides)
 
 The database layers store only overrides, never copies of defaults. The backend exposes the *effective* value.
 
@@ -53,9 +59,7 @@ The database layers store only overrides, never copies of defaults. The backend 
 |---|---|---|---|
 | `presserl.newspaper.name` | `My Newspaper` (i18n) | any | deployment, newspaper |
 | `presserl.newspaper.subtitle` | empty | any | deployment, newspaper |
-| `presserl.newspaper.visibility` | `private` | `public` | deployment, newspaper |
-| `presserl.review.mode` | `auto` | `always`, `never` | all |
-| `presserl.review.chief-needs-publisher` | `false` | `true` | all |
+| `presserl.newspaper.visibility` | `public` | `private` | deployment, newspaper |
 | `presserl.retract.author-can-retract` | `true` | `false` | deployment, newspaper |
 | `presserl.section.default` | `General` (i18n) | any | deployment |
 | `presserl.editor.level` | `standard` | `starter`, `profi` | deployment, newspaper, per user |
@@ -63,57 +67,106 @@ The database layers store only overrides, never copies of defaults. The backend 
 | `presserl.media.max-size` | `10M` | any | deployment |
 | `presserl.theme.css` | built-in theme | `/theme/custom.css` | deployment |
 
+Approval is not configured by keys but by roles and trust (see [roles-and-workflow.md](roles-and-workflow.md#approval-chain)).
+
+Deployment-only values (no defaults, set in `.env`):
+
+| Variable | Purpose |
+|---|---|
+| `PRESSERL_PUBLISHER_USERNAME` / `PRESSERL_PUBLISHER_PASSWORD` | **Bootstrap:** on first start, if no publisher exists, the backend creates this account in the `publisher` group; it holds all roles |
+| hostname, database and Keycloak passwords, service-account secret | wiring of the three containers |
+
 ## Data model (MVP)
 
-- **Newspaper** — name, subtitle, visibility, settings (JSON, overrides only)
+One newspaper per server; a second newspaper is a second deployment.
+
+- **Newspaper** — singleton: name, subtitle, visibility, settings (JSON, overrides only)
 - **Section** — name, colour, order, settings (JSON, overrides only)
-- **Membership** — user × newspaper × role (× section for section editors and reporters)
-- **Article** — kicker, headline, subheadline, lead, body (Tiptap JSON, validated server-side against an allowlist), author, section, status, lead image
+- **SectionRole** — user × section × role (`SECTION_EDITOR` | `REPORTER`). Newspaper-wide roles (`PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`) are Keycloak groups, not rows.
+- **Trust** — approving level × trusted user (+ who set it). One row skips that level for that user.
+- **Article** — kicker, headline, subheadline, lead, body (structured JSON, validated server-side against an allowlist; concrete format chosen with the editor), author, section, status, pending approval level, emergency-brake lock, lead image
 - **ArticleRevision** — revisions; `liveRevision` points to the published one
+- **ReviewNote** — feedback to the author on rejection
 - **Issue** — number and publication date; groups articles; basis for the issue print view
 - **Media** — upload, EXIF-stripped, resized (thumbnail / web / print)
-- **ReviewNote** — feedback to the author
 
-## REST API sketch
+## Routes
+
+### Reader (HTML, Qute)
+
+```
+GET    /                                  front page
+GET    /sections/{slug}                   section page
+GET    /articles/{id}                     article page
+GET    /issues/{id}                       issue
+GET    /print/article/{id}                print view: article
+GET    /print/issue/{id}                  print view: issue
+GET    /theme/custom.css                  fork theme (from deploy/theme/)
+```
+
+Private newspapers: Quarkus OIDC code flow with a session cookie; `READER` or higher required.
+
+### Administration app
+
+```
+GET    /admin/                            static Compose Wasm bundle (same origin)
+```
+
+### REST API sketch
 
 Draft only — the contract becomes binding in `ai/primer/endpoints.md` once an OpenSpec change implements it.
 
 ```
 GET    /api/newspaper                     name, subtitle, effective settings
 GET    /api/sections
-GET    /api/articles?status=PUBLISHED     front page / archive
+POST   /api/sections                      editor-in-chief+
+GET    /api/articles?status=…             my articles / archive
 GET    /api/articles/{id}
 POST   /api/articles                      reporter+
 PUT    /api/articles/{id}                 creates a new revision
-POST   /api/articles/{id}/publish         → PUBLISHED or SUBMITTED (server decides, response says which)
-POST   /api/articles/{id}/approve|reject  reviewing role
-POST   /api/articles/{id}/offline         author, section editor, publisher, operator
-GET    /api/review-queue                  what I have to review (empty for solo)
+POST   /api/articles/{id}/publish         → PUBLISHED or SUBMITTED + pending level (server decides)
+POST   /api/articles/{id}/approve|reject  holder of the pending level
+POST   /api/articles/{id}/offline         author, section editor, editor-in-chief, publisher (publisher ⇒ locked)
+GET    /api/review-queue                  what I have to approve (empty for solo)
+GET    /api/accounts                      accounts I may manage
+POST   /api/accounts                      create account (role ≤ mine) → username + pass-phrase for the slip
+POST   /api/accounts/{id}/password-reset  anyone above the person
+POST   /api/accounts/{id}/lock            publisher
+PUT    /api/accounts/{id}/roles           roles at or below mine, within my scope
+PUT    /api/accounts/{id}/trust           set/clear trust for my level
 POST   /api/media                         reporter+ (size/type limit)
-GET    /api/issues/{id}/print             data for the issue print view
-GET    /api/me                            my roles and allowed actions
+GET    /api/me                            my roles, scopes and allowed actions
 ```
 
-Article responses carry `allowedActions`; the frontend renders buttons from it and never re-implements the review rule.
+Article responses carry `allowedActions`; clients render buttons from it and never re-implement the approval chain.
 
-## Frontend views
+## Views
+
+### Reader (Qute)
 
 1. **Front page** — masthead, lead story, modular article cards
 2. **Article page** — reading mode with byline
 3. **Section / archive / issues**
-4. **My articles** — cards by status, big "New article" button
-5. **Editor** — age levels, live preview in the real newspaper look
-6. **Newsroom** — review queue (only visible when there is something to review)
-7. **Settings** — newspaper, sections, members/roles (publisher)
-8. **Print views** — article and whole issue
+4. **Print views** — article and whole issue
 
-Every view sets `data-view="…"` on `<main>` (e.g. `frontpage`, `article`, `editor`, `print-issue`) as a stable hook for custom CSS.
+Every reader view sets `data-view="…"` on `<main>` (e.g. `frontpage`, `article`, `section`, `print-issue`) as a stable hook for custom CSS.
+
+### Administration app (Compose)
+
+1. **My articles** — cards by status, big "New article" button
+2. **Editor** — age levels; preview opens the article in the reader
+3. **Review queue** — only visible when there is something to approve
+4. **Accounts** — create (with printable slip), reset password, lock, assign roles, trust
+5. **Sections** — create, order, colours, section roles
+6. **Settings** — newspaper name, subtitle, visibility (publisher)
 
 ## Security checklist (MVP)
 
-- Keycloak: self-registration off, invitation by publisher/operator, PKCE, short-lived access tokens
-- Every action checked server-side against memberships; ownership checks
-- Rich text only as Tiptap JSON with a node/mark allowlist — never raw HTML; strict CSP (`self` only)
+- Keycloak: no e-mail, self-registration and "forgot password" off, **brute-force detection on**, PKCE, short-lived access tokens
+- Default passwords are four-word pass-phrases from a curated word list; users may change them
+- Service account client limited to `manage-users` in realm `presserl`; its secret never leaves the backend
+- Every action checked server-side against groups, section roles and trust; ownership checks
+- Article bodies only as structured JSON with an allowlist — never raw HTML; strict CSP (`self` only), reader and admin bundle served from the same origin
 - Uploads: MIME sniffing, size limit, re-encoding, EXIF/GPS removal
 - Free choice of author name (nickname); no real-name requirement
 - Backups of PostgreSQL and the media volume via cron

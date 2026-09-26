@@ -3,24 +3,29 @@ title Presserl – Architecture (docker compose)
 skinparam shadowing false
 skinparam defaultFontName Sans-Serif
 
-actor "Child / reader" as user
+actor "Reader" as reader
+actor "Newsroom\n(publisher, chief,\nsection editor, reporter)" as newsroom
 node "Browser" {
-  component "frontend\nSPA (Vue 3 + TS)" as spa
+  component "Reader pages\n(HTML + CSS)" as html
+  component "Administration app\n(Compose MP, Wasm)" as admin
 }
 node "deploy/ (docker compose)" {
-  component "web\n(nginx, static SPA)" as web
+  component "presserl\nQuarkus REST (reactive)\nQute reader\nstatic admin bundle (/admin)\nHibernate Reactive + Panache\nquarkus-oidc" as srv
   folder "theme/\ncustom.css, fonts, logo" as theme
-  component "Keycloak\nrealm: presserl" as kc
-  component "backend\nQuarkus REST (reactive)\nHibernate Reactive + Panache\nquarkus-oidc" as srv
+  component "Keycloak\nrealm: presserl\ngroups: publisher,\neditor-in-chief, reader" as kc
   database "PostgreSQL" as db
   folder "media/\n(volume)" as media
 }
 
-user --> spa
-web --> spa : serves
-theme ..> web : mounted, overrides default theme
-spa --> kc : OIDC login (PKCE)
-spa --> srv : REST/JSON + bearer JWT
+reader --> html
+newsroom --> admin
+srv --> html : renders (Qute)
+admin <.. srv : bundle from /admin
+theme ..> srv : mounted, served at /theme/
+html ..> kc : private newspaper:\nOIDC code flow (session cookie)
+admin --> kc : OIDC login (PKCE)
+admin --> srv : /api REST/JSON + bearer JWT
+srv --> kc : service account\n(users, groups)
 srv ..> kc : JWKS / token validation
 srv --> db : reactive PG client\n(Flyway via JDBC at startup)
 srv --> media : images (EXIF stripped)

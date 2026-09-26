@@ -1,5 +1,7 @@
 # Design guidelines
 
+Sections 1, 2, 4 and 5 apply to the **reader** (server-rendered HTML, Qute). Section 3 applies to the **administration app** (Compose Multiplatform). Section 6 covers the printable account slip.
+
 ## 1. Newspaper page (front page / overviews)
 
 - **Masthead** at the top: newspaper name (large, serif or display face), subtitle, date, issue number — most of the "newspaper feel" comes from it.
@@ -29,7 +31,9 @@
 | Reading aid | optional reading time and difficulty (Wiener Sachtextformel) shown to author and reader | German-language readability formula |
 | Dark mode | yes, via `prefers-color-scheme` | |
 
-## 3. Online editor for ages 6–16
+## 3. Editor for ages 6–16 (administration app)
+
+The editor is part of the Compose administration app (web first, Android/iOS later). The rich-text component is chosen in the milestone that builds the editor; fallback is a block-based editor (one field per block), which also suits `starter`.
 
 Levels (`presserl.editor.level`, overridable per user, default `standard`):
 
@@ -42,11 +46,12 @@ Levels (`presserl.editor.level`, overridable per user, default `standard`):
 All levels:
 
 - **Autosave** (no save button to forget); undo always visible.
-- **Preview = the real newspaper view** in the same theme.
-- Browser spell check (`lang` from the newspaper locale, `spellcheck`).
-- One primary button bottom right: **Publish** (or **Submit** when a review applies — the server says which).
+- **Preview = the real newspaper view**: the preview opens the article in the reader with the deployment's theme.
+- Spell check where the platform provides it (`lang` from the newspaper locale).
+- One primary button bottom right: **Publish** (or **Submit** when an approval level applies — the server says which).
 - Friendly, concrete messages ("Your picture is too big — I'll shrink it for you" instead of error codes). UI text lives in i18n resources.
-- Touch targets ≥ 44 px; works on tablets.
+- Touch targets ≥ 44 px; works on tablets and phones.
+- The administration app uses the reader's colour and font tokens where it can, but is not themed by `custom.css`.
 
 ## 4. Print views
 
@@ -56,7 +61,7 @@ All levels:
 - Browser "Print → Save as PDF" is sufficient; no server-side PDF in the MVP.
 - Print colours: black on white; section colours only as rules.
 
-## 5. Theming via CSS in `deploy/`
+## 5. Theming via CSS in `deploy/` (reader)
 
 - The default theme is built entirely on **CSS custom properties** (design tokens):
 
@@ -73,7 +78,7 @@ All levels:
   }
   ```
 
-- `deploy/theme/` is mounted into the web container; `custom.css` is loaded **after** the default theme and may override tokens or whole views:
+- `deploy/theme/` is mounted into the `presserl` container and served by the reader at `/theme/`; `custom.css` is loaded **after** the default theme and may override tokens or whole views:
 
   ```css
   :root { --presserl-color-accent: #1f4e79; }
@@ -84,6 +89,17 @@ All levels:
 - Public, stable styling API: tokens, `data-view` attributes and documented classes (`.masthead`, `.lead-article`, `.article-card`, `.byline`, `.kicker`, `.section-bar`, …). Everything else is internal and may change.
 - Custom fonts and images go into `deploy/theme/fonts/` and `deploy/theme/` — same origin, CSP stays `self`.
 - Upstream ships 2–3 example themes (*Classic*, *Colourful* for younger kids, *Night*) as templates to copy.
+
+## 6. Account slip (printable)
+
+New accounts are handed over on paper — there is no e-mail.
+
+- One slip per account, printed from the administration app right after creating the account or resetting its password; A4 with several slips to cut, or a single slip.
+- Content: newspaper name (masthead style), web address, **username**, **password** — nothing else, no role, no real name beyond the username.
+- Password in a large monospace face, words separated by dashes and easy to read aloud (`tiger-wolke-apfel-leiter`); no ambiguous characters because the word list has no umlauts or ß.
+- A short friendly line for the child ("Log in with these details." — UI text via i18n) and a hint to keep the slip safe.
+- Black on white, no images needed; a dashed cut line around the slip.
+- Room reserved for a QR code (M8), which replaces typing the address and password.
 
 ## Sources
 

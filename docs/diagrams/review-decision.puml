@@ -1,40 +1,36 @@
 @startuml review-decision
-title Presserl – Who has to review? (review.mode = auto)
+title Presserl – Approval chain (author A, section S)
 skinparam shadowing false
 skinparam defaultFontName Sans-Serif
 
 start
-:author clicks **Publish**;
-if (effective review.mode of section?) then (never)
-  :**Published** immediately;
-  stop
-elseif () then (always)
-  :review required;
-else (auto – default)
-  if (author is publisher?) then (yes)
-    :**Published** immediately;
-    stop
-  elseif (author is section editor\nof this section?) then (yes)
-    if (chief-needs-publisher?\n(default: false)) then (false)
-      :**Published** immediately;
+:A clicks **Publish**;
+:start at the level directly above\nA's highest role in S;
+while (level left?\n(section editor → editor-in-chief → publisher)) is (yes)
+  if (A holds this level's role?) then (yes)
+    :skip level;
+  elseif (someone of this level\ntrusts A?) then (yes)
+    :skip level;
+  elseif (section-editor level and\nS has no section editor?) then (yes)
+    :skip level\n(editor-in-chief takes over);
+  else (no)
+    :status **Submitted** (waiting for this level);
+    :one holder of the role\n(≠ A) decides;
+    if (decision) then (reject)
+      :**Draft** + note to A;
       stop
-    else (true)
-      :review by publisher;
+    else (approve)
     endif
-  else (no – reporter)
-    :review required;
   endif
-endif
-:status **Submitted**;
-if (section has a section editor\n(≠ author)?) then (yes)
-  :section editor reviews;
-else (no)
-  :publisher reviews;
-endif
-if (decision) then (approve)
-  :**Published**;
-else (reject)
-  :**Draft** + note to author;
-endif
+  :next level up;
+endwhile (no)
+:**Published**;
 stop
+
+note right
+  Solo first account holds all roles
+  → every level skipped → published at once.
+  Trust: per person, default off,
+  set by any holder of the approving level.
+end note
 @enduml

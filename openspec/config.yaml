@@ -3,9 +3,13 @@ schema: spec-driven
 context: |
   Multi-platform monorepo:
     - backend/  : Java, Quarkus, Maven. REST via JAX-RS (Quarkus REST), JSON via Jackson.
+                  Reader = server-rendered HTML via Qute templates (front page, articles, print).
                   Tests: JUnit 5 + AssertJ, @QuarkusTest for integration tests.
-    - frontend/ : Vue 3 + TypeScript, Vite. Composition API with <script setup lang="ts">.
-                  Tests: Vitest + Vue Test Utils.
+    - admin/    : administration app, Compose Multiplatform (Kotlin, Gradle), Wasm web target
+                  first, Android/iOS later. Talks to /api with bearer tokens.
+                  Tests: Kotlin (kotlin.test, Compose UI tests where useful).
+    - deploy/   : reference deployment + templates (INSTALL.md, compose, realm, .env.example, theme).
+                  The real fork lives in ../presserl-deployment (name, .env, theme only).
     - http/     : .http request files that exercise the backend REST API.
     - ai/       : memory, primer (ai/primer/endpoints.md = REST contract), open proposals.
   All repo content (code, comments, logs, docs, commits, OpenSpec artifacts) is English.
@@ -13,11 +17,11 @@ context: |
 
 rules:
   proposal:
-    - State which platforms are affected (backend, frontend, both) in the Impact section.
+    - State which platforms are affected (backend, reader, admin, deploy, docs) in the Impact section.
     - Include a Non-goals section.
   design:
     - When the REST contract changes, show the exact request/response shapes.
   tasks:
-    - Group tasks by platform (Backend, Frontend, Contract/Docs, Verification).
-    - Any REST contract change includes tasks for ai/primer/endpoints.md, the frontend API client/types, and .http files under http/.
-    - Include test tasks for every behaviour change (JUnit/AssertJ for backend, Vitest for frontend).
+    - Group tasks by platform (Backend, Reader, Admin, Deploy, Contract/Docs, Verification).
+    - Any REST contract change includes tasks for ai/primer/endpoints.md, the admin API client/DTOs, and .http files under http/.
+    - Include test tasks for every behaviour change (JUnit/AssertJ for backend and reader, Kotlin tests for admin).
