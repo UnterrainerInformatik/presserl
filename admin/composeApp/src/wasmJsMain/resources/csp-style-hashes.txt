@@ -1,0 +1,4 @@
+# CSP style-src hashes of the <style> element Compose injects into its shadow DOM.
+# The backend adds every non-comment line to the admin policy's style-src directive.
+# CspStyleHashTest fails when a Compose upgrade changes the style; paste the hash it reports.
+'sha256-2DtT88WYuzB8DiHdoLqEYkONEwxf9gqsOdTY44QuLA4='

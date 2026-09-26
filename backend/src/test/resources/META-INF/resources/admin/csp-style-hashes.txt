@@ -1,0 +1,3 @@
+# Test stub
+'sha256-dGVzdC1zdHlsZS1oYXNo'
+not-a-hash; script-src *

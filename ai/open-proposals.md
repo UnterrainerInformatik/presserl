@@ -5,32 +5,22 @@ change — never tick it off.
 
 Milestones from `docs/vision.md`; details in `docs/`.
 
-## M0 — Skeleton
-Scaffold `backend/` (Quarkus REST reactive, Hibernate Reactive Panache, reactive-pg-client,
-oidc, Qute, Flyway + JDBC PostgreSQL, SmallRye OpenAPI; Dev Services for PostgreSQL and
-Keycloak) with a Qute reader stub at `/`; `admin/` (Compose Multiplatform, Gradle, Wasm web
-target) as a stub served at `/admin/` from the backend image; choose the KMP OIDC library
-(auth code + PKCE). `deploy/` with `INSTALL.md`, `compose.yaml` (`presserl`, `keycloak`,
-`postgres`), realm `presserl` (groups `publisher`, `editor-in-chief`, `reader`; public admin
-client with PKCE; confidential reader client for the code flow; no e-mail, no
-self-registration, brute-force detection on), `.env.example` with mandatory values only.
-Publisher bootstrap from `PRESSERL_PUBLISHER_USERNAME`/`PRESSERL_PUBLISHER_PASSWORD`.
-First endpoint `GET /api/newspaper` returning effective defaults. End-to-end login in the
-admin app. CI builds images. Create `../presserl-deployment` from the templates. Record
-build/test commands in `ai/memory/reference_build_and_test.md`.
-
 ## M1 — Solo newspaper
 Articles with revisions, editor at level `standard` (structured JSON body, server-side
 allowlist validation; evaluate a Compose rich-text editor, fallback block-based),
 publish/offline for an author who holds all roles (no approval yet), reader front page with
 masthead and article page. See `docs/roles-and-workflow.md` stage 1.
+Enforce `visibility=private` in the reader (M0 only stores the setting): reader login via the
+authorization code flow with a new confidential reader client in the realm template (and dev
+realm, drift test), session cookie on the reader origin.
 
 ## M2 — Accounts & sections
-Keycloak service account (`manage-users` only) and Admin API client; account creation with
+Extend the Keycloak Admin client from M0 (service account already holds `manage-users`,
+`view-users`, `query-users`, `query-groups`); account creation with
 username from first name and a four-word pass-phrase (curated German word list), printable
 account slip, password reset, lock; groups for newspaper-wide roles; sections (created by
 editors-in-chief), section roles in the DB; delegation rule (assign at or below own level,
-within own scope); `GET /api/me`.
+within own scope); extend `GET /api/me` additively (section roles, scopes, allowed actions).
 
 ## M3 — Approval chain
 Chain section editor → editor-in-chief → publisher with skip rules (own role, trust, section

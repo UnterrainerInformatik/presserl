@@ -34,6 +34,16 @@ target/
 .settings/
 bin/
 
+# --- Gradle / Kotlin ---
+.gradle/
+build/
+.kotlin/
+!**/gradle/wrapper/gradle-wrapper.jar
+
+# --- Deployment and local test secrets ---
+.env
+.claude-env
+
 # --- Node / Vue / Vite ---
 node_modules/
 dist/

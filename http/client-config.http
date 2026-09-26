@@ -1,0 +1,12 @@
+### OIDC settings for the admin app (public)
+GET {{baseUrl}}/api/client-config
+Accept: application/json
+
+> {%
+    client.test("200 with issuer, client id and scopes", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.oidc.issuer === request.environment.get("issuer"), "issuer " + response.body.oidc.issuer);
+        client.assert(response.body.oidc.clientId === "presserl-admin", "clientId");
+        client.assert(response.body.oidc.scopes.includes("openid"), "scopes");
+    });
+%}

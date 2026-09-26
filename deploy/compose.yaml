@@ -1,0 +1,41 @@
+# Presserl reference deployment: the Presserl image and PostgreSQL - nothing else.
+# Keycloak and the TLS-terminating reverse proxy are provided by the operator (see INSTALL.md).
+name: presserl
+
+services:
+  presserl:
+    image: ${PRESSERL_IMAGE:-gufalcon/presserl:latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PRESSERL_DB_HOST: postgres
+    ports:
+      - "${PRESSERL_HTTP_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Ready = database migrated and the first publisher exists in Keycloak
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/q/health/ready"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: presserl
+      POSTGRES_USER: presserl
+      POSTGRES_PASSWORD: ${PRESSERL_DB_PASSWORD:?PRESSERL_DB_PASSWORD must be set in .env}
+    volumes:
+      - presserl-db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U presserl -d presserl"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  presserl-db:

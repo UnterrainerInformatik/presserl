@@ -9,22 +9,27 @@ node "Browser" {
   component "Reader pages\n(HTML + CSS)" as html
   component "Administration app\n(Compose MP, Wasm)" as admin
 }
+node "Operator's infrastructure" {
+  component "Reverse proxy\n(Traefik labels / Caddy)\nTLS termination" as proxy
+  component "Keycloak (shared)\nrealm from presserl-realm.json\ngroups: publisher,\neditor-in-chief, reader" as kc
+}
 node "deploy/ (docker compose)" {
   component "presserl\nQuarkus REST (reactive)\nQute reader\nstatic admin bundle (/admin)\nHibernate Reactive + Panache\nquarkus-oidc" as srv
   folder "theme/\ncustom.css, fonts, logo" as theme
-  component "Keycloak\nrealm: presserl\ngroups: publisher,\neditor-in-chief, reader" as kc
-  database "PostgreSQL" as db
+  database "PostgreSQL\n(volume presserl-db)" as db
   folder "media/\n(volume)" as media
 }
 
 reader --> html
 newsroom --> admin
+html --> proxy : HTTPS
+admin --> proxy : /api REST/JSON\n+ bearer JWT
+proxy --> srv : HTTP + X-Forwarded-*
 srv --> html : renders (Qute)
 admin <.. srv : bundle from /admin
 theme ..> srv : mounted, served at /theme/
 html ..> kc : private newspaper:\nOIDC code flow (session cookie)
-admin --> kc : OIDC login (PKCE)
-admin --> srv : /api REST/JSON + bearer JWT
+admin --> kc : OIDC login (PKCE)\nCSP connect-src: issuer origin
 srv --> kc : service account\n(users, groups)
 srv ..> kc : JWKS / token validation
 srv --> db : reactive PG client\n(Flyway via JDBC at startup)

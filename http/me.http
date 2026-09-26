@@ -1,0 +1,31 @@
+### Token for the bootstrapped publisher via the dev-only client presserl-http (direct access grant)
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{username}}&password={{password}}
+
+> {%
+    client.global.set("accessToken", response.body.access_token);
+%}
+
+### The logged-in user
+GET {{baseUrl}}/api/me
+Authorization: Bearer {{accessToken}}
+Accept: application/json
+
+> {%
+    client.test("200 with publisher role", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.username === request.environment.get("username"), "username");
+        client.assert(response.body.roles.includes("PUBLISHER"), "roles " + JSON.stringify(response.body.roles));
+    });
+%}
+
+### Without a token
+GET {{baseUrl}}/api/me
+
+> {%
+    client.test("401", () => {
+        client.assert(response.status === 401, "status " + response.status);
+    });
+%}

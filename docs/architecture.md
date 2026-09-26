@@ -8,14 +8,14 @@
 |---|---|
 | Backend | Quarkus (current LTS), **Quarkus REST** (reactive), **Hibernate Reactive with Panache**, reactive PostgreSQL client, `quarkus-oidc` (bearer tokens for `/api`, code flow + session cookie for the reader), Flyway (runs at startup via an additional JDBC datasource — Flyway is not reactive), SmallRye OpenAPI, Keycloak Admin API client |
 | Reader | Server-rendered HTML from **Qute** templates inside the backend — front page, sections, articles, print views; design tokens and fork theme |
-| Administration app | **Compose Multiplatform** (Kotlin, Gradle), **Wasm web target** first, Android/iOS later from the same code base; OIDC auth code + PKCE (KMP OIDC library chosen in M0) |
+| Administration app | **Compose Multiplatform** (Kotlin, Gradle), **Wasm web target** first, Android/iOS later from the same code base; OIDC auth code + PKCE via a small in-house browser flow behind an `AuthClient` interface (M0 spike: the KMP OIDC library's web flow is popup-only) |
 | Database | **PostgreSQL** |
-| Identity | **Keycloak** (realm `presserl`, realm import in `deploy/`); newspaper-wide roles as groups; the backend manages users and groups through a **service account** |
+| Identity | **Keycloak provided by the operator** (usually shared): a dedicated realm imported from `deploy/keycloak/presserl-realm.json`; newspaper-wide roles as groups; public client `presserl-admin` (PKCE, audience `presserl-backend`, `groups` claim); confidential client `presserl-backend` whose **service account** manages users and groups (`manage-users`, `view-users`, `query-users`, `query-groups`) |
 | Development | **Quarkus Dev Services** start PostgreSQL and Keycloak automatically — `quarkus dev` needs no configuration |
 | CI/CD | UnterrainerInformatik workflows (`docker-build-workflow`, `deploy-workflow`, `bump-semver-workflow`); the admin Wasm bundle is built with Gradle and packaged into the backend image |
-| Operations | docker compose: `presserl` (API + reader + static admin bundle), `keycloak`, `postgres` — no separate web server |
+| Operations | docker compose: `presserl` (API + reader + static admin bundle) and `postgres` only. The TLS-terminating reverse proxy (Traefik via labels, or Caddy) and Keycloak are the operator's; `deploy/INSTALL.md` shows how to attach them |
 
-Java toolchain: pinned at scaffolding time (see `ai/memory/reference_machine_jdk.md` — Lombok constraints).
+Java toolchain: JDK 21 (`maven.compiler.release=21`, Temurin 21 in the image; see `ai/memory/reference_machine_jdk.md` — Lombok constraints).
 
 Why the split: the reader needs a real DOM for print (`@page`), CSS theming, accessibility, search engines and link sharing — plain HTML, no second frontend build. The administration app is one Compose code base for web, Android and iOS (store release and QR scanning later). Rejected: Vue + Capacitor (two paradigms once native features grow) and Compose for the reader (canvas rendering breaks print, theming and accessibility).
 
@@ -28,8 +28,8 @@ presserl/                     # monorepo (upstream)
 ├── deploy/                   # reference deployment and templates
 │   ├── INSTALL.md            # step-by-step installation guide
 │   ├── compose.yaml
-│   ├── .env.example          # mandatory values only: hostname, passwords, first publisher
-│   ├── keycloak/presserl-realm.json
+│   ├── .env.example          # mandatory values only: hostname, DB password, OIDC issuer + secret, first publisher
+│   ├── keycloak/presserl-realm.json   # realm template for the operator's Keycloak (hostname placeholder)
 │   └── theme/                # template; overrides the default reader theme
 │       ├── custom.css
 │       ├── logo.svg
@@ -74,7 +74,8 @@ Deployment-only values (no defaults, set in `.env`):
 | Variable | Purpose |
 |---|---|
 | `PRESSERL_PUBLISHER_USERNAME` / `PRESSERL_PUBLISHER_PASSWORD` | **Bootstrap:** on first start, if no publisher exists, the backend creates this account in the `publisher` group; it holds all roles |
-| hostname, database and Keycloak passwords, service-account secret | wiring of the three containers |
+| `PRESSERL_HOSTNAME`, `PRESSERL_DB_PASSWORD` | public DNS name (proxy rule, realm redirect URIs); database password |
+| `PRESSERL_OIDC_ISSUER`, `PRESSERL_OIDC_BACKEND_SECRET`, `PRESSERL_OIDC_ADMIN_CLIENT_ID` | the realm in the operator's Keycloak; secret of `presserl-backend` |
 
 ## Data model (MVP)
 
@@ -164,9 +165,9 @@ Every reader view sets `data-view="…"` on `<main>` (e.g. `frontpage`, `article
 
 - Keycloak: no e-mail, self-registration and "forgot password" off, **brute-force detection on**, PKCE, short-lived access tokens
 - Default passwords are four-word pass-phrases from a curated word list; users may change them
-- Service account client limited to `manage-users` in realm `presserl`; its secret never leaves the backend
+- Service account client limited to `manage-users`, `view-users`, `query-users`, `query-groups` in its realm (Keycloak needs the view/query roles for lookups); its secret never leaves the backend. Tokens must carry the audience `presserl-backend`, since the realm may live on a shared Keycloak
 - Every action checked server-side against groups, section roles and trust; ownership checks
-- Article bodies only as structured JSON with an allowlist — never raw HTML; strict CSP (`self` only), reader and admin bundle served from the same origin
+- Article bodies only as structured JSON with an allowlist — never raw HTML; strict CSP (`self` only), reader and admin bundle served from the same origin. The admin policy additionally allows `'wasm-unsafe-eval'` in `script-src`, the issuer origin in `connect-src` (Keycloak lives on another origin) and, by hash only, the style Compose injects into its shadow DOM (`csp-style-hashes.txt` in the admin bundle, checked by the admin tests)
 - Uploads: MIME sniffing, size limit, re-encoding, EXIF/GPS removal
 - Free choice of author name (nickname); no real-name requirement
 - Backups of PostgreSQL and the media volume via cron

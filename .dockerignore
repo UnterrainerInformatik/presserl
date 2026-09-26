@@ -1,0 +1,10 @@
+# Only admin/ and backend/ sources go into the build context
+*
+!admin/
+!backend/
+**/build/
+**/target/
+**/.gradle/
+**/.kotlin/
+**/node_modules/
+**/.idea/

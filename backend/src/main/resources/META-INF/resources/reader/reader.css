@@ -1,0 +1,25 @@
+/* Minimal reader stylesheet; the theme with design tokens follows in M4. */
+body {
+  margin: 0 auto;
+  max-width: 60rem;
+  padding: 1rem;
+  font-family: Georgia, "Times New Roman", serif;
+  color: #1a1a1a;
+  background: #fff;
+}
+
+.masthead {
+  border-bottom: 3px double currentColor;
+  text-align: center;
+  padding-bottom: 0.5rem;
+}
+
+.masthead__name {
+  margin: 0;
+  font-size: 3rem;
+}
+
+.masthead__subtitle {
+  margin: 0.25rem 0 0;
+  font-style: italic;
+}
