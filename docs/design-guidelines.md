@@ -33,7 +33,9 @@ Sections 1, 2, 4 and 5 apply to the **reader** (server-rendered HTML, Qute). Sec
 
 ## 3. Editor for ages 6–16 (administration app)
 
-The editor is part of the Compose administration app (web first, Android/iOS later). The rich-text component is chosen in the milestone that builds the editor; fallback is a block-based editor (one field per block), which also suits `starter`.
+The editor is part of the Compose administration app (web first, Android/iOS later). It is **block-based**: one card per body block (paragraph, subhead, quote, bullet list) that can be added, moved and removed, which maps 1:1 to body format v1 and also suits `starter`. Bold inside paragraphs, quotes and list items uses the Compose library [`compose-rich-editor`](https://github.com/MohamedRejeb/compose-rich-editor) (Wasm-capable), which the app uses only behind its mapping between runs and editor text; subheads and header fields are plain text fields.
+
+So far only `standard` is implemented; every user gets it and `presserl.editor.level` is not evaluated yet.
 
 Levels (`presserl.editor.level`, overridable per user, default `standard`):
 

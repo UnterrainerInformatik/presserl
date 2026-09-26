@@ -11,8 +11,8 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 
 /**
- * The backend serves the app from the same origin; only the Gradle dev server on :8081 talks
- * to `quarkus dev` on :8080.
+ * The backend serves the app and the reader from the same origin; only the Gradle dev server on
+ * :8081 talks to `quarkus dev` on :8080.
  */
 private fun apiBaseUrl(): String =
     if (window.location.port == "8081") "http://localhost:8080" else window.location.origin
@@ -20,10 +20,11 @@ private fun apiBaseUrl(): String =
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
     val http = HttpClient(Js)
+    val baseUrl = apiBaseUrl()
     lateinit var auth: BrowserAuthClient
-    val api = ApiClient(http, apiBaseUrl()) { auth.accessToken() }
+    val api = ApiClient(http, baseUrl) { auth.accessToken() }
     auth = BrowserAuthClient(http) { api.clientConfig().oidc }
     ComposeViewport(document.body!!) {
-        App(auth, api)
+        App(auth, api, siteUrl = baseUrl)
     }
 }
