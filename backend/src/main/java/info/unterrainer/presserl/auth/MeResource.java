@@ -1,7 +1,5 @@
 package info.unterrainer.presserl.auth;
 
-import java.util.Set;
-
 import org.eclipse.microprofile.jwt.JsonWebToken;
 
 import io.quarkus.security.Authenticated;
@@ -21,13 +19,7 @@ public class MeResource {
     @GET
     @Produces(MediaType.APPLICATION_JSON)
     public MeDto get() {
-        String username = token.getClaim("preferred_username");
-        if (username == null) {
-            username = token.getSubject();
-        }
-        String name = token.getClaim("name");
-        Set<String> groups = token.getGroups();
-        return new MeDto(username, name == null || name.isBlank() ? username : name,
-                NewspaperRole.fromGroups(groups == null ? Set.of() : groups));
+        CurrentUser user = CurrentUser.of(token);
+        return new MeDto(user.username(), user.displayName(), user.roles());
     }
 }

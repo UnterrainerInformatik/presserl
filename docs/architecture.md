@@ -85,8 +85,8 @@ One newspaper per server; a second newspaper is a second deployment.
 - **Section** — name, colour, order, settings (JSON, overrides only)
 - **SectionRole** — user × section × role (`SECTION_EDITOR` | `REPORTER`). Newspaper-wide roles (`PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`) are Keycloak groups, not rows.
 - **Trust** — approving level × trusted user (+ who set it). One row skips that level for that user.
-- **Article** — kicker, headline, subheadline, lead, body (structured JSON, validated server-side against an allowlist; concrete format chosen with the editor), author, section, status, pending approval level, emergency-brake lock, lead image
-- **ArticleRevision** — revisions; `liveRevision` points to the published one
+- **Article** — author (token `sub` plus username/display-name snapshot for the byline), status (`DRAFT` | `SUBMITTED` | `PUBLISHED` | `OFFLINE`; `SUBMITTED` reserved for the approval chain), live revision (by number, `NULL` until the first publication), first publication time, optimistic-lock version; later: section, pending approval level, emergency-brake lock, lead image
+- **ArticleRevision** — numbered per article (`1, 2, …`), holds the content: kicker, headline, subheadline, lead (plain text) and body (**body format v1**: structured JSON of blocks — paragraph, subhead, quote, bullet list — with inline runs whose only mark is bold; validated server-side against an allowlist, never raw HTML). The latest revision is the **working revision**: saves overwrite it until it is published; after that the next save starts a new revision. Publishing makes the latest revision the article's live revision, which stays unchanged until the next publication. Taking offline keeps the live revision reference.
 - **ReviewNote** — feedback to the author on rejection
 - **Issue** — number and publication date; groups articles; basis for the issue print view
 - **Media** — upload, EXIF-stripped, resized (thumbnail / web / print)
@@ -121,13 +121,16 @@ Draft only — the contract becomes binding in `ai/primer/endpoints.md` once an 
 GET    /api/newspaper                     name, subtitle, effective settings
 GET    /api/sections
 POST   /api/sections                      editor-in-chief+
-GET    /api/articles?status=…             my articles / archive
-GET    /api/articles/{id}
-POST   /api/articles                      reporter+
-PUT    /api/articles/{id}                 creates a new revision
+GET    /api/articles?status=…&mine=true   my articles / archive                              (implemented)
+GET    /api/articles/{id}                                                                    (implemented)
+POST   /api/articles                      reporter+                                          (implemented)
+PUT    /api/articles/{id}                 overwrites the working revision, or starts a new one after a publication (implemented)
+DELETE /api/articles/{id}                 author, only if never published                    (implemented)
 POST   /api/articles/{id}/publish         → PUBLISHED or SUBMITTED + pending level (server decides)
 POST   /api/articles/{id}/approve|reject  holder of the pending level
-POST   /api/articles/{id}/offline         author, section editor, editor-in-chief, publisher (publisher ⇒ locked)
+POST   /api/articles/{id}/offline         take offline: author, section editor, editor-in-chief, publisher (publisher ⇒ locked)
+GET    /api/articles/{id}/revisions       revision history                                   (implemented)
+GET    /api/articles/{id}/revisions/{n}   one revision                                       (implemented)
 GET    /api/review-queue                  what I have to approve (empty for solo)
 GET    /api/accounts                      accounts I may manage
 POST   /api/accounts                      create account (role ≤ mine) → username + pass-phrase for the slip
@@ -139,7 +142,7 @@ POST   /api/media                         reporter+ (size/type limit)
 GET    /api/me                            my roles, scopes and allowed actions
 ```
 
-Article responses carry `allowedActions`; clients render buttons from it and never re-implement the approval chain.
+Article responses carry `allowedActions`; clients render buttons from it and never re-implement the approval chain. In M1, `publish` goes directly to `PUBLISHED` for a publisher-author only and `offline` does not lock; see `ai/primer/endpoints.md` for the binding contract of the implemented endpoints.
 
 ## Views
 

@@ -6,13 +6,17 @@ change — never tick it off.
 Milestones from `docs/vision.md`; details in `docs/`.
 
 ## M1 — Solo newspaper
-Articles with revisions, editor at level `standard` (structured JSON body, server-side
-allowlist validation; evaluate a Compose rich-text editor, fallback block-based),
-publish/offline for an author who holds all roles (no approval yet), reader front page with
-masthead and article page. See `docs/roles-and-workflow.md` stage 1.
-Enforce `visibility=private` in the reader (M0 only stores the setting): reader login via the
-authorization code flow with a new confidential reader client in the realm template (and dev
-realm, drift test), session cookie on the reader origin.
+Article model, body format v1, REST contract and `allowedActions` are done (`articles-core`).
+Remaining, each its own change:
+- `article-editor` — admin app editor at level `standard` on top of `/api/articles` and body
+  format v1 (evaluate a Compose rich-text editor, fallback block-based; typed body model and
+  mapping in the admin app), "My articles" list, autosave with `version`, publish/offline
+  buttons from `allowedActions`.
+- `reader-articles` — reader front page with masthead and article page rendering the live
+  revision. Enforce `visibility=private` in the reader (M0 only stores the setting): reader
+  login via the authorization code flow with a new confidential reader client in the realm
+  template (and dev realm, drift test), session cookie on the reader origin.
+See `docs/roles-and-workflow.md` stage 1.
 
 ## M2 — Accounts & sections
 Extend the Keycloak Admin client from M0 (service account already holds `manage-users`,
@@ -25,8 +29,9 @@ within own scope); extend `GET /api/me` additively (section roles, scopes, allow
 ## M3 — Approval chain
 Chain section editor → editor-in-chief → publisher with skip rules (own role, trust, section
 without section editor), trust switches per person and level, `SUBMITTED` with pending
-level, review queue, review notes, emergency-brake lock (only publishers release),
-`allowedActions` in responses.
+level, review queue, review notes, emergency-brake lock (only publishers release).
+`allowedActions` already exists on every article response (`ArticlePolicy`, `articles-core`);
+M3 only extends its rules (approve/reject, submit for editors-in-chief and reporters, lock).
 
 ## M4 — Look
 Reader theme built on `--presserl-*` design tokens per `docs/design-guidelines.md`,

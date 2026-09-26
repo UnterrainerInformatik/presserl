@@ -1,0 +1,107 @@
+package info.unterrainer.presserl.article;
+
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
+/**
+ * Reads an article request body strictly: the four text fields (default empty, trimmed, length
+ * limited, no control characters), the body (default empty document, validated by
+ * {@link ArticleBodyValidator}) and, for saves, the required {@code version}. Unknown fields are
+ * rejected. All violations are reported together.
+ */
+public final class ArticleContentValidator {
+
+    public static final String VERSION = "version";
+    private static final Set<String> CONTENT_FIELDS = Set.of("kicker", "headline", "subheadline", "lead", "body");
+
+    private ArticleContentValidator() {
+    }
+
+    /**
+     * A validated request: the content and, if requested, the client's article version.
+     */
+    public record Request(ArticleContent content, Long version) {
+    }
+
+    /**
+     * Validates {@code json}; {@code withVersion} requires a {@code version} field (saves).
+     *
+     * @throws ArticleException with status {@code 400} listing every violation
+     */
+    public static Request validate(JsonNode json, boolean withVersion) {
+        List<FieldError> errors = new ArrayList<>();
+        if (json == null || json.isNull()) {
+            json = JsonNodeFactory.instance.objectNode();
+        }
+        if (!json.isObject()) {
+            throw ArticleException.invalid(null, "request body must be a JSON object");
+        }
+        for (Iterator<String> names = json.fieldNames(); names.hasNext();) {
+            String name = names.next();
+            if (!CONTENT_FIELDS.contains(name) && !(withVersion && VERSION.equals(name))) {
+                errors.add(new FieldError(name, "unknown field"));
+            }
+        }
+        String kicker = text(json, "kicker", ArticleLimits.TEXT_FIELD_MAX, errors);
+        String headline = text(json, "headline", ArticleLimits.TEXT_FIELD_MAX, errors);
+        String subheadline = text(json, "subheadline", ArticleLimits.TEXT_FIELD_MAX, errors);
+        String lead = text(json, "lead", ArticleLimits.LEAD_MAX, errors);
+        JsonNode body = json.get("body");
+        if (body == null || body.isNull()) {
+            body = emptyBody();
+        } else {
+            errors.addAll(ArticleBodyValidator.validate(body, "body"));
+        }
+        Long version = null;
+        if (withVersion) {
+            JsonNode v = json.get(VERSION);
+            if (v == null || v.isNull()) {
+                errors.add(new FieldError(VERSION, "is required"));
+            } else if (!v.isIntegralNumber() || !v.canConvertToLong()) {
+                errors.add(new FieldError(VERSION, "must be an integer"));
+            } else {
+                version = v.asLong();
+            }
+        }
+        if (!errors.isEmpty()) {
+            throw ArticleException.invalid(errors);
+        }
+        return new Request(new ArticleContent(kicker, headline, subheadline, lead, body), version);
+    }
+
+    /**
+     * The empty document {@code {"version":1,"blocks":[]}}.
+     */
+    public static ObjectNode emptyBody() {
+        ObjectNode body = JsonNodeFactory.instance.objectNode();
+        body.put("version", ArticleLimits.BODY_FORMAT_VERSION);
+        body.putArray("blocks");
+        return body;
+    }
+
+    private static String text(JsonNode json, String field, int max, List<FieldError> errors) {
+        JsonNode node = json.get(field);
+        if (node == null || node.isNull()) {
+            return "";
+        }
+        if (!node.isTextual()) {
+            errors.add(new FieldError(field, "must be a string"));
+            return "";
+        }
+        String value = node.asText();
+        if (TextRules.hasControlCharacter(value, false)) {
+            errors.add(new FieldError(field, "must not contain control characters or line breaks"));
+        }
+        value = value.strip();
+        if (TextRules.length(value) > max) {
+            errors.add(new FieldError(field, "must be at most " + max + " characters"));
+        }
+        return value;
+    }
+}

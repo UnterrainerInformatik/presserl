@@ -30,3 +30,98 @@ data class MeDto(
     val displayName: String,
     val roles: List<String>,
 )
+
+/** Author snapshot of an article. */
+@Serializable
+data class AuthorDto(
+    val username: String,
+    val displayName: String,
+)
+
+/**
+ * `GET/POST/PUT /api/articles/{id}`, publish and offline. Content fields are those of the latest
+ * revision ([revision]); [body] is format v1 (`{"version": 1, "blocks": [...]}`).
+ * Timestamps are ISO-8601 strings.
+ */
+@Serializable
+data class ArticleDto(
+    val id: Long,
+    val status: String,
+    val author: AuthorDto,
+    val revision: Int,
+    val liveRevision: Int? = null,
+    val hasUnpublishedChanges: Boolean,
+    val version: Long,
+    val createdAt: String,
+    val updatedAt: String,
+    val publishedAt: String? = null,
+    val kicker: String,
+    val headline: String,
+    val subheadline: String,
+    val lead: String,
+    val body: JsonObject,
+    val allowedActions: List<String>,
+)
+
+/** Entry of `GET /api/articles`. */
+@Serializable
+data class ArticleSummaryDto(
+    val id: Long,
+    val status: String,
+    val author: AuthorDto,
+    val headline: String,
+    val kicker: String,
+    val revision: Int,
+    val liveRevision: Int? = null,
+    val hasUnpublishedChanges: Boolean,
+    val updatedAt: String,
+    val publishedAt: String? = null,
+    val allowedActions: List<String>,
+)
+
+/** Request body of `POST /api/articles` and, with a version, `PUT /api/articles/{id}`. A missing [body] means an empty document. */
+@Serializable
+data class ArticleContent(
+    val kicker: String = "",
+    val headline: String = "",
+    val subheadline: String = "",
+    val lead: String = "",
+    val body: JsonObject? = null,
+)
+
+/** Entry of `GET /api/articles/{id}/revisions`. */
+@Serializable
+data class RevisionSummaryDto(
+    val number: Int,
+    val headline: String,
+    val createdAt: String,
+    val updatedAt: String,
+    val publishedAt: String? = null,
+    val live: Boolean,
+)
+
+/** `GET /api/articles/{id}/revisions/{number}` */
+@Serializable
+data class RevisionDto(
+    val number: Int,
+    val headline: String,
+    val createdAt: String,
+    val updatedAt: String,
+    val publishedAt: String? = null,
+    val live: Boolean,
+    val kicker: String,
+    val subheadline: String,
+    val lead: String,
+    val body: JsonObject,
+)
+
+/** Error body of refused article requests (`400`, `403`, `404`, `409`). */
+@Serializable
+data class ApiErrorDto(val errors: List<FieldErrorDto>)
+
+/** [field] is a path such as `body.blocks[2].content[0].text`, or `null` if the error concerns no field. */
+@Serializable
+data class FieldErrorDto(
+    val field: String? = null,
+    val message: String,
+)

@@ -1,0 +1,291 @@
+### Token for the publisher
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{username}}&password={{password}}
+
+> {%
+    client.global.set("accessToken", response.body.access_token);
+%}
+
+### Token for the editor-in-chief
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{chiefUsername}}&password={{chiefPassword}}
+
+> {%
+    client.global.set("chiefToken", response.body.access_token);
+%}
+
+### Token for a reader
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{readerUsername}}&password={{readerPassword}}
+
+> {%
+    client.global.set("readerToken", response.body.access_token);
+%}
+
+### Create a draft
+POST {{baseUrl}}/api/articles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "kicker": "Garden", "headline": "The pumpkin is growing" }
+
+> {%
+    client.test("201 draft with revision 1", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        client.assert(response.headers.valueOf("Location").endsWith("/api/articles/" + response.body.id), "Location");
+        client.assert(response.body.status === "DRAFT", "status " + response.body.status);
+        client.assert(response.body.revision === 1, "revision");
+        client.assert(response.body.body.version === 1 && response.body.body.blocks.length === 0, "empty body");
+        client.assert(JSON.stringify(response.body.allowedActions) === '["EDIT","PUBLISH","DELETE"]',
+            "allowedActions " + JSON.stringify(response.body.allowedActions));
+    });
+    client.global.set("articleId", response.body.id);
+    client.global.set("version", response.body.version);
+%}
+
+### Save (autosave overwrites the working revision)
+PUT {{baseUrl}}/api/articles/{{articleId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "version": {{version}},
+  "kicker": "Garden",
+  "headline": "The pumpkin is huge",
+  "lead": "Our pumpkin weighs 12 kilos.",
+  "body": {
+    "version": 1,
+    "blocks": [
+      { "type": "paragraph", "content": [ { "text": "It started " }, { "text": "in May", "bold": true }, { "text": "." } ] },
+      { "type": "subhead", "text": "Watering" },
+      { "type": "quote", "content": [ { "text": "Every day!" } ] },
+      { "type": "list", "items": [ [ { "text": "Water" } ], [ { "text": "Sun" } ] ] }
+    ]
+  }
+}
+
+> {%
+    const before = Number(client.global.get("version"));
+    client.test("200, still revision 1, version increased", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.revision === 1, "revision " + response.body.revision);
+        client.assert(response.body.version > before, "version " + response.body.version + " vs " + before);
+        client.assert(response.body.body.blocks[0].content[1].bold === true, "bold run");
+    });
+    client.global.set("staleVersion", before);
+    client.global.set("version", response.body.version);
+%}
+
+### Stale save from a second tab
+PUT {{baseUrl}}/api/articles/{{articleId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "version": {{staleVersion}}, "headline": "Overwritten?" }
+
+> {%
+    client.test("409 with errors body", () => {
+        client.assert(response.status === 409, "status " + response.status);
+        client.assert(response.body.errors[0].field === null, "field");
+    });
+%}
+
+### Invalid body
+PUT {{baseUrl}}/api/articles/{{articleId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "version": {{version}},
+  "kicker": "01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789X",
+  "body": { "version": 1, "blocks": [ { "type": "html", "html": "<script>alert(1)</script>" } ] }
+}
+
+> {%
+    client.test("400 naming kicker and the block type", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        const fields = response.body.errors.map(e => e.field);
+        client.assert(fields.includes("kicker") && fields.includes("body.blocks[0].type"), JSON.stringify(fields));
+    });
+%}
+
+### Publish
+POST {{baseUrl}}/api/articles/{{articleId}}/publish
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200 published with revision 1 live", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.status === "PUBLISHED", "status " + response.body.status);
+        client.assert(response.body.liveRevision === 1, "liveRevision");
+        client.assert(response.body.publishedAt !== null, "publishedAt");
+        client.assert(JSON.stringify(response.body.allowedActions) === '["EDIT","TAKE_OFFLINE"]',
+            "allowedActions " + JSON.stringify(response.body.allowedActions));
+    });
+    client.global.set("version", response.body.version);
+%}
+
+### Edit after publish starts revision 2
+PUT {{baseUrl}}/api/articles/{{articleId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "version": {{version}}, "kicker": "Garden", "headline": "The pumpkin is enormous" }
+
+> {%
+    client.test("200 with revision 2, live stays 1", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.revision === 2, "revision " + response.body.revision);
+        client.assert(response.body.liveRevision === 1, "liveRevision");
+        client.assert(response.body.hasUnpublishedChanges === true, "hasUnpublishedChanges");
+    });
+%}
+
+### Editor-in-chief sees only TAKE_OFFLINE
+GET {{baseUrl}}/api/articles/{{articleId}}
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("200 with TAKE_OFFLINE only", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(JSON.stringify(response.body.allowedActions) === '["TAKE_OFFLINE"]',
+            "allowedActions " + JSON.stringify(response.body.allowedActions));
+    });
+%}
+
+### Republish
+POST {{baseUrl}}/api/articles/{{articleId}}/publish
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200 with revision 2 live", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.liveRevision === 2, "liveRevision");
+        client.assert(response.body.hasUnpublishedChanges === false, "hasUnpublishedChanges");
+    });
+%}
+
+### Editor-in-chief takes it offline
+POST {{baseUrl}}/api/articles/{{articleId}}/offline
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("200 offline, live revision kept", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.status === "OFFLINE", "status " + response.body.status);
+        client.assert(response.body.liveRevision === 2, "liveRevision");
+    });
+%}
+
+### A published-once article cannot be deleted
+DELETE {{baseUrl}}/api/articles/{{articleId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("409", () => {
+        client.assert(response.status === 409, "status " + response.status);
+    });
+%}
+
+### Revision history
+GET {{baseUrl}}/api/articles/{{articleId}}/revisions
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200 with revisions 2 (live) and 1", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(JSON.stringify(response.body.map(r => r.number)) === "[2,1]", "numbers");
+        client.assert(JSON.stringify(response.body.map(r => r.live)) === "[true,false]", "live");
+    });
+%}
+
+### One revision
+GET {{baseUrl}}/api/articles/{{articleId}}/revisions/1
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200 with the content of revision 1", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.headline === "The pumpkin is huge", "headline " + response.body.headline);
+        client.assert(response.body.body.blocks.length === 4, "blocks");
+    });
+%}
+
+### List own offline articles
+GET {{baseUrl}}/api/articles?status=OFFLINE&mine=true
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200 containing the article", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.some(a => a.id === Number(client.global.get("articleId"))), "article listed");
+        client.assert(response.body.every(a => a.status === "OFFLINE"), "only OFFLINE");
+    });
+%}
+
+### Unknown status filter
+GET {{baseUrl}}/api/articles?status=ARCHIVED
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("400 naming status", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "status", "field");
+    });
+%}
+
+### Create a draft to delete
+POST {{baseUrl}}/api/articles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{}
+
+> {%
+    client.global.set("draftId", response.body.id);
+%}
+
+### Delete the draft
+DELETE {{baseUrl}}/api/articles/{{draftId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("204", () => {
+        client.assert(response.status === 204, "status " + response.status);
+    });
+%}
+
+### Deleted draft is gone
+GET {{baseUrl}}/api/articles/{{draftId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("404", () => {
+        client.assert(response.status === 404, "status " + response.status);
+    });
+%}
+
+### Reader is refused
+GET {{baseUrl}}/api/articles
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("403", () => {
+        client.assert(response.status === 403, "status " + response.status);
+    });
+%}
+
+### Without a token
+GET {{baseUrl}}/api/articles
+
+> {%
+    client.test("401", () => {
+        client.assert(response.status === 401, "status " + response.status);
+    });
+%}

@@ -189,6 +189,38 @@
           "temporary": false
         }
       ]
+    },
+    {
+      "username": "chief",
+      "enabled": true,
+      "firstName": "Chief",
+      "lastName": "Editor",
+      "groups": [
+        "/editor-in-chief"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "chief",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "reader",
+      "enabled": true,
+      "firstName": "Reader",
+      "lastName": "Test",
+      "groups": [
+        "/reader"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "reader",
+          "temporary": false
+        }
+      ]
     }
   ],
   "components": {
