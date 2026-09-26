@@ -13,4 +13,4 @@
 ## 3. Verification
 
 - [x] 3.1 Run the backend test suite locally (`./mvnw verify` in `backend/`)
-- [ ] 3.2 After deploy: `curl -I` on `https://presserl.unterrainer.info/admin/composeApp.js` and one `.wasm` shows the new headers
+- [x] 3.2 After deploy: `curl -I` on `https://presserl.unterrainer.info/admin/composeApp.js` and one `.wasm` shows the new headers
