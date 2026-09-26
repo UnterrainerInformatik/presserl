@@ -151,6 +151,12 @@ class AccountResourceTest {
     }
 
     @Test
+    void suggestionForShortFirstNameIsNumbered() {
+        as(publisher).queryParam("firstName", "Li").get("/api/accounts/username-suggestion").then()
+                .statusCode(200).body("username", equalTo("li-1"));
+    }
+
+    @Test
     void suggestionWithNothingUsableIsUser() {
         as(publisher).queryParam("firstName", "李").get("/api/accounts/username-suggestion").then()
                 .statusCode(200).body("username", equalTo("user"));
@@ -223,6 +229,15 @@ class AccountResourceTest {
                 .then().statusCode(400).body("errors.field", contains("username", "roles"));
 
         assertThat(realm.users().searchByUsername("max mustermann", true)).isEmpty();
+    }
+
+    @Test
+    void tooShortUsernameIsRejected() {
+        post(publisher, "li", "[\"READER\"]", "Li").then().statusCode(400)
+                .body("errors.field", contains("username"))
+                .body("errors.message", contains("must be at least 3 characters"));
+
+        assertThat(realm.users().searchByUsername("li", true)).isEmpty();
     }
 
     @Test

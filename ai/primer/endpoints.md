@@ -343,7 +343,8 @@ Every account of the realm except service accounts, sorted by `username`. At mos
 A free username derived from a first name: lower case; `ä`→`ae`, `ö`→`oe`, `ü`→`ue`, `ß`→`ss`;
 other diacritics dropped; every run outside `a-z0-9` → one `-`; leading/trailing `-` removed; at
 most 32 characters; `user` when nothing is left. If taken, `-2`, `-3`, … is appended (base
-shortened to stay within 32).
+shortened to stay within 32). A base shorter than 3 characters is never returned as is but
+numbered from `-1` (`li` → `li-1`, then `li-2`, …), so every suggestion is a valid username.
 
 - **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`
 - **Query:** `firstName` (required, not blank)
@@ -362,7 +363,7 @@ Creates an enabled account with a generated default password and joins the group
   ```
   `firstName` required, not blank, ≤ 100 characters; `lastName` optional, ≤ 100; names must not
   contain control characters and are stored trimmed. `username` must match
-  `^[a-z0-9]+(-[a-z0-9]+)*$`, ≤ 32 characters, not start with `service-account-`. `roles`: at least
+  `^[a-z0-9]+(-[a-z0-9]+)*$`, 3–32 characters, not start with `service-account-`. `roles`: at least
   one of `PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`; duplicates are collapsed. Unknown fields are
   rejected.
 - **Response `201`:** header `Location: /api/accounts/{id}`

@@ -9,10 +9,12 @@ import java.util.regex.Pattern;
  * Derives a username from a first name: lower case, German umlauts and {@code ß} spelled out,
  * other diacritics dropped, every run outside {@code a-z0-9} turned into one {@code -}, at most
  * {@value #MAX_LENGTH} characters, {@code user} when nothing is left. Collisions get {@code -2},
- * {@code -3}, …
+ * {@code -3}, … A base shorter than {@value #MIN_LENGTH} characters is never used as is but numbered
+ * from {@code -1} on ({@code li-1}, {@code li-2}, …).
  */
 public final class UsernameDeriver {
 
+    public static final int MIN_LENGTH = 3;
     public static final int MAX_LENGTH = 32;
     static final String FALLBACK = "user";
 
@@ -50,11 +52,14 @@ public final class UsernameDeriver {
     }
 
     /**
-     * The first of {@code base}, {@code base-2}, {@code base-3}, … that is not {@code taken}.
+     * The first of {@code base}, {@code base-2}, {@code base-3}, … that is not {@code taken}; for a
+     * base shorter than {@value #MIN_LENGTH} characters the first of {@code base-1}, {@code base-2},
+     * ….
      */
     public static String firstFree(String base, Predicate<String> taken) {
+        boolean tooShort = base.length() < MIN_LENGTH;
         for (int n = 1;; n++) {
-            String candidate = withSuffix(base, n);
+            String candidate = tooShort ? base + "-" + n : withSuffix(base, n);
             if (!taken.test(candidate)) {
                 return candidate;
             }

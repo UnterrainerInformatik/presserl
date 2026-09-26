@@ -66,4 +66,16 @@ class UsernameDeriverTest {
         assertThat(UsernameDeriver.firstFree("anna", taken::contains)).isEqualTo("anna-3");
         assertThat(UsernameDeriver.firstFree("lena", taken::contains)).isEqualTo("lena");
     }
+
+    @Test
+    void shortBaseIsNumberedFromOne() {
+        assertThat(UsernameDeriver.firstFree("li", Set.<String>of()::contains)).isEqualTo("li-1");
+        assertThat(UsernameDeriver.firstFree("li", Set.of("li-1")::contains)).isEqualTo("li-2");
+        assertThat(UsernameDeriver.firstFree("a", Set.<String>of()::contains)).isEqualTo("a-1");
+    }
+
+    @Test
+    void threeCharactersStayUnsuffixed() {
+        assertThat(UsernameDeriver.firstFree("max", Set.<String>of()::contains)).isEqualTo("max");
+    }
 }

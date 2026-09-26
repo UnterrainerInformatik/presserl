@@ -16,8 +16,8 @@ import info.unterrainer.presserl.auth.NewspaperRole;
 /**
  * Reads a {@code POST /api/accounts} body strictly and reports all violations together: names
  * (trimmed, at most {@value #NAME_MAX} characters, no control characters, first name required),
- * username (lower-case words joined by {@code -}, at most {@value UsernameDeriver#MAX_LENGTH}
- * characters, not a service-account name), roles (at least one known role; duplicates collapsed)
+ * username (lower-case words joined by {@code -}, {@value UsernameDeriver#MIN_LENGTH} to
+ * {@value UsernameDeriver#MAX_LENGTH} characters, not a service-account name), roles (at least one known role; duplicates collapsed)
  * and no unknown fields.
  */
 public final class AccountRequestValidator {
@@ -90,7 +90,9 @@ public final class AccountRequestValidator {
             return null;
         }
         String value = node.asText();
-        if (value.length() > UsernameDeriver.MAX_LENGTH) {
+        if (value.length() < UsernameDeriver.MIN_LENGTH) {
+            errors.add(new FieldError("username", "must be at least " + UsernameDeriver.MIN_LENGTH + " characters"));
+        } else if (value.length() > UsernameDeriver.MAX_LENGTH) {
             errors.add(new FieldError("username", "must be at most " + UsernameDeriver.MAX_LENGTH + " characters"));
         } else if (!USERNAME.matcher(value).matches()) {
             errors.add(new FieldError("username",

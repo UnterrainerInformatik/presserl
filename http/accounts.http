@@ -74,6 +74,17 @@ Authorization: Bearer {{accessToken}}
     });
 %}
 
+### Username suggestion for a short first name is numbered
+GET {{baseUrl}}/api/accounts/username-suggestion?firstName=Li
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("li-1", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.username === "li-1", "username " + response.body.username);
+    });
+%}
+
 ### Suggestion for a free username based on "Http Test"
 GET {{baseUrl}}/api/accounts/username-suggestion?firstName=Http%20Test
 Authorization: Bearer {{accessToken}}
@@ -151,5 +162,21 @@ Content-Type: application/json
         client.assert(response.status === 400, "status " + response.status);
         const fields = response.body.errors.map(e => e.field);
         client.assert(JSON.stringify(fields) === '["username","roles"]', JSON.stringify(fields));
+    });
+%}
+
+### Username too short
+POST {{baseUrl}}/api/accounts
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "firstName": "Li", "username": "li", "roles": ["READER"] }
+
+> {%
+    client.test("400 at username", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        const fields = response.body.errors.map(e => e.field);
+        client.assert(JSON.stringify(fields) === '["username"]', JSON.stringify(response.body));
+        client.assert(response.body.errors[0].message === "must be at least 3 characters", JSON.stringify(response.body));
     });
 %}
