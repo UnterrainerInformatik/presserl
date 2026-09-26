@@ -8,10 +8,6 @@ Milestones from `docs/vision.md`; details in `docs/`.
 ## M1 — Solo newspaper
 Article model, body format v1, REST contract and `allowedActions` are done (`articles-core`).
 Remaining, each its own change:
-- `article-editor` — admin app editor at level `standard` on top of `/api/articles` and body
-  format v1 (evaluate a Compose rich-text editor, fallback block-based; typed body model and
-  mapping in the admin app), "My articles" list, autosave with `version`, publish/offline
-  buttons from `allowedActions`.
 - `reader-articles` — reader front page with masthead and article page rendering the live
   revision. Enforce `visibility=private` in the reader (M0 only stores the setting): reader
   login via the authorization code flow with a new confidential reader client in the realm
