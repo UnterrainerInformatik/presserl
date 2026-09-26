@@ -17,9 +17,99 @@ body {
 .masthead__name {
   margin: 0;
   font-size: 3rem;
+  font-weight: bold;
 }
 
 .masthead__subtitle {
   margin: 0.25rem 0 0;
+  font-style: italic;
+}
+
+.masthead__name a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.note {
+  margin: 2rem 0;
+  text-align: center;
+  font-style: italic;
+}
+
+/* Front page: lead story across the full width, the other stories as cards */
+.story {
+  padding: 1rem 0;
+  border-bottom: 1px solid #ccc;
+}
+
+.story--lead .story__headline {
+  font-size: 2.25rem;
+}
+
+.stories {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: 0 1.5rem;
+}
+
+.story__kicker,
+.article__kicker {
+  margin: 0;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.story__headline {
+  margin: 0.25rem 0;
+}
+
+.story__headline a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.story__headline a:hover,
+.story__headline a:focus {
+  text-decoration: underline;
+}
+
+.story__lead {
+  margin: 0.5rem 0;
+}
+
+.story__meta,
+.article__meta {
+  margin: 0.5rem 0;
+  font-size: 0.875rem;
+  color: #555;
+}
+
+/* Article page: a single left-aligned reading column */
+.article {
+  max-width: 65ch;
+  margin: 1.5rem 0;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.article__headline {
+  margin: 0.25rem 0;
+  line-height: 1.2;
+}
+
+.article__subheadline {
+  margin: 0.5rem 0;
+  font-size: 1.25rem;
+}
+
+.article__lead {
+  font-weight: bold;
+}
+
+.article__body blockquote {
+  margin: 1rem 0;
+  padding-left: 1rem;
+  border-left: 3px solid #ccc;
   font-style: italic;
 }

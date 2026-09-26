@@ -1,19 +1,19 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{name}</title>
-  <link rel="stylesheet" href="/reader/reader.css">
-</head>
-<body>
-  <header class="masthead">
-    <h1 class="masthead__name">{name}</h1>
-    {#if subtitle}
-    <p class="masthead__subtitle">{subtitle}</p>
-    {/if}
-  </header>
-  <main data-view="frontpage">
-  </main>
-</body>
-</html>
+{#include layout/reader}
+{#masthead name=name subtitle=subtitle linked=false /}
+<main data-view="frontpage">
+  {#if privateNewspaper}
+  <p class="note">{msg:privateNote}</p>
+  {#else if leadStory}
+  {#story article=leadStory cls="story story--lead" /}
+  {#if stories}
+  <div class="stories">
+    {#for other in stories}
+    {#story article=other cls="story" /}
+    {/for}
+  </div>
+  {/if}
+  {#else}
+  <p class="note">{msg:emptyNote}</p>
+  {/if}
+</main>
+{/include}

@@ -1,0 +1,126 @@
+### Token for the publisher
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{username}}&password={{password}}
+
+> {%
+    client.global.set("accessToken", response.body.access_token);
+%}
+
+### Create an article with every block type and markup in the headline
+POST {{baseUrl}}/api/articles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "kicker": "Garden",
+  "headline": "<b>Pumpkin</b> record",
+  "lead": "The biggest one yet.",
+  "body": {"version": 1, "blocks": [
+    {"type": "paragraph", "content": [{"text": "It started "}, {"text": "in May", "bold": true}, {"text": ".\nThen it grew."}]},
+    {"type": "subhead", "text": "Watering"},
+    {"type": "quote", "content": [{"text": "Every day!"}]},
+    {"type": "list", "items": [[{"text": "Water"}], [{"text": "Sun"}]]}]}
+}
+
+> {%
+    client.global.set("readerArticleId", response.body.id);
+%}
+
+### The draft is not on the reader yet
+GET {{baseUrl}}/articles/{{readerArticleId}}
+
+> {%
+    client.test("404 page for a draft", () => {
+        client.assert(response.status === 404, "status " + response.status);
+        client.assert(!response.body.includes("Pumpkin"), "draft content leaked");
+    });
+%}
+
+### Publish it
+POST {{baseUrl}}/api/articles/{{readerArticleId}}/publish
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("published", () => client.assert(response.body.status === "PUBLISHED", "status " + response.body.status));
+    client.global.set("readerVersion", response.body.version);
+%}
+
+### Change it without publishing
+PUT {{baseUrl}}/api/articles/{{readerArticleId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "version": {{readerVersion}}, "headline": "Unpublished headline" }
+
+> {%
+    client.test("saved", () => client.assert(response.status === 200, "status " + response.status));
+%}
+
+### Front page (German by default)
+GET {{baseUrl}}/
+
+> {%
+    client.test("front page lists the live revision", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.headers.valueOf("Vary") === "Accept-Language", "Vary");
+        client.assert(response.body.includes('<html lang="de">'), "lang");
+        client.assert(response.body.includes('href="/articles/' + client.global.get("readerArticleId") + '"'), "link");
+        client.assert(response.body.includes("&lt;b&gt;Pumpkin&lt;/b&gt; record"), "escaped headline");
+        client.assert(!response.body.includes("Unpublished headline"), "unpublished changes leaked");
+    });
+%}
+
+### Article page
+GET {{baseUrl}}/articles/{{readerArticleId}}
+
+> {%
+    client.test("article page renders the live revision", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.includes('data-view="article"'), "view");
+        client.assert(response.body.includes("<p>It started <strong>in May</strong>.<br>Then it grew.</p>"), "paragraph");
+        client.assert(response.body.includes("<h2>Watering</h2>"), "subhead");
+        client.assert(response.body.includes("<blockquote><p>Every day!</p></blockquote>"), "quote");
+        client.assert(response.body.includes("Von publisher"), "byline");
+        client.assert(!response.body.includes("Unpublished headline"), "unpublished changes leaked");
+        client.assert(!response.body.includes("<script"), "script");
+    });
+%}
+
+### Article page in English
+GET {{baseUrl}}/articles/{{readerArticleId}}
+Accept-Language: en-GB,en;q=0.9
+
+> {%
+    client.test("English chrome", () => {
+        client.assert(response.body.includes('<html lang="en">'), "lang");
+        client.assert(response.body.includes("By publisher"), "byline");
+        client.assert(response.body.includes("Published on "), "date wording");
+    });
+%}
+
+### Malformed id
+GET {{baseUrl}}/articles/abc
+
+> {%
+    client.test("404 page", () => {
+        client.assert(response.status === 404, "status " + response.status);
+        client.assert(response.body.includes('<a href="/">Zur Titelseite</a>'), "link to front page");
+    });
+%}
+
+### Clean up: take the article offline, it disappears from the reader
+POST {{baseUrl}}/api/articles/{{readerArticleId}}/offline
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("offline", () => client.assert(response.body.status === "OFFLINE", "status " + response.body.status));
+%}
+
+### Offline article is gone
+GET {{baseUrl}}/articles/{{readerArticleId}}
+
+> {%
+    client.test("404 after taking offline", () => client.assert(response.status === 404, "status " + response.status));
+%}

@@ -8,10 +8,10 @@ Milestones from `docs/vision.md`; details in `docs/`.
 ## M1 — Solo newspaper
 Article model, body format v1, REST contract and `allowedActions` are done (`articles-core`).
 Remaining, each its own change:
-- `reader-articles` — reader front page with masthead and article page rendering the live
-  revision. Enforce `visibility=private` in the reader (M0 only stores the setting): reader
-  login via the authorization code flow with a new confidential reader client in the realm
-  template (and dev realm, drift test), session cookie on the reader origin.
+- `reader-login` — enforce `visibility=private` in the reader (until then `reader-articles`
+  hides all articles of a private newspaper): reader login via the authorization code flow with
+  a new confidential reader client in the realm template (and dev realm, drift test), session
+  cookie on the reader origin, `READER` or higher required.
 See `docs/roles-and-workflow.md` stage 1.
 
 ## M2 — Accounts & sections

@@ -153,7 +153,7 @@ Article responses carry `allowedActions`; clients render buttons from it and nev
 3. **Section / archive / issues**
 4. **Print views** — article and whole issue
 
-Every reader view sets `data-view="…"` on `<main>` (e.g. `frontpage`, `article`, `section`, `print-issue`) as a stable hook for custom CSS.
+Every reader view sets `data-view="…"` on `<main>` (e.g. `frontpage`, `article`, `not-found`, `section`, `print-issue`) as a stable hook for custom CSS.
 
 ### Administration app (Compose)
 

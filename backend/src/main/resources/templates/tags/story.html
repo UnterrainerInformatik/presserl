@@ -1,0 +1,10 @@
+<article class="{cls}">
+  {#if article.kicker}
+  <p class="story__kicker">{article.kicker}</p>
+  {/if}
+  <h2 class="story__headline"><a href="/articles/{article.id}">{article.headline}</a></h2>
+  {#if article.lead}
+  <p class="story__lead">{article.lead}</p>
+  {/if}
+  <p class="story__meta">{msg:byline(article.byline)} · <time datetime="{article.publishedAt.isoDate}">{article.publishedAt.longDate}</time></p>
+</article>

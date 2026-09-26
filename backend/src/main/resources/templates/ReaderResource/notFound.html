@@ -1,0 +1,9 @@
+{#include layout/reader}
+{#title}{msg:notFoundTitle} – {name}{/title}
+{#masthead name=name subtitle=subtitle linked=true /}
+<main data-view="not-found">
+  <h1>{msg:notFoundTitle}</h1>
+  <p>{msg:notFoundText}</p>
+  <p><a href="/">{msg:backToFrontPage}</a></p>
+</main>
+{/include}

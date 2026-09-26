@@ -1,0 +1,10 @@
+<header class="masthead">
+  {#if linked}
+  <p class="masthead__name"><a href="/">{name}</a></p>
+  {#else}
+  <h1 class="masthead__name">{name}</h1>
+  {/if}
+  {#if subtitle}
+  <p class="masthead__subtitle">{subtitle}</p>
+  {/if}
+</header>
