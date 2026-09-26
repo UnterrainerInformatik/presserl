@@ -15,6 +15,18 @@ public interface ReaderMessages {
     @Message("Diese Zeitung ist privat.")
     String privateNote();
 
+    @Message("Anmelden")
+    String login();
+
+    @Message("Dieses Konto hat keinen Zugang zu dieser Zeitung.")
+    String noAccessNote();
+
+    @Message("Angemeldet als {name}")
+    String loggedInAs(String name);
+
+    @Message("Abmelden")
+    String logout();
+
     @Message("Von {name}")
     String byline(String name);
 

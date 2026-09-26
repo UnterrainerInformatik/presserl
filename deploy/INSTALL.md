@@ -23,7 +23,8 @@ Copy this directory (`compose.yaml`, `.env.example`, `keycloak/`) to the host, e
 
 The template `keycloak/presserl-realm.json` defines the realm `presserl` with the groups
 `publisher`, `editor-in-chief` and `reader`, the public client `presserl-admin` (login for the
-admin app) and the confidential client `presserl-backend` (used by the backend to manage users).
+admin app), the confidential client `presserl-reader` (login for the reader) and the confidential
+client `presserl-backend` (used by the backend to manage users).
 
 1. Put your hostname into the template:
    ```sh
@@ -34,7 +35,9 @@ admin app) and the confidential client `presserl-backend` (used by the backend t
    (To use a different realm name, change `"realm"` in the file before importing; the issuer URL
    below then carries that name.)
 3. In the new realm: **Clients** → `presserl-backend` → **Credentials** → copy the
-   **Client secret**. Keycloak generated it during the import; it goes into `.env` below.
+   **Client secret**, then do the same for **Clients** → `presserl-reader`. Keycloak generated
+   both secrets during the import; they go into `.env` below (`PRESSERL_OIDC_BACKEND_SECRET` and
+   `PRESSERL_OIDC_READER_SECRET`).
 
 Your issuer URL is `https://<your-keycloak>/realms/presserl`.
 
@@ -60,12 +63,13 @@ Steps 1 and 3 above stay the same; instead of step 2, do the following in that r
 5. **Realm settings → Action (top right) → Partial import:** choose
    `keycloak/presserl-realm.json`, tick *Users*, *Clients* and *Groups*, set
    *If a resource exists* to *Skip*, import. The result lists the groups `publisher`,
-   `editor-in-chief`, `reader`, the clients `presserl-admin`, `presserl-backend` and the user
-   `service-account-presserl-backend`.
+   `editor-in-chief`, `reader`, the clients `presserl-admin`, `presserl-reader`,
+   `presserl-backend` and the user `service-account-presserl-backend`.
 6. **Check** under **Clients → presserl-backend → Service accounts roles** that
    `realm-management` grants `manage-users`, `view-users`, `query-users` and `query-groups`;
    assign missing ones with *Assign role → Filter by clients*.
-7. Continue with step 3 above (copy the client secret of `presserl-backend`).
+7. Continue with step 3 above (copy the client secrets of `presserl-backend` and
+   `presserl-reader`).
 
 ## 3. Fill in `.env`
 
@@ -148,6 +152,20 @@ certificate and sets the forwarding headers by itself.
 The publisher is created only once. Changing the variables later does not change the account;
 manage it in Keycloak.
 
+### Private newspaper and readers
+
+A newspaper is public by default: everyone can read the reader without logging in. To make it
+private, set `PRESSERL_NEWSPAPER_VISIBILITY=private` in `.env` and run `docker compose up -d`.
+The reader's front page then shows only the masthead, a note that the newspaper is private and a
+**Log in** link.
+
+Readers are Keycloak users of the Presserl realm. For each reader, in the Keycloak admin console:
+**Users** → **Create new user** (username, first and last name) → **Credentials** → set a
+password → **Groups** → **Join group** → `reader`. Members of `editor-in-chief` and `publisher`
+may read as well. A reader logs in via the front page's **Log in** link and sees their name and a
+**Log out** link at the top of every page. Accounts without one of these groups can log in, but
+see a note that they have no access.
+
 ## 7. Updating
 
 Set the new version in `.env` (`PRESSERL_IMAGE=gufalcon/presserl:<tag>`), then:
@@ -171,6 +189,8 @@ its cache for `/admin/*` once when upgrading from such a version. Later updates 
 |---|---|
 | Keycloak shows **Invalid parameter: redirect_uri** | The hostname in the realm was not replaced (step 2.1) or differs from the one you open. Fix **Valid redirect URIs**, **Valid post logout redirect URIs** and **Web origins** of `presserl-admin` in Keycloak. |
 | `presserl` stays **unhealthy** / `/q/health/ready` reports `publisher-bootstrap` DOWN | The backend cannot create the first publisher. `docker compose logs presserl` names the cause: Keycloak unreachable from the container, wrong `PRESSERL_OIDC_BACKEND_SECRET`, or the group `publisher` missing in the realm. It retries automatically; fix the cause and wait. |
+| `presserl` exits at start naming `PRESSERL_OIDC_READER_SECRET` / `presserl.oidc.reader-secret` | The reader client secret is missing (new in this version). Import the client `presserl-reader` into the realm if it is missing (partial import as in step 2a.5), copy its secret (step 2.3) into `.env` and start again. |
+| Keycloak shows **Invalid parameter: redirect_uri** on the reader's **Log in** link | **Valid redirect URIs** / **Valid post logout redirect URIs** of `presserl-reader` do not match `https://<hostname>/*`. Fix them in Keycloak. |
 | `presserl` exits at start naming a variable | A mandatory variable in `.env` is missing or empty, or an optional one has an invalid value; the message lists the allowed values. |
 | Admin app loads but API calls answer **401** | `PRESSERL_OIDC_ISSUER` differs from the issuer in the tokens (check scheme, host and realm name), or the realm was changed so `presserl-admin` tokens no longer carry the `presserl-backend` audience. |
 | Admin app stays blank; the browser console shows **WebAssembly … unsupported MIME type 'text/html'** or a `.wasm` request answers **404** | A stale cached `composeApp.js` from the previous version references `.wasm` files the new image no longer contains. Hard-reload the page (Ctrl+Shift+R); if a CDN or caching proxy is in front, purge its cache for `/admin/*` (see step 7). |

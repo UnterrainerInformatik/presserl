@@ -25,6 +25,11 @@ body {
   font-style: italic;
 }
 
+.masthead__viewer {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+}
+
 .masthead__name a {
   color: inherit;
   text-decoration: none;

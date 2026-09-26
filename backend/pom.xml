@@ -15,6 +15,7 @@
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
         <quarkus.platform.version>3.33.3.3</quarkus.platform.version>
         <assertj.version>3.27.7</assertj.version>
+        <htmlunit.version>5.5.0</htmlunit.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.5.4</surefire-plugin.version>
     </properties>
@@ -95,6 +96,13 @@
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
             <version>${assertj.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <!-- Not managed by the Quarkus BOM -->
+            <groupId>org.htmlunit</groupId>
+            <artifactId>htmlunit</artifactId>
+            <version>${htmlunit.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

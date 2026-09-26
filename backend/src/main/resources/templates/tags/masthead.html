@@ -7,4 +7,7 @@
   {#if subtitle}
   <p class="masthead__subtitle">{subtitle}</p>
   {/if}
+  {#if viewerName}
+  <p class="masthead__viewer">{msg:loggedInAs(viewerName)} · <a href="/logout">{msg:logout}</a></p>
+  {/if}
 </header>

@@ -18,6 +18,22 @@ public interface ReaderMessagesEn extends ReaderMessages {
     String privateNote();
 
     @Override
+    @Message("Log in")
+    String login();
+
+    @Override
+    @Message("This account has no access to this newspaper.")
+    String noAccessNote();
+
+    @Override
+    @Message("Logged in as {name}")
+    String loggedInAs(String name);
+
+    @Override
+    @Message("Log out")
+    String logout();
+
+    @Override
     @Message("By {name}")
     String byline(String name);
 

@@ -11,13 +11,16 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import info.unterrainer.presserl.TestSupport;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
+import io.restassured.response.Response;
 import jakarta.inject.Inject;
 
 /**
- * A newspaper made private by the deployment ({@code PRESSERL_NEWSPAPER_VISIBILITY=private}).
+ * A newspaper made private by the deployment ({@code PRESSERL_NEWSPAPER_VISIBILITY=private}), seen by
+ * an anonymous visitor. Logged-in visitors are covered by {@link ReaderLoginTest}.
  */
 @QuarkusTest
 @TestProfile(ReaderPrivateTest.Private.class)
@@ -43,17 +46,56 @@ class ReaderPrivateTest {
     }
 
     @Test
-    void frontPageShowsOnlyMastheadAndPrivateNote() {
-        String html = given().get("/").then().statusCode(200).extract().asString();
+    void frontPageShowsOnlyMastheadPrivateNoteAndLoginLink() {
+        Response response = given().get("/");
 
-        assertThat(html).contains("<h1 class=\"masthead__name\">My Newspaper</h1>", "Diese Zeitung ist privat.")
-                .doesNotContain("Private headline", "class=\"story", "/articles/");
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.header("Cache-Control")).isEqualTo("private, no-store");
+        assertThat(response.asString())
+                .contains("<h1 class=\"masthead__name\">My Newspaper</h1>", "Diese Zeitung ist privat.",
+                        "<a href=\"/login\">Anmelden</a>")
+                .doesNotContain("Private headline", "class=\"story", "/articles/", "/logout");
     }
 
     @Test
-    void articlePageIsNotFound() {
-        String html = given().get("/articles/" + published).then().statusCode(404).extract().asString();
+    void publishedArticleRedirectsToLogin() {
+        assertLoginRedirect(String.valueOf(published), "/login?next=/articles/" + published);
+    }
 
-        assertThat(html).contains("<main data-view=\"not-found\">").doesNotContain("Private headline");
+    @Test
+    void unknownArticleRedirectsLikeAPublishedOne() {
+        assertLoginRedirect("999999", "/login?next=/articles/999999");
+    }
+
+    @Test
+    void malformedIdRedirectsEncoded() {
+        assertLoginRedirect("a%20b", "/login?next=/articles/a%2520b");
+    }
+
+    @Test
+    void logoutWithoutSessionGoesHome() {
+        Response response = given().redirects().follow(false).get("/logout");
+
+        assertThat(response.statusCode()).isEqualTo(303);
+        assertThat(response.header("Location")).endsWith(":8081/");
+        assertThat(response.header("Cache-Control")).isEqualTo("no-store");
+    }
+
+    @Test
+    void loginStartsTheCodeFlowWithTheReaderClient() {
+        Response response = given().redirects().follow(false).get("/login?next=/articles/" + published);
+
+        assertThat(response.statusCode()).isEqualTo(302);
+        assertThat(response.header("Location"))
+                .startsWith(TestSupport.issuer() + "/protocol/openid-connect/auth")
+                .contains("client_id=presserl-reader", "response_type=code", "code_challenge_method=S256");
+    }
+
+    private void assertLoginRedirect(String id, String location) {
+        Response response = given().redirects().follow(false).urlEncodingEnabled(false).get("/articles/" + id);
+
+        assertThat(response.statusCode()).isEqualTo(303);
+        assertThat(response.header("Location")).endsWith(":8081" + location);
+        assertThat(response.asString()).doesNotContain("Private headline");
     }
 }

@@ -58,7 +58,7 @@ class RealmTemplateDriftTest {
         Map<String, JsonNode> templateClients = clients(template);
         Map<String, JsonNode> devClients = clients(dev);
         devClients.keySet().removeAll(DEV_ONLY_CLIENTS);
-        assertThat(templateClients.keySet()).containsExactly("presserl-admin", "presserl-backend")
+        assertThat(templateClients.keySet()).containsExactly("presserl-admin", "presserl-backend", "presserl-reader")
                 .isEqualTo(devClients.keySet());
 
         templateClients.forEach((id, client) -> {
@@ -76,8 +76,23 @@ class RealmTemplateDriftTest {
     }
 
     @Test
+    void readerIsConfidentialCodeFlowOnly() {
+        JsonNode reader = clients(template).get("presserl-reader");
+        assertThat(reader.path("publicClient").asBoolean()).isFalse();
+        assertThat(reader.path("clientAuthenticatorType").asText()).isEqualTo("client-secret");
+        assertThat(reader.path("standardFlowEnabled").asBoolean()).isTrue();
+        assertThat(reader.path("directAccessGrantsEnabled").asBoolean()).isFalse();
+        assertThat(reader.path("implicitFlowEnabled").asBoolean()).isFalse();
+        assertThat(reader.path("serviceAccountsEnabled").asBoolean()).isFalse();
+        assertThat(reader.path("attributes").path("pkce.code.challenge.method").asText()).isEqualTo("S256");
+        assertThat(names(reader.path("redirectUris"), null)).containsExactly("https://presserl.example.org/*");
+        assertThat(reader.path("attributes").path("post.logout.redirect.uris").asText())
+                .isEqualTo("https://presserl.example.org/*");
+    }
+
+    @Test
     void templateCarriesNoSecretsAndNoLocalhost() {
-        assertThat(clients(template).get("presserl-backend").has("secret")).isFalse();
+        clients(template).forEach((id, client) -> assertThat(client.has("secret")).as(id).isFalse());
         assertThat(template.toString()).doesNotContain("localhost");
     }
 

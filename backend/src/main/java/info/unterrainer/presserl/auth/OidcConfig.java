@@ -30,6 +30,17 @@ public interface OidcConfig {
     Optional<String> backendSecret();
 
     /**
+     * Client id of the confidential reader client (reader login via the code flow).
+     */
+    @WithDefault("presserl-reader")
+    String readerClientId();
+
+    /**
+     * Secret of the confidential reader client; mandatory, it also encrypts the reader session cookie.
+     */
+    String readerSecret();
+
+    /**
      * The issuer's origin ({@code scheme://host[:port]}), as needed in a CSP source list.
      */
     default String issuerOrigin() {

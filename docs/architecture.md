@@ -28,7 +28,7 @@ presserl/                     # monorepo (upstream)
 ├── deploy/                   # reference deployment and templates
 │   ├── INSTALL.md            # step-by-step installation guide
 │   ├── compose.yaml
-│   ├── .env.example          # mandatory values only: hostname, DB password, OIDC issuer + secret, first publisher
+│   ├── .env.example          # mandatory values only: hostname, DB password, OIDC issuer + secrets, first publisher
 │   ├── keycloak/presserl-realm.json   # realm template for the operator's Keycloak (hostname placeholder)
 │   └── theme/                # template; overrides the default reader theme
 │       ├── custom.css
@@ -75,7 +75,7 @@ Deployment-only values (no defaults, set in `.env`):
 |---|---|
 | `PRESSERL_PUBLISHER_USERNAME` / `PRESSERL_PUBLISHER_PASSWORD` | **Bootstrap:** on first start, if no publisher exists, the backend creates this account in the `publisher` group; it holds all roles |
 | `PRESSERL_HOSTNAME`, `PRESSERL_DB_PASSWORD` | public DNS name (proxy rule, realm redirect URIs); database password |
-| `PRESSERL_OIDC_ISSUER`, `PRESSERL_OIDC_BACKEND_SECRET`, `PRESSERL_OIDC_ADMIN_CLIENT_ID` | the realm in the operator's Keycloak; secret of `presserl-backend` |
+| `PRESSERL_OIDC_ISSUER`, `PRESSERL_OIDC_BACKEND_SECRET`, `PRESSERL_OIDC_READER_SECRET`, `PRESSERL_OIDC_ADMIN_CLIENT_ID` | the realm in the operator's Keycloak; secrets of `presserl-backend` and `presserl-reader` (`PRESSERL_OIDC_READER_CLIENT_ID` optional, default `presserl-reader`) |
 
 ## Data model (MVP)
 
@@ -97,6 +97,8 @@ One newspaper per server; a second newspaper is a second deployment.
 
 ```
 GET    /                                  front page
+GET    /login?next={path}                 reader login (code flow), back to a same-origin path
+GET    /logout                            reader logout (RP-initiated), back to /
 GET    /sections/{slug}                   section page
 GET    /articles/{id}                     article page
 GET    /issues/{id}                       issue
@@ -105,7 +107,22 @@ GET    /print/issue/{id}                  print view: issue
 GET    /theme/custom.css                  fork theme (from deploy/theme/)
 ```
 
-Private newspapers: Quarkus OIDC code flow with a session cookie; `READER` or higher required.
+**Reader login.** The reader paths (`/`, `/login`, `/logout`, `/articles/*`, later sections,
+issues and print views) belong to the OIDC tenant `reader`: a web-app tenant using the confidential
+Keycloak client `presserl-reader` with the authorization code flow and PKCE. The session lives in the
+encrypted `q_session_reader` cookie (`HttpOnly`, `SameSite=Lax`, path `/`, `Secure` in production);
+there is no server-side session store. Only `/login` requires authentication; it starts the code
+flow and afterwards redirects to `next` when that is a same-origin path. `/logout` ends the reader
+session and the Keycloak session. Quarkus would otherwise pick the tenant from the session cookie on
+any path, so `ReaderTenantScope` pins every non-reader path to the default tenant: `/api` accepts
+bearer tokens only, never the reader cookie.
+
+Access is decided per request in `ReaderResource` against the effective visibility. A public
+newspaper is open to everyone. In a private newspaper, anonymous visitors see the masthead, a note
+and a login link, and article pages redirect to the login for every id. Visitors with `READER`,
+`EDITOR_IN_CHIEF` or `PUBLISHER` read normally. Other logged-in accounts get a no-access note and
+`404`. Pages of a private newspaper and pages for a logged-in visitor are sent with
+`Cache-Control: private, no-store`.
 
 ### Administration app
 

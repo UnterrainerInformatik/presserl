@@ -1,5 +1,6 @@
 package info.unterrainer.presserl.reader;
 
+import java.net.URI;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -12,21 +13,29 @@ import info.unterrainer.presserl.newspaper.EffectiveSettings;
 import info.unterrainer.presserl.newspaper.NewspaperSettings;
 import info.unterrainer.presserl.newspaper.Visibility;
 import info.unterrainer.presserl.reader.BodyRenderer.Block;
+import info.unterrainer.presserl.reader.ReaderViewer.Access;
 import io.quarkus.qute.CheckedTemplate;
 import io.quarkus.qute.TemplateInstance;
+import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 
 /**
  * Server-rendered reader pages. Texts follow the preferred language (English when preferred,
- * German otherwise). A private newspaper shows no article content until reader login exists.
+ * German otherwise).
+ * <p>
+ * The reader session comes from the OIDC tenant {@code reader} (code flow, session cookie). A
+ * private newspaper is readable for visitors holding a newspaper role; anonymous visitors are sent to
+ * {@code /login}, logged-in visitors without a role get a no-access note and {@code 404}. The decision
+ * is made per request against the effective visibility. Private and personal pages are not cached.
  */
 @Path("/")
 @Produces(MediaType.TEXT_HTML + ";charset=UTF-8")
@@ -35,16 +44,18 @@ public class ReaderResource {
     static final Locale GERMAN = Locale.GERMAN;
     static final Locale ENGLISH = Locale.ENGLISH;
     static final int FRONT_PAGE_LIMIT = 30;
+    static final String NO_STORE = "no-store";
+    static final String PRIVATE_NO_STORE = "private, no-store";
 
     @CheckedTemplate
     static class Templates {
-        static native TemplateInstance frontpage(String lang, String name, String subtitle,
-                boolean privateNewspaper, ReaderArticle leadStory, List<ReaderArticle> stories);
+        static native TemplateInstance frontpage(String lang, String name, String subtitle, String viewerName,
+                boolean loginRequired, boolean noAccess, ReaderArticle leadStory, List<ReaderArticle> stories);
 
-        static native TemplateInstance article(String lang, String name, String subtitle, ReaderArticle article,
-                List<Block> blocks);
+        static native TemplateInstance article(String lang, String name, String subtitle, String viewerName,
+                ReaderArticle article, List<Block> blocks);
 
-        static native TemplateInstance notFound(String lang, String name, String subtitle);
+        static native TemplateInstance notFound(String lang, String name, String subtitle, String viewerName);
     }
 
     @Inject
@@ -53,47 +64,94 @@ public class ReaderResource {
     @Inject
     ReaderArticles articles;
 
+    @Inject
+    SecurityIdentity identity;
+
     @GET
     public Uni<RestResponse<String>> frontpage(@Context HttpHeaders headers) {
         Locale locale = locale(headers);
+        ReaderViewer viewer = ReaderViewer.of(identity);
         return settings.effective().flatMap(s -> {
             boolean privateNewspaper = s.visibility() == Visibility.PRIVATE;
-            Uni<List<ReaderArticle>> listed = privateNewspaper
-                    ? Uni.createFrom().item(List.of())
-                    : articles.frontPage(FRONT_PAGE_LIMIT);
+            boolean readable = !privateNewspaper || viewer.access() == Access.ENTITLED;
+            Uni<List<ReaderArticle>> listed = readable
+                    ? articles.frontPage(FRONT_PAGE_LIMIT)
+                    : Uni.createFrom().item(List.of());
             return listed.flatMap(list -> render(Templates.frontpage(locale.getLanguage(), s.name(), s.subtitle(),
-                    privateNewspaper, list.isEmpty() ? null : list.get(0),
-                    list.isEmpty() ? List.of() : list.subList(1, list.size())), locale, Status.OK));
+                    viewer.displayName(), !readable && !viewer.loggedIn(), !readable && viewer.loggedIn(),
+                    list.isEmpty() ? null : list.get(0), list.isEmpty() ? List.of() : list.subList(1, list.size())),
+                    locale, Status.OK, noStore(s, viewer)));
         });
     }
 
     /**
-     * The article page; a malformed or unknown id, an unpublished article and a private newspaper
-     * all get the same 404 page.
+     * The article page; a malformed or unknown id and an unpublished article get the same 404 page.
+     * In a private newspaper an anonymous visitor is sent to the login for every id, and a logged-in
+     * visitor without a newspaper role gets the 404 page.
      */
     @GET
     @Path("articles/{id}")
     public Uni<RestResponse<String>> article(@PathParam("id") String id, @Context HttpHeaders headers) {
         Locale locale = locale(headers);
+        ReaderViewer viewer = ReaderViewer.of(identity);
         return settings.effective().flatMap(s -> {
-            Uni<Optional<ReaderArticle>> found = s.visibility() == Visibility.PRIVATE || !id.matches("\\d{1,18}")
+            boolean privateNewspaper = s.visibility() == Visibility.PRIVATE;
+            if (privateNewspaper && !viewer.loggedIn()) {
+                return Uni.createFrom().item(redirect(LoginTarget.loginForArticle(id)));
+            }
+            boolean readable = !privateNewspaper || viewer.access() == Access.ENTITLED;
+            Uni<Optional<ReaderArticle>> found = !readable || !id.matches("\\d{1,18}")
                     ? Uni.createFrom().item(Optional.empty())
                     : articles.article(Long.parseLong(id));
+            boolean noStore = noStore(s, viewer);
             return found.flatMap(article -> article
-                    .map(a -> render(Templates.article(locale.getLanguage(), s.name(), s.subtitle(), a,
-                            BodyRenderer.blocks(a.body())), locale, Status.OK))
-                    .orElseGet(() -> notFound(s, locale)));
+                    .map(a -> render(Templates.article(locale.getLanguage(), s.name(), s.subtitle(),
+                            viewer.displayName(), a, BodyRenderer.blocks(a.body())), locale, Status.OK, noStore))
+                    .orElseGet(() -> render(Templates.notFound(locale.getLanguage(), s.name(), s.subtitle(),
+                            viewer.displayName()), locale, Status.NOT_FOUND, noStore)));
         });
     }
 
-    private static Uni<RestResponse<String>> notFound(EffectiveSettings s, Locale locale) {
-        return render(Templates.notFound(locale.getLanguage(), s.name(), s.subtitle()), locale, Status.NOT_FOUND);
+    /**
+     * Reached once the reader session exists: the tenant's code flow runs first for an anonymous
+     * visitor ({@code /login} requires authentication), and restores {@code next} afterwards.
+     */
+    @GET
+    @Path("login")
+    public RestResponse<String> login(@QueryParam("next") String next) {
+        return redirect(LoginTarget.of(next));
     }
 
-    private static Uni<RestResponse<String>> render(TemplateInstance page, Locale locale, Status status) {
+    /**
+     * For a logged-in visitor the tenant intercepts {@code /logout} (RP-initiated logout, back to
+     * {@code /}); only anonymous visitors reach this method.
+     */
+    @GET
+    @Path("logout")
+    public RestResponse<String> logout() {
+        return redirect(LoginTarget.HOME);
+    }
+
+    private static RestResponse<String> redirect(String location) {
+        return ResponseBuilder.<String> seeOther(URI.create(location)).header(HttpHeaders.CACHE_CONTROL, NO_STORE)
+                .build();
+    }
+
+    private static boolean noStore(EffectiveSettings s, ReaderViewer viewer) {
+        return s.visibility() == Visibility.PRIVATE || viewer.loggedIn();
+    }
+
+    private static Uni<RestResponse<String>> render(TemplateInstance page, Locale locale, Status status,
+            boolean noStore) {
         return page.setLocale(locale).createUni()
-                .map(html -> ResponseBuilder.create(status, html).header(HttpHeaders.VARY, HttpHeaders.ACCEPT_LANGUAGE)
-                        .build());
+                .map(html -> {
+                    ResponseBuilder<String> response = ResponseBuilder.create(status, html)
+                            .header(HttpHeaders.VARY, HttpHeaders.ACCEPT_LANGUAGE);
+                    if (noStore) {
+                        response.header(HttpHeaders.CACHE_CONTROL, PRIVATE_NO_STORE);
+                    }
+                    return response.build();
+                });
     }
 
     /**
