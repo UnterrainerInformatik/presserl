@@ -1,0 +1,74 @@
+@startuml roles
+title Presserl – Roles & Responsibilities
+skinparam shadowing false
+skinparam defaultFontName Sans-Serif
+skinparam classAttributeIconSize 0
+hide empty members
+hide circle
+
+class "Operator" as Operator <<technical>> #EEEEEE {
+  parents / admin – outside the newsroom
+  --
+  + create/lock accounts (Keycloak)
+  + emergency brake: take anything offline
+  + deployment, theme, backups
+}
+
+class "Newspaper" as Newspaper {
+  name, subtitle, logo
+  visibility: private | public
+}
+
+class "Section" as Section {
+  e.g. Sports, Animals, Puzzles
+  default: "General"
+}
+
+class "Publisher" as Publisher #FFF2CC {
+  head of the newspaper (1..*)
+  --
+  + publishes directly, everywhere
+  + takes anything offline
+  + creates sections, assigns roles
+  + reviews sections without a section editor
+}
+
+class "Section editor" as Chief #DAE8FC {
+  leads exactly one section
+  --
+  + publishes directly in own section
+  + reviews own section's reporters
+  + takes offline in own section
+}
+
+class "Reporter" as Reporter #D5E8D4 {
+  writes for 1..n sections
+  --
+  + write drafts, upload images
+  + submit
+  + take own articles offline
+}
+
+class "Reader" as Reader {
+  only needed for private newspapers
+  --
+  + read published articles
+}
+
+Operator ..> Newspaper : operates
+Publisher "1..*" -- "1" Newspaper : heads >
+Newspaper "1" *-- "1..*" Section
+Chief "0..1" -- "1" Section : leads >
+Reporter "0..*" -- "1..*" Section : writes for >
+Reader "0..*" -- "1" Newspaper : reads >
+
+Publisher -[hidden]down- Chief
+Chief -[hidden]down- Reporter
+
+note right of Publisher
+  Hierarchy:
+  Publisher > Section editor > Reporter
+  Every higher role may do everything
+  the roles below it may do.
+end note
+@enduml

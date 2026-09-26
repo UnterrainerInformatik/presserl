@@ -1,0 +1,40 @@
+@startuml review-decision
+title Presserl – Who has to review? (review.mode = auto)
+skinparam shadowing false
+skinparam defaultFontName Sans-Serif
+
+start
+:author clicks **Publish**;
+if (effective review.mode of section?) then (never)
+  :**Published** immediately;
+  stop
+elseif () then (always)
+  :review required;
+else (auto – default)
+  if (author is publisher?) then (yes)
+    :**Published** immediately;
+    stop
+  elseif (author is section editor\nof this section?) then (yes)
+    if (chief-needs-publisher?\n(default: false)) then (false)
+      :**Published** immediately;
+      stop
+    else (true)
+      :review by publisher;
+    endif
+  else (no – reporter)
+    :review required;
+  endif
+endif
+:status **Submitted**;
+if (section has a section editor\n(≠ author)?) then (yes)
+  :section editor reviews;
+else (no)
+  :publisher reviews;
+endif
+if (decision) then (approve)
+  :**Published**;
+else (reject)
+  :**Draft** + note to author;
+endif
+stop
+@enduml

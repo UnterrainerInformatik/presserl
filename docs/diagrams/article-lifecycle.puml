@@ -1,0 +1,28 @@
+@startuml article-lifecycle
+title Presserl – Article Lifecycle
+skinparam shadowing false
+skinparam defaultFontName Sans-Serif
+hide empty description
+
+[*] --> Draft : new article
+
+Draft --> Published : publish\n[author may publish in section]
+Draft --> Submitted : publish\n[author may not publish]
+Submitted --> Published : approve\n(section editor / publisher)
+Submitted --> Draft : reject with note
+Submitted --> Draft : withdraw (author)
+
+Published --> Offline : take offline\n(author, section editor, publisher, operator)
+Offline --> Published : back online\n[same rule as publish]
+Offline --> Draft : revise
+Offline --> [*] : delete
+
+Published : Edits create a new revision;
+Published : the live revision stays until the next publish.
+
+note right of Draft
+  Simplest case (publisher only):
+  Draft → Published → Offline
+  One click, no review.
+end note
+@enduml

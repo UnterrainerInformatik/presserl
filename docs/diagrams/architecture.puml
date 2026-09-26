@@ -1,0 +1,27 @@
+@startuml architecture
+title Presserl – Architecture (docker compose)
+skinparam shadowing false
+skinparam defaultFontName Sans-Serif
+
+actor "Child / reader" as user
+node "Browser" {
+  component "frontend\nSPA (Vue 3 + TS)" as spa
+}
+node "deploy/ (docker compose)" {
+  component "web\n(nginx, static SPA)" as web
+  folder "theme/\ncustom.css, fonts, logo" as theme
+  component "Keycloak\nrealm: presserl" as kc
+  component "backend\nQuarkus REST (reactive)\nHibernate Reactive + Panache\nquarkus-oidc" as srv
+  database "PostgreSQL" as db
+  folder "media/\n(volume)" as media
+}
+
+user --> spa
+web --> spa : serves
+theme ..> web : mounted, overrides default theme
+spa --> kc : OIDC login (PKCE)
+spa --> srv : REST/JSON + bearer JWT
+srv ..> kc : JWKS / token validation
+srv --> db : reactive PG client\n(Flyway via JDBC at startup)
+srv --> media : images (EXIF stripped)
+@enduml

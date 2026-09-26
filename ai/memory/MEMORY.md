@@ -11,4 +11,5 @@
 - [Always add .http test files for REST endpoints](feedback_http_tests.md) — Create/update .http files and run them against a live backend
 - [Evidence over speculation](feedback_evidence_over_speculation.md) — When the cause is not in the logs, add targeted diagnostic logging and wait for a reproduction instead of theorising
 - [Never edit applied DB migrations](feedback_immutable_migrations.md) — Applied Flyway/Liquibase migrations are immutable; add a correction migration
+- [Product vision in docs/](project_vision.md) — Principles, roles, review rule, config layers, design guidelines; proposals must fit them
 - [Machine JDK setup](reference_machine_jdk.md) — Default javac on this machine is too new for Lombok; pin JAVA_HOME to JDK 21 for Maven

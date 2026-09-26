@@ -12,6 +12,8 @@
 - `backend/` — Java, Quarkus (Maven). Tests: JUnit 5 + AssertJ (`@QuarkusTest` for integration).
 - `frontend/` — Vue 3 + TypeScript (Vite). Tests: Vitest (+ Vue Test Utils).
 - `openspec/` — specs and changes; one spec tree for both platforms. A change that touches the REST contract covers backend, frontend and `ai/primer/endpoints.md` together.
+- `deploy/` — docker compose, Keycloak realm, `.env.example`, `theme/`. The only folder a fork customises.
+- `docs/` — product vision, roles/workflow, architecture, design guidelines, diagrams (PlantUML + SVG).
 - `ai/` — memory, primer, open proposals, captures. Not shipped.
 - `http/` — `.http` request files exercising the backend REST API.
 
