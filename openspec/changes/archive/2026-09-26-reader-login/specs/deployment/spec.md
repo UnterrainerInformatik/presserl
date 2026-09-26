@@ -1,25 +1,4 @@
-# deployment Specification
-
-## Purpose
-
-Defines how an operator runs Presserl: a docker compose deployment of the Presserl image and
-PostgreSQL, wired to an operator-provided Keycloak and reverse proxy, documented step by step.
-
-## Requirements
-
-### Requirement: Compose deployment with presserl and postgres only
-The reference deployment SHALL be a docker compose file that runs exactly two services,
-`presserl` (the backend image including reader and admin app) and `postgres`, with the database
-on a named volume. It SHALL NOT contain a reverse proxy or a Keycloak service. `presserl` SHALL
-start only after `postgres` is healthy and SHALL expose a health check based on its readiness.
-
-#### Scenario: Starting the reference deployment
-- **WHEN** an operator fills `.env` from `.env.example` and runs `docker compose up -d`
-- **THEN** `postgres` and `presserl` start, `presserl` becomes healthy once the database and Keycloak are reachable, and `GET /api/newspaper` answers on the published HTTP port
-
-#### Scenario: Data survives a restart
-- **WHEN** the operator runs `docker compose down` and `docker compose up -d` again
-- **THEN** the database content is preserved
+## MODIFIED Requirements
 
 ### Requirement: Mandatory configuration only
 `.env.example` SHALL list exactly the values a fresh installation needs — public base URL,
