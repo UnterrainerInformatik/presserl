@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "skills": {
+    "api-contract-review": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/api-contract-review/SKILL.md",
+      "computedHash": "ff7eddce45fd4da3b91aa83de2210bb030ebc992c50e8e5a4b1b7fec525ab1ea"
+    },
+    "changelog-generator": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/changelog-generator/SKILL.md",
+      "computedHash": "28b58a3d7553228f8ae2d72f6df9a54cc76763794e1f350b2c5a4f45d130cd33"
+    },
+    "clean-code": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/clean-code/SKILL.md",
+      "computedHash": "7b9645a1f59010c45ad5bdd09db9d0f346f034d527392275a98d9f9de0ad8ae1"
+    },
+    "frontend-design": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "1ab17c63cc500d53a9b15cf3c2c9d7673c6ea9e00db42c1f39dc0b53cdf4995a"
+    },
+    "git-commit": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/git-commit/SKILL.md",
+      "computedHash": "7d9cd300e9b325fd5a3957753f3698147b533b144bc372239a0734cc8dbe2c0c"
+    },
+    "grill-me": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/grill-me/SKILL.md",
+      "computedHash": "3615384e8bab4bd0f33fac284d595cd4c3526959fb5846c624b6027918f9f455"
+    },
+    "issue-triage": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/issue-triage/SKILL.md",
+      "computedHash": "7c75e7e6c5eb12bbd6596a6075c0aa6aee81db675ff3db29e4d5f1e585a3bcda"
+    },
+    "java-architecture-review": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/java-architecture-review/SKILL.md",
+      "computedHash": "c4d0bdd56c81676eade967f4900ba193d14e6d2855c21f5d117a75614f0a5e5e"
+    },
+    "java-code-review": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/java-code-review/SKILL.md",
+      "computedHash": "5357dc0028c7d751d26bd3b5adf0a6e859f507525c16e7e0736ad90f94e490c4"
+    },
+    "java-concurrency-review": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/java-concurrency-review/SKILL.md",
+      "computedHash": "6f72aa0137c5051f5240729c871718664ca20f12b5c7c4046cea42794dbce7b8"
+    },
+    "java-design-patterns": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/java-design-patterns/SKILL.md",
+      "computedHash": "5bf25c871840fd4a1eb2f21252a4b90f6d67eb6ae7a70ce12dec6851791ac63c"
+    },
+    "java-jpa-patterns": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/java-jpa-patterns/SKILL.md",
+      "computedHash": "fbc4c7d7da2970397ececd6c39e5dc30e9cb74ae886fcd11fe10ca2d23d30070"
+    },
+    "java-logging-patterns": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/java-logging-patterns/SKILL.md",
+      "computedHash": "2e4355f957a1a75f720b354c4193279dc6e8513fb16117e53dcfb06ba5a661d3"
+    },
+    "java-maven-dependency-audit": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/java-maven-dependency-audit/SKILL.md",
+      "computedHash": "5a157b9e90f5a11d32774b890174294b92e7f36266848bcd7ab7a9ed637f4839"
+    },
+    "java-migration": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/java-migration/SKILL.md",
+      "computedHash": "164ed61a0a2b3caca8cfd1aaa3be19ab53f66468535e765ae0a5763f6b840fa5"
+    },
+    "java-performance-smell-detection": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/java-performance-smell-detection/SKILL.md",
+      "computedHash": "8db6901978192ff93ea2f80d3ba4c7afb7d1572db21b8c29315c139674a94f6d"
+    },
+    "java-security-audit": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/java-security-audit/SKILL.md",
+      "computedHash": "5f346d6410b011b1e17680bf6460f6fc7b0617bd20d113148c291f6db65a0117"
+    },
+    "java-solid-principles": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/java-solid-principles/SKILL.md",
+      "computedHash": "6e5ee4f6128a0d1c3de1e96c6a67af7de87ee04be6075c1a72f5a4b630a77701"
+    },
+    "java-test-quality": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/java-test-quality/SKILL.md",
+      "computedHash": "a8f3c6a5b7c441cf738ff2f6f82b6da02985c5ba3016433b645b8a052c8a0823"
+    },
+    "tdd": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/tdd/SKILL.md",
+      "computedHash": "cc623c51c5384dd23bf86e65deb10a9c0f98dba96180ffd7bc38134b0869ecc0"
+    },
+    "vue-frontend-design": {
+      "source": "UnterrainerInformatik/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/vue-frontend-design/SKILL.md",
+      "computedHash": "bddf381e94aa0cb04bffa70357c68325e9b04131754d8686d3ac8ecd1da180c3"
+    }
+  }
+}

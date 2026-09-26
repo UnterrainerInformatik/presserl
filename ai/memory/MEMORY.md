@@ -1,0 +1,14 @@
+# Project Memory
+- [User profile](user_profile.md) — Gerald; German in chat, English in the repo; licensed electrician; wants evidence over guesswork
+- [Announce and explain code changes before making them](feedback_announce_changes_first.md) — A diagnosis request means diagnose only; describe intended edits and wait
+- [No code changes outside an opsx:propose](feedback_openspec_only_changes.md) — Every code change goes through OpenSpec; implementation via /opsx:apply; spec amendments get their own change
+- [Clear between OpenSpec phases](feedback_clear_between_opsx_phases.md) — Pause after plan, propose, apply and before archive+commit so Gerald can /clear
+- [Check open-proposals when asked what to do](feedback_check_open_proposals.md) — Read ./ai/open-proposals.md first; delete an entry (never tick it off) once it becomes an opsx change
+- [Chat language is German](feedback_conversation_language_german.md) — Replies in German from the first message; repo content stays English
+- [Code in English only](feedback_english_only.md) — Identifiers, comments, logs, docs, commits: English
+- [Tests are welcome](feedback_tests_welcome.md) — Write backend (JUnit 5 + AssertJ) and frontend (Vitest) tests freely; no need to ask
+- [Keep endpoints primer in sync](feedback_endpoints_primer.md) — REST contract change ⇒ update ./ai/primer/endpoints.md and the frontend client in the same change
+- [Always add .http test files for REST endpoints](feedback_http_tests.md) — Create/update .http files and run them against a live backend
+- [Evidence over speculation](feedback_evidence_over_speculation.md) — When the cause is not in the logs, add targeted diagnostic logging and wait for a reproduction instead of theorising
+- [Never edit applied DB migrations](feedback_immutable_migrations.md) — Applied Flyway/Liquibase migrations are immutable; add a correction migration
+- [Machine JDK setup](reference_machine_jdk.md) — Default javac on this machine is too new for Lombok; pin JAVA_HOME to JDK 21 for Maven
