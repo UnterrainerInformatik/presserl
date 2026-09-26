@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import info.unterrainer.presserl.api.FieldError;
+
 /**
  * Reads an article request body strictly: the four text fields (default empty, trimmed, length
  * limited, no control characters), the body (default empty document, validated by

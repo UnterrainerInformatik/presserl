@@ -67,4 +67,21 @@
     <string name="revision_n">Version %1$d</string>
     <string name="revision_live">online</string>
     <string name="published_at">veröffentlicht %1$s</string>
+    <string name="nav_articles">Artikel</string>
+    <string name="nav_accounts">Konten</string>
+    <string name="new_account">Neues Konto</string>
+    <string name="account_disabled">gesperrt</string>
+    <string name="field_first_name">Vorname</string>
+    <string name="field_last_name">Nachname (optional)</string>
+    <string name="field_username">Benutzername</string>
+    <string name="username_hint">Wird aus dem Vornamen vorgeschlagen; du kannst ihn ändern.</string>
+    <string name="field_roles">Rollen</string>
+    <string name="create_account">Anlegen</string>
+    <string name="slip_heading">Dein Zugang</string>
+    <string name="slip_address">Adresse</string>
+    <string name="slip_username">Benutzername</string>
+    <string name="slip_password">Passwort</string>
+    <string name="slip_note">Das Passwort wird nur jetzt angezeigt. Drucke den Zettel aus oder schreib es ab.</string>
+    <string name="print">Drucken</string>
+    <string name="done">Fertig</string>
 </resources>

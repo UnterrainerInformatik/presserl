@@ -9,11 +9,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -25,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import info.unterrainer.presserl.admin.api.ApiClient
+import info.unterrainer.presserl.admin.api.CreatedAccountDto
 import info.unterrainer.presserl.admin.api.MeDto
 import info.unterrainer.presserl.admin.api.NewspaperDto
 import info.unterrainer.presserl.admin.auth.AuthClient
@@ -33,10 +36,17 @@ import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.loading
 import info.unterrainer.presserl.admin.resources.log_in_again
 import info.unterrainer.presserl.admin.resources.log_out
+import info.unterrainer.presserl.admin.resources.nav_accounts
+import info.unterrainer.presserl.admin.resources.nav_articles
 import info.unterrainer.presserl.admin.resources.login_failed
 import info.unterrainer.presserl.admin.resources.no_roles
 import info.unterrainer.presserl.admin.resources.something_went_wrong
 import info.unterrainer.presserl.admin.resources.try_again
+import info.unterrainer.presserl.admin.ui.account.AccountListScreen
+import info.unterrainer.presserl.admin.ui.account.AccountSlipScreen
+import info.unterrainer.presserl.admin.ui.account.NewAccountScreen
+import info.unterrainer.presserl.admin.ui.account.SlipPrinter
+import info.unterrainer.presserl.admin.ui.account.canManageAccounts
 import info.unterrainer.presserl.admin.ui.editor.EditorScreen
 import kotlinx.coroutines.CancellationException
 import org.jetbrains.compose.resources.stringResource
@@ -54,11 +64,15 @@ sealed interface Route {
     data class Editor(val articleId: Long) : Route
     data class Revisions(val articleId: Long) : Route
     data class Revision(val articleId: Long, val number: Int) : Route
+    data object Accounts : Route
+    data class NewAccount(val assignableRoles: List<String>) : Route
+    /** Holds the generated password; leaving the slip drops it. */
+    data class AccountSlip(val created: CreatedAccountDto) : Route
 }
 
-/** [siteUrl] is the origin of the reader, used for "View in reader". */
+/** [siteUrl] is the origin of the reader, used for "View in reader" and on the account slip. */
 @Composable
-fun App(auth: AuthClient, api: ApiClient, siteUrl: String) {
+fun App(auth: AuthClient, api: ApiClient, siteUrl: String, slipPrinter: SlipPrinter) {
     var screen by remember { mutableStateOf<Screen>(Screen.Loading) }
 
     LaunchedEffect(Unit) {
@@ -88,7 +102,7 @@ fun App(auth: AuthClient, api: ApiClient, siteUrl: String) {
                     Text(stringResource(Res.string.something_went_wrong, current.message))
                     Button(onClick = auth::login) { Text(stringResource(Res.string.log_in_again)) }
                 }
-                is Screen.LoggedIn -> LoggedIn(current, api, siteUrl, onLogout = auth::logout)
+                is Screen.LoggedIn -> LoggedIn(current, api, siteUrl, slipPrinter, onLogout = auth::logout)
             }
         }
     }
@@ -100,13 +114,20 @@ private fun Message(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, onLogout: () -> Unit) {
+private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, slipPrinter: SlipPrinter, onLogout: () -> Unit) {
     var stack by remember { mutableStateOf(listOf<Route>(Route.ArticleList(ListTab.MINE))) }
     val push = { route: Route -> stack = stack + route }
     val back = { stack = stack.dropLast(1) }
 
     Column(Modifier.fillMaxSize()) {
-        Header(screen, onLogout)
+        Header(
+            screen,
+            section = if (stack.first() == Route.Accounts) Section.ACCOUNTS else Section.ARTICLES,
+            onSection = { section ->
+                stack = listOf(if (section == Section.ACCOUNTS) Route.Accounts else Route.ArticleList(ListTab.MINE))
+            },
+            onLogout = onLogout,
+        )
         HorizontalDivider()
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Box(Modifier.widthIn(max = 900.dp).fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -128,14 +149,32 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, o
                     }
                     is Route.Revisions -> RevisionsScreen(api, route.articleId, onBack = back, onOpen = { push(Route.Revision(route.articleId, it)) })
                     is Route.Revision -> key(route) { RevisionScreen(api, route.articleId, route.number, onBack = back) }
+                    Route.Accounts -> AccountListScreen(api, onNew = { push(Route.NewAccount(it)) })
+                    is Route.NewAccount -> key(route) {
+                        NewAccountScreen(
+                            api,
+                            route.assignableRoles,
+                            onBack = back,
+                            onCreated = { stack = stack.dropLast(1) + Route.AccountSlip(it) },
+                        )
+                    }
+                    is Route.AccountSlip -> AccountSlipScreen(
+                        screen.newspaper.name,
+                        siteUrl,
+                        route.created,
+                        slipPrinter,
+                        onDone = { stack = listOf(Route.Accounts) },
+                    )
                 }
             }
         }
     }
 }
 
+private enum class Section { ARTICLES, ACCOUNTS }
+
 @Composable
-private fun Header(screen: Screen.LoggedIn, onLogout: () -> Unit) {
+private fun Header(screen: Screen.LoggedIn, section: Section, onSection: (Section) -> Unit, onLogout: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -149,6 +188,19 @@ private fun Header(screen: Screen.LoggedIn, onLogout: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
+        if (canManageAccounts(screen.me.roles)) {
+            SectionButton(stringResource(Res.string.nav_articles), section == Section.ARTICLES) { onSection(Section.ARTICLES) }
+            SectionButton(stringResource(Res.string.nav_accounts), section == Section.ACCOUNTS) { onSection(Section.ACCOUNTS) }
+        }
         OutlinedButton(onClick = onLogout) { Text(stringResource(Res.string.log_out)) }
+    }
+}
+
+@Composable
+private fun SectionButton(label: String, selected: Boolean, onClick: () -> Unit) {
+    if (selected) {
+        FilledTonalButton(onClick = onClick) { Text(label) }
+    } else {
+        TextButton(onClick = onClick) { Text(label) }
     }
 }

@@ -8,6 +8,8 @@ import java.util.Set;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import info.unterrainer.presserl.api.FieldError;
+
 /**
  * Validates an article body against format version 1 and collects every violation with its path.
  * <pre>

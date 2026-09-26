@@ -6,6 +6,8 @@ import org.hibernate.StaleStateException;
 import org.jboss.resteasy.reactive.RestResponse;
 import org.jboss.resteasy.reactive.server.ServerExceptionMapper;
 
+import info.unterrainer.presserl.api.ApiErrorDto;
+import info.unterrainer.presserl.api.FieldError;
 import jakarta.persistence.OptimisticLockException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response.Status;

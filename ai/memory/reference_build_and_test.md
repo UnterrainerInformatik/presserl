@@ -12,7 +12,8 @@ Verified 2026-09-26 on Gerald's machine (JDK 21, Docker running) unless marked o
   admin console `admin`/`admin`, publisher `publisher`/`publisher`). No manual setup.
 - **Backend tests:** `cd backend && ./mvnw verify` (needs Docker for Dev Services). Single class:
   `./mvnw test -Dtest=AdminDeliveryTest`. Surefire XML in `target/surefire-reports/` — check the
-  file timestamp; stale reports from earlier runs stay there.
+  file timestamp; stale reports from earlier runs stay there. `@QuarkusTest` binds port 8081 —
+  stop the admin dev server first, or every Quarkus test fails with "Port already bound: 8081".
 - **Admin dev:** `cd admin && ./gradlew wasmJsBrowserDevelopmentRun` → http://localhost:8081
   (calls the backend on :8080; `%dev` CORS allows it) — standard Kotlin/Wasm task, not re-run on 2026-09-26.
 - **Admin tests:** `cd admin && ./gradlew check` (Karma, headless Chrome with SwiftShader via

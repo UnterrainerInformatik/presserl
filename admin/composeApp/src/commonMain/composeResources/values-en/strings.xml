@@ -67,4 +67,21 @@
     <string name="revision_n">Revision %1$d</string>
     <string name="revision_live">live</string>
     <string name="published_at">published %1$s</string>
+    <string name="nav_articles">Articles</string>
+    <string name="nav_accounts">Accounts</string>
+    <string name="new_account">New account</string>
+    <string name="account_disabled">disabled</string>
+    <string name="field_first_name">First name</string>
+    <string name="field_last_name">Last name (optional)</string>
+    <string name="field_username">Username</string>
+    <string name="username_hint">Suggested from the first name; you can change it.</string>
+    <string name="field_roles">Roles</string>
+    <string name="create_account">Create</string>
+    <string name="slip_heading">Your account</string>
+    <string name="slip_address">Web address</string>
+    <string name="slip_username">Username</string>
+    <string name="slip_password">Password</string>
+    <string name="slip_note">The password is shown only now. Print the slip or write it down.</string>
+    <string name="print">Print</string>
+    <string name="done">Done</string>
 </resources>

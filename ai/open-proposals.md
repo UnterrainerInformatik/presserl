@@ -5,18 +5,19 @@ change — never tick it off.
 
 Milestones from `docs/vision.md`; details in `docs/`.
 
-## M1 — Solo newspaper
-Article model, body format v1, REST contract and `allowedActions` are done (`articles-core`).
-Reader login is done (`reader-login`).
-See `docs/roles-and-workflow.md` stage 1.
-
 ## M2 — Accounts & sections
-Extend the Keycloak Admin client from M0 (service account already holds `manage-users`,
-`view-users`, `query-users`, `query-groups`); account creation with
-username from first name and a four-word pass-phrase (curated German word list), printable
-account slip, password reset, lock; groups for newspaper-wide roles; sections (created by
-editors-in-chief), section roles in the DB; delegation rule (assign at or below own level,
-within own scope); extend `GET /api/me` additively (section roles, scopes, allowed actions).
+Account creation for newspaper-wide roles is done (`accounts-create`). Remaining:
+sections (created by editors-in-chief), section roles in the DB; delegation rule extended to
+section roles (assign at or below own level, within own scope); changing the roles of existing
+accounts; password reset (new pass-phrase and slip), lock/unlock; extend `GET /api/me`
+additively (section roles, scopes, allowed actions).
+
+### Follow-up to `accounts-create`: username minimum length (next change, agreed 2026-09-26)
+Keycloak's user profile requires usernames of at least 3 characters; the `accounts` spec has no
+lower bound, so a first name like `Li` is suggested as `li` and the creation fails with a Keycloak
+`400`. Add "at least 3 characters" to the `POST /api/accounts` validation and make the suggestion
+produce a valid name for short bases (e.g. `li` → `li-1`, or padding — decide in propose). Update
+spec, primer and `http/accounts.http`.
 
 ## M3 — Approval chain
 Chain section editor → editor-in-chief → publisher with skip rules (own role, trust, section

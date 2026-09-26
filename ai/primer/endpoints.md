@@ -287,3 +287,96 @@ Takes a published article offline without approval. No request body.
 - **Response `200`:** `RevisionDto` = `RevisionSummaryDto` fields plus `kicker`, `subheadline`,
   `lead`, `body`
 - **Errors:** `404` unknown article or revision number.
+
+---
+
+# Accounts
+
+Accounts are the users of the operator's Keycloak realm; their newspaper-wide roles are the groups
+`publisher`, `editor-in-chief`, `reader`. The backend manages them through the `presserl-backend`
+service account — Presserl stores nothing about them in its database.
+
+All account endpoints require a bearer token **and** the role `PUBLISHER` or `EDITOR_IN_CHIEF`.
+Users with neither role get `403` with an empty body; missing/invalid token → `401`. Every other
+refusal carries the error body of the articles (`{"errors": [{"field": …, "message": …}]}`); a
+`400` lists every violation.
+
+**Delegation** (newspaper-wide roles are assigned at or below the own level; the server decides,
+`assignableRoles` reports it):
+
+| Requesting user holds | May assign |
+|---|---|
+| `PUBLISHER` | `PUBLISHER`, `EDITOR_IN_CHIEF`, `READER` |
+| `EDITOR_IN_CHIEF` (not `PUBLISHER`) | `EDITOR_IN_CHIEF`, `READER` |
+
+**Keycloak unavailable:** when Keycloak cannot be reached or refuses the service account, every
+account endpoint answers `503` with
+`{"errors": [{"field": null, "message": "the account service is unavailable; try again later"}]}`.
+
+## `AccountDto`
+
+```json
+{ "id": "5f0c…", "username": "chief", "firstName": "Chief", "lastName": "Editor",
+  "roles": ["EDITOR_IN_CHIEF"], "enabled": true }
+```
+`id` is the Keycloak user id. `firstName`/`lastName` are `""` when unset. `roles` are the newspaper
+roles from the account's groups in the order `PUBLISHER`, `EDITOR_IN_CHIEF`, `READER` (`[]` for
+none).
+
+## `GET /api/accounts`
+
+Every account of the realm except service accounts, sorted by `username`. At most 1000 accounts
+(no paging; far above a family newspaper).
+
+- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`
+- **Response `200`:**
+  ```json
+  { "assignableRoles": ["PUBLISHER", "EDITOR_IN_CHIEF", "READER"],
+    "accounts": [ { "id": "5f0c…", "username": "chief", "firstName": "Chief", "lastName": "Editor",
+                    "roles": ["EDITOR_IN_CHIEF"], "enabled": true } ] }
+  ```
+- **Errors:** `503` Keycloak unavailable.
+- **Side effects:** none.
+
+## `GET /api/accounts/username-suggestion`
+
+A free username derived from a first name: lower case; `ä`→`ae`, `ö`→`oe`, `ü`→`ue`, `ß`→`ss`;
+other diacritics dropped; every run outside `a-z0-9` → one `-`; leading/trailing `-` removed; at
+most 32 characters; `user` when nothing is left. If taken, `-2`, `-3`, … is appended (base
+shortened to stay within 32).
+
+- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`
+- **Query:** `firstName` (required, not blank)
+- **Response `200`:** `{ "username": "juergen-maria" }`
+- **Errors:** `400` missing/blank `firstName` (field `firstName`), `503`.
+- **Side effects:** none.
+
+## `POST /api/accounts`
+
+Creates an enabled account with a generated default password and joins the groups of its roles.
+
+- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`; every role must be assignable (see delegation)
+- **Body:**
+  ```json
+  { "firstName": "Lena", "lastName": "", "username": "lena", "roles": ["EDITOR_IN_CHIEF"] }
+  ```
+  `firstName` required, not blank, ≤ 100 characters; `lastName` optional, ≤ 100; names must not
+  contain control characters and are stored trimmed. `username` must match
+  `^[a-z0-9]+(-[a-z0-9]+)*$`, ≤ 32 characters, not start with `service-account-`. `roles`: at least
+  one of `PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`; duplicates are collapsed. Unknown fields are
+  rejected.
+- **Response `201`:** header `Location: /api/accounts/{id}`
+  ```json
+  { "account": { "id": "9a1e…", "username": "lena", "firstName": "Lena", "lastName": "",
+                 "roles": ["EDITOR_IN_CHIEF"], "enabled": true },
+    "password": "tiger-wolke-apfel-leiter" }
+  ```
+  `password` is four words from a curated German word list (`a-z`, 3–8 letters each) joined by
+  `-`, chosen with a secure random source. It is **not temporary** and appears **only in this
+  response** — the server neither stores nor logs it. Show it on the account slip.
+- **Errors:** `400` validation (every violation; also names Keycloak rejects, e.g. forbidden
+  characters, at `firstName`/`lastName`/`username`), `403` a role that may not be assigned (field
+  `roles`, nothing created), `409` username taken, ignoring case (field `username`), `503`.
+- **Side effects:** Keycloak user created with the password credential and group memberships; all
+  or nothing (a failure after the creation deletes the user again). Logged at INFO with username,
+  creator and roles.

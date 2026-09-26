@@ -1,4 +1,4 @@
-package info.unterrainer.presserl.article;
+package info.unterrainer.presserl.api;
 
 /**
  * One violation; {@code field} is a path such as {@code body.blocks[2].content[0].text}, or

@@ -1,9 +1,12 @@
 package info.unterrainer.presserl.admin
 
+import info.unterrainer.presserl.admin.api.AccountDto
+import info.unterrainer.presserl.admin.api.AccountListDto
 import info.unterrainer.presserl.admin.api.ApiErrorDto
 import info.unterrainer.presserl.admin.api.ArticleDto
 import info.unterrainer.presserl.admin.api.AuthorDto
 import info.unterrainer.presserl.admin.api.ClientConfigDto
+import info.unterrainer.presserl.admin.api.CreatedAccountDto
 import info.unterrainer.presserl.admin.api.FieldErrorDto
 import info.unterrainer.presserl.admin.api.MeDto
 import info.unterrainer.presserl.admin.api.NewspaperDto
@@ -125,5 +128,51 @@ class DtoTest {
             ),
             dto.errors,
         )
+    }
+
+    @Test
+    fun accountList() {
+        val dto = json.decodeFromString<AccountListDto>(
+            """
+            {
+              "assignableRoles": ["PUBLISHER", "EDITOR_IN_CHIEF", "READER"],
+              "accounts": [
+                { "id": "5f0c", "username": "chief", "firstName": "Chief", "lastName": "Editor",
+                  "roles": ["EDITOR_IN_CHIEF"], "enabled": true },
+                { "id": "77aa", "username": "nogroups", "firstName": "No", "lastName": "Groups",
+                  "roles": [], "enabled": false }
+              ]
+            }
+            """,
+        )
+
+        assertEquals(listOf("PUBLISHER", "EDITOR_IN_CHIEF", "READER"), dto.assignableRoles)
+        assertEquals(AccountDto("5f0c", "chief", "Chief", "Editor", listOf("EDITOR_IN_CHIEF"), true), dto.accounts[0])
+        assertEquals(emptyList(), dto.accounts[1].roles)
+        assertEquals(false, dto.accounts[1].enabled)
+    }
+
+    @Test
+    fun createdAccount() {
+        val dto = json.decodeFromString<CreatedAccountDto>(
+            """
+            {
+              "account": { "id": "9a1e", "username": "lena", "firstName": "Lena", "lastName": "",
+                           "roles": ["EDITOR_IN_CHIEF"], "enabled": true },
+              "password": "tiger-wolke-apfel-leiter"
+            }
+            """,
+        )
+
+        assertEquals("lena", dto.account.username)
+        assertEquals("tiger-wolke-apfel-leiter", dto.password)
+        assertEquals(false, dto.toString().contains("tiger"))
+    }
+
+    @Test
+    fun accountRefusal() {
+        val dto = json.decodeFromString<ApiErrorDto>("""{ "errors": [{ "field": "roles", "message": "you may not assign [PUBLISHER]" }] }""")
+
+        assertEquals(FieldErrorDto("roles", "you may not assign [PUBLISHER]"), dto.errors.single())
     }
 }

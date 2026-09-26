@@ -1,7 +1,9 @@
 package info.unterrainer.presserl.admin
 
+import info.unterrainer.presserl.admin.api.AccountDto
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.ArticleContent
+import info.unterrainer.presserl.admin.api.CreateAccountRequest
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -14,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -44,6 +47,10 @@ class ApiClientTest {
                 path.contains("/revisions/") -> """{ "number": 1, "headline": "H", "createdAt": "t", "updatedAt": "t",
                     "live": true, "kicker": "", "subheadline": "", "lead": "", "body": { "version": 1, "blocks": [] } }"""
                 path.startsWith("/api/articles") -> ARTICLE
+                path == "/api/accounts/username-suggestion" -> """{ "username": "juergen-maria" }"""
+                path == "/api/accounts" && request.method == HttpMethod.Get -> """{ "assignableRoles": ["EDITOR_IN_CHIEF", "READER"],
+                    "accounts": [$ACCOUNT] }"""
+                path == "/api/accounts" -> """{ "account": $ACCOUNT, "password": "tiger-wolke-apfel-leiter" }"""
                 else -> """{ "oidc": { "issuer": "https://kc/realms/presserl", "clientId": "presserl-admin", "scopes": ["openid"] } }"""
             }
             if (request.method == HttpMethod.Delete) {
@@ -147,7 +154,44 @@ class ApiClientTest {
         )
     }
 
+    @Test
+    fun listAccounts() = runTest {
+        val list = api.accounts()
+        assertEquals(listOf("EDITOR_IN_CHIEF", "READER"), list.assignableRoles)
+        assertEquals(AccountDto("9a1e", "lena", "Lena", "", listOf("EDITOR_IN_CHIEF"), true), list.accounts.single())
+        assertEquals(Recorded(HttpMethod.Get, "https://news.example.org/api/accounts", "Bearer token-123", null), requests.single())
+    }
+
+    @Test
+    fun usernameSuggestionEncodesTheFirstName() = runTest {
+        assertEquals("juergen-maria", api.usernameSuggestion("Jürgen Maria"))
+        val request = requests.single()
+        assertEquals("https://news.example.org/api/accounts/username-suggestion?firstName=J%C3%BCrgen+Maria", request.url)
+        assertEquals("Bearer token-123", request.authorization)
+    }
+
+    @Test
+    fun createAccountSendsTheFormAndReturnsThePassword() = runTest {
+        val created = api.createAccount(CreateAccountRequest("Lena", "", "lena", listOf("EDITOR_IN_CHIEF")))
+        assertEquals("tiger-wolke-apfel-leiter", created.password)
+        assertEquals("lena", created.account.username)
+        val request = requests.single()
+        assertEquals(HttpMethod.Post to "https://news.example.org/api/accounts", request.method to request.url)
+        assertEquals(
+            buildJsonObject {
+                put("firstName", "Lena")
+                put("lastName", "")
+                put("username", "lena")
+                putJsonArray("roles") { add(JsonPrimitive("EDITOR_IN_CHIEF")) }
+            },
+            request.body,
+        )
+        assertEquals("Bearer token-123", request.authorization)
+    }
+
     private companion object {
+        const val ACCOUNT = """{ "id": "9a1e", "username": "lena", "firstName": "Lena", "lastName": "",
+            "roles": ["EDITOR_IN_CHIEF"], "enabled": true }"""
         const val SUMMARY = """{ "id": 42, "status": "DRAFT", "author": { "username": "papa", "displayName": "Papa" },
             "headline": "H", "kicker": "", "revision": 1, "liveRevision": null, "hasUnpublishedChanges": false,
             "updatedAt": "2026-09-26T10:05:00Z", "publishedAt": null, "allowedActions": ["EDIT", "PUBLISH", "DELETE"] }"""

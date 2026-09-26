@@ -115,7 +115,7 @@ data class RevisionDto(
     val body: JsonObject,
 )
 
-/** Error body of refused article requests (`400`, `403`, `404`, `409`). */
+/** Error body of refused API requests (`400`, `403`, `404`, `409`, `503`). */
 @Serializable
 data class ApiErrorDto(val errors: List<FieldErrorDto>)
 
@@ -125,3 +125,43 @@ data class FieldErrorDto(
     val field: String? = null,
     val message: String,
 )
+
+/** Entry of `GET /api/accounts`; [roles] are newspaper roles in the order publisher, editor-in-chief, reader. */
+@Serializable
+data class AccountDto(
+    val id: String,
+    val username: String,
+    val firstName: String,
+    val lastName: String,
+    val roles: List<String>,
+    val enabled: Boolean,
+)
+
+/** `GET /api/accounts`: all accounts and the roles the requesting user may assign. */
+@Serializable
+data class AccountListDto(
+    val assignableRoles: List<String>,
+    val accounts: List<AccountDto>,
+)
+
+/** `GET /api/accounts/username-suggestion` */
+@Serializable
+data class UsernameSuggestionDto(val username: String)
+
+/** Request body of `POST /api/accounts`. */
+@Serializable
+data class CreateAccountRequest(
+    val firstName: String,
+    val lastName: String,
+    val username: String,
+    val roles: List<String>,
+)
+
+/** Response of `POST /api/accounts`; [password] exists only in this response. */
+@Serializable
+data class CreatedAccountDto(
+    val account: AccountDto,
+    val password: String,
+) {
+    override fun toString(): String = "CreatedAccountDto(account=$account, password=***)"
+}

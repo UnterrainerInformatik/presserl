@@ -1,0 +1,171 @@
+package info.unterrainer.presserl.account;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.lang.reflect.Proxy;
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+
+import org.junit.jupiter.api.Test;
+import org.keycloak.admin.client.resource.GroupResource;
+import org.keycloak.admin.client.resource.GroupsResource;
+import org.keycloak.admin.client.resource.RealmResource;
+import org.keycloak.admin.client.resource.UserResource;
+import org.keycloak.admin.client.resource.UsersResource;
+import org.keycloak.representations.idm.GroupRepresentation;
+
+import info.unterrainer.presserl.api.FieldError;
+import info.unterrainer.presserl.auth.CurrentUser;
+import info.unterrainer.presserl.auth.NewspaperRole;
+import info.unterrainer.presserl.bootstrap.KeycloakAdminProducer.KeycloakRealm;
+import jakarta.ws.rs.ProcessingException;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
+
+/**
+ * {@link AccountService} against a stubbed Keycloak realm: compensation and error mapping.
+ */
+class AccountServiceTest {
+
+    private static final CurrentUser PUBLISHER = new CurrentUser("sub", "publisher", "Publisher",
+            List.of(NewspaperRole.PUBLISHER));
+    private static final CreateAccountRequest LENA = new CreateAccountRequest("Lena", "", "lena",
+            List.of(NewspaperRole.EDITOR_IN_CHIEF));
+
+    private final List<String> deleted = new ArrayList<>();
+
+    @Test
+    void failedGroupJoinDeletesTheNewUser() {
+        UserResource user = stub(UserResource.class, Map.of("joinGroup", args -> {
+            throw new WebApplicationException(Status.INTERNAL_SERVER_ERROR);
+        }));
+        AccountService service = service(users(Response.created(URI.create("http://kc/users/id-1")).build(), user));
+
+        assertThatThrownBy(() -> service.create(PUBLISHER, LENA))
+                .isInstanceOfSatisfying(AccountException.class,
+                        e -> assertThat(e.status()).isEqualTo(Status.SERVICE_UNAVAILABLE));
+        assertThat(deleted).containsExactly("id-1");
+    }
+
+    @Test
+    void keycloakConflictOnCreateIsUsernameConflict() {
+        AccountService service = service(users(Response.status(Status.CONFLICT).build(), null));
+
+        assertThatThrownBy(() -> service.create(PUBLISHER, LENA))
+                .isInstanceOfSatisfying(AccountException.class, e -> {
+                    assertThat(e.status()).isEqualTo(Status.CONFLICT);
+                    assertThat(e.errors()).extracting(FieldError::field).containsExactly("username");
+                });
+        assertThat(deleted).isEmpty();
+    }
+
+    @Test
+    void keycloakNameRejectionIsBadRequestAtTheField() {
+        Response rejected = Response.status(Status.BAD_REQUEST)
+                .entity("{\"field\":\"firstName\",\"errorMessage\":\"error-person-name-invalid-character\"}")
+                .build();
+        AccountService service = service(users(rejected, null));
+
+        assertThatThrownBy(() -> service.create(PUBLISHER, LENA))
+                .isInstanceOfSatisfying(AccountException.class, e -> {
+                    assertThat(e.status()).isEqualTo(Status.BAD_REQUEST);
+                    assertThat(e.errors()).extracting(FieldError::field).containsExactly("firstName");
+                });
+    }
+
+    @Test
+    void unreachableKeycloakIsUnavailable() {
+        Function<Object[], Object> refused = args -> {
+            throw new ProcessingException("connection refused");
+        };
+        AccountService service = service(stub(RealmResource.class, Map.of("groups", refused, "users", refused)));
+
+        assertThatThrownBy(service::list).isInstanceOfSatisfying(AccountException.class, e -> {
+            assertThat(e.status()).isEqualTo(Status.SERVICE_UNAVAILABLE);
+            assertThat(e.errors()).extracting(FieldError::field).containsOnlyNulls();
+        });
+        assertThatThrownBy(() -> service.suggestUsername("Anna")).isInstanceOf(AccountException.class);
+    }
+
+    @Test
+    void refusedServiceAccountIsUnavailable() {
+        AccountService service = service(stub(RealmResource.class, Map.of("users", args -> {
+            throw new WebApplicationException(Status.FORBIDDEN);
+        })));
+
+        assertThatThrownBy(() -> service.suggestUsername("Anna")).isInstanceOfSatisfying(AccountException.class,
+                e -> assertThat(e.status()).isEqualTo(Status.SERVICE_UNAVAILABLE));
+    }
+
+    @Test
+    void delegationIsCheckedBeforeKeycloakIsCalled() {
+        AccountService service = service(stub(RealmResource.class, Map.of()));
+        CurrentUser chief = new CurrentUser("sub", "chief", "Chief", List.of(NewspaperRole.EDITOR_IN_CHIEF));
+        CreateAccountRequest boss = new CreateAccountRequest("Boss", "", "boss", List.of(NewspaperRole.PUBLISHER));
+
+        assertThatThrownBy(() -> service.create(chief, boss)).isInstanceOfSatisfying(AccountException.class, e -> {
+            assertThat(e.status()).isEqualTo(Status.FORBIDDEN);
+            assertThat(e.errors()).extracting(FieldError::field).containsExactly("roles");
+        });
+    }
+
+    @Test
+    void createdAccountHidesThePasswordInToString() {
+        CreatedAccountDto created = new CreatedAccountDto(
+                new AccountDto("id", "lena", "Lena", "", List.of(NewspaperRole.READER), true), "tiger-wolke-apfel-leiter");
+
+        assertThat(created.toString()).contains("lena").doesNotContain("tiger");
+    }
+
+    /**
+     * A realm with the three newspaper groups and the given users resource.
+     */
+    private RealmResource users(Response createResponse, UserResource user) {
+        GroupsResource groups = stub(GroupsResource.class, Map.of("groups", args -> {
+            GroupRepresentation group = new GroupRepresentation();
+            group.setName((String) args[0]);
+            group.setId("group-" + args[0]);
+            return List.of(group);
+        }, "group", args -> stub(GroupResource.class, Map.of("members", a -> List.of()))));
+        UsersResource users = stub(UsersResource.class, Map.of(
+                "searchByUsername", args -> List.of(),
+                "create", args -> createResponse,
+                "get", args -> user,
+                "delete", args -> {
+                    deleted.add((String) args[0]);
+                    return Response.noContent().build();
+                }));
+        return stub(RealmResource.class, Map.of("groups", args -> groups, "users", args -> users));
+    }
+
+    private static AccountService service(RealmResource realm) {
+        AccountService service = new AccountService() {
+            @Override
+            RealmResource realm() {
+                return realm;
+            }
+        };
+        service.keycloakRealm = new KeycloakRealm("http://kc", "presserl");
+        service.passPhrases = new PassPhraseGenerator();
+        return service;
+    }
+
+    /**
+     * An interface stub answering the named methods; every other call fails the test.
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> T stub(Class<T> type, Map<String, Function<Object[], Object>> answers) {
+        return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] { type }, (proxy, method, args) -> {
+            Function<Object[], Object> answer = answers.get(method.getName());
+            if (answer == null) {
+                throw new UnsupportedOperationException("unexpected call " + type.getSimpleName() + "." + method.getName());
+            }
+            return answer.apply(args);
+        });
+    }
+}

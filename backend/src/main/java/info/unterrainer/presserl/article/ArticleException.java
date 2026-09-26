@@ -2,6 +2,7 @@ package info.unterrainer.presserl.article;
 
 import java.util.List;
 
+import info.unterrainer.presserl.api.FieldError;
 import jakarta.ws.rs.core.Response.Status;
 
 /**

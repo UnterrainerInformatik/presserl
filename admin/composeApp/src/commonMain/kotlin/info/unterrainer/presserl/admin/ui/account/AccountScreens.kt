@@ -1,0 +1,204 @@
+package info.unterrainer.presserl.admin.ui.account
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import info.unterrainer.presserl.admin.api.AccountDto
+import info.unterrainer.presserl.admin.api.AccountListDto
+import info.unterrainer.presserl.admin.api.ApiClient
+import info.unterrainer.presserl.admin.api.CreatedAccountDto
+import info.unterrainer.presserl.admin.resources.Res
+import info.unterrainer.presserl.admin.resources.account_disabled
+import info.unterrainer.presserl.admin.resources.create_account
+import info.unterrainer.presserl.admin.resources.done
+import info.unterrainer.presserl.admin.resources.field_first_name
+import info.unterrainer.presserl.admin.resources.field_last_name
+import info.unterrainer.presserl.admin.resources.field_roles
+import info.unterrainer.presserl.admin.resources.field_username
+import info.unterrainer.presserl.admin.resources.loading
+import info.unterrainer.presserl.admin.resources.new_account
+import info.unterrainer.presserl.admin.resources.no_roles
+import info.unterrainer.presserl.admin.resources.print
+import info.unterrainer.presserl.admin.resources.slip_address
+import info.unterrainer.presserl.admin.resources.slip_heading
+import info.unterrainer.presserl.admin.resources.slip_note
+import info.unterrainer.presserl.admin.resources.slip_password
+import info.unterrainer.presserl.admin.resources.slip_username
+import info.unterrainer.presserl.admin.resources.username_hint
+import info.unterrainer.presserl.admin.ui.Banner
+import info.unterrainer.presserl.admin.ui.BackButton
+import info.unterrainer.presserl.admin.ui.LoadFailed
+import info.unterrainer.presserl.admin.ui.attempt
+import info.unterrainer.presserl.admin.ui.roleText
+import org.jetbrains.compose.resources.stringResource
+
+/** Whether the user may open the accounts screens; only visibility, the server enforces access. */
+fun canManageAccounts(roles: List<String>): Boolean = "PUBLISHER" in roles || "EDITOR_IN_CHIEF" in roles
+
+@Composable
+fun AccountListScreen(api: ApiClient, onNew: (assignableRoles: List<String>) -> Unit) {
+    var list by remember { mutableStateOf<AccountListDto?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var loads by remember { mutableStateOf(0) }
+
+    LaunchedEffect(loads) {
+        error = null
+        list = attempt({ error = it }) { api.accounts() }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        val current = list
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Button(enabled = current != null && current.assignableRoles.isNotEmpty(), onClick = { current?.let { onNew(it.assignableRoles) } }) {
+                Text(stringResource(Res.string.new_account))
+            }
+        }
+        when {
+            error != null -> LoadFailed(error!!, onReload = { loads++ })
+            current == null -> Text(stringResource(Res.string.loading))
+            else -> LazyColumn {
+                items(current.accounts, key = { it.id }) { account ->
+                    AccountRow(account)
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountRow(account: AccountDto) {
+    Column(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(vertical = 12.dp, horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        val title = listOfNotNull(account.username, stringResource(Res.string.account_disabled).takeIf { !account.enabled })
+        Text(title.joinToString(" · "), style = MaterialTheme.typography.titleMedium)
+        val roles = account.roles.map { roleText(it) }
+        val details = listOf(
+            listOf(account.firstName, account.lastName).filter { it.isNotEmpty() }.joinToString(" "),
+            if (roles.isEmpty()) stringResource(Res.string.no_roles) else roles.joinToString(", "),
+        ).filter { it.isNotEmpty() }
+        Text(details.joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+fun NewAccountScreen(api: ApiClient, assignableRoles: List<String>, onBack: () -> Unit, onCreated: (CreatedAccountDto) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val model = remember(assignableRoles) { NewAccountModel(scope, assignableRoles, api::usernameSuggestion, api::createAccount) }
+    val state by model.state.collectAsState()
+
+    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        BackButton(onBack)
+        Text(stringResource(Res.string.new_account), style = MaterialTheme.typography.headlineSmall)
+        state.general?.let { Banner(it) }
+        FormField(state.firstName, model::firstName, stringResource(Res.string.field_first_name), state.errors[AccountField.FIRST_NAME])
+        FormField(state.lastName, model::lastName, stringResource(Res.string.field_last_name), state.errors[AccountField.LAST_NAME])
+        FormField(
+            state.username,
+            model::username,
+            stringResource(Res.string.field_username),
+            state.errors[AccountField.USERNAME],
+            hint = stringResource(Res.string.username_hint),
+        )
+        Text(stringResource(Res.string.field_roles), style = MaterialTheme.typography.titleSmall)
+        model.assignableRoles.forEach { role ->
+            val selected = role in state.roles
+            Row(
+                Modifier.heightIn(min = 44.dp).toggleable(value = selected, role = Role.Checkbox, onValueChange = { model.role(role, it) }),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = selected, onCheckedChange = null)
+                Text(roleText(role), Modifier.padding(start = 8.dp))
+            }
+        }
+        state.errors[AccountField.ROLES]?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        Button(enabled = state.canCreate, onClick = { model.submit(onCreated) }) { Text(stringResource(Res.string.create_account)) }
+    }
+}
+
+@Composable
+private fun FormField(value: String, onChange: (String) -> Unit, label: String, error: String?, hint: String? = null) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { changed -> onChange(changed.filterNot { it == '\n' || it == '\r' }) },
+        label = { Text(label) },
+        singleLine = true,
+        isError = error != null,
+        supportingText = (error ?: hint)?.let { { Text(it) } },
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/**
+ * The slip after a creation (design D9/D10): the password lives only in [created] and is gone once
+ * the user leaves this screen.
+ */
+@Composable
+fun AccountSlipScreen(newspaperName: String, siteUrl: String, created: CreatedAccountDto, printer: SlipPrinter, onDone: () -> Unit) {
+    val heading = stringResource(Res.string.slip_heading)
+    val rows = listOf(
+        stringResource(Res.string.slip_address) to siteUrl,
+        stringResource(Res.string.slip_username) to created.account.username,
+        stringResource(Res.string.slip_password) to created.password,
+    )
+    val note = stringResource(Res.string.slip_note)
+
+    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Surface(tonalElevation = 2.dp, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+            SelectionContainer {
+                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(newspaperName, style = MaterialTheme.typography.headlineMedium)
+                    Text(heading, style = MaterialTheme.typography.titleMedium)
+                    rows.forEachIndexed { index, (label, value) ->
+                        Column {
+                            Text(label, style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                value,
+                                style = if (index == rows.lastIndex) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Banner(note, color = MaterialTheme.colorScheme.secondaryContainer)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(onClick = { printer.print(PrintableSlip(newspaperName, heading, rows, rows.lastIndex, note)) }) {
+                Text(stringResource(Res.string.print))
+            }
+            OutlinedButton(onClick = onDone) { Text(stringResource(Res.string.done)) }
+        }
+    }
+}

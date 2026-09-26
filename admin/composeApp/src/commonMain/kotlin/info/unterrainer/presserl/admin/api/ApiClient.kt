@@ -82,6 +82,24 @@ class ApiClient(
 
     suspend fun revision(articleId: Long, number: Int): RevisionDto =
         http.get("$baseUrl/api/articles/$articleId/revisions/$number") { bearerAuth(accessToken()) }.body()
+
+    /** All accounts, sorted by username, with the roles the user may assign. */
+    suspend fun accounts(): AccountListDto = http.get("$baseUrl/api/accounts") { bearerAuth(accessToken()) }.body()
+
+    /** A free username derived from [firstName]. */
+    suspend fun usernameSuggestion(firstName: String): String =
+        http.get("$baseUrl/api/accounts/username-suggestion") {
+            bearerAuth(accessToken())
+            parameter("firstName", firstName)
+        }.body<UsernameSuggestionDto>().username
+
+    /** Creates an account; the response carries its generated password, which is not available later. */
+    suspend fun createAccount(request: CreateAccountRequest): CreatedAccountDto =
+        http.post("$baseUrl/api/accounts") {
+            bearerAuth(accessToken())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
 }
 
 /** Body of `PUT /api/articles/{id}`: [ArticleContent] plus the article version. */

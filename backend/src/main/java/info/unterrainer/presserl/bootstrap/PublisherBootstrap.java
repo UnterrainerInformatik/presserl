@@ -7,7 +7,6 @@ import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.representations.idm.CredentialRepresentation;
-import org.keycloak.representations.idm.GroupRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 
 import info.unterrainer.presserl.auth.NewspaperRole;
@@ -43,12 +42,10 @@ public class PublisherBootstrap {
 
     public Outcome attempt(PublisherCredentials credentials) {
         RealmResource realmResource = keycloak.realm(realm.name());
-        GroupRepresentation group = realmResource.groups().groups(GROUP, true, 0, 10, true).stream()
-                .filter(g -> GROUP.equals(g.getName()))
-                .findFirst()
+        String groupId = NewspaperGroups.id(realmResource, NewspaperRole.PUBLISHER)
                 .orElseThrow(() -> new BootstrapException("Keycloak realm '%s' has no group '%s' - import the realm template (deploy/keycloak/presserl-realm.json)"
                         .formatted(realm.name(), GROUP)));
-        if (!realmResource.groups().group(group.getId()).members(0, 1, true).isEmpty()) {
+        if (!realmResource.groups().group(groupId).members(0, 1, true).isEmpty()) {
             return Outcome.ALREADY_PRESENT;
         }
 
@@ -63,7 +60,7 @@ public class PublisherBootstrap {
             outcome = Outcome.JOINED;
         }
         UserResource user = realmResource.users().get(userId);
-        user.joinGroup(group.getId());
+        user.joinGroup(groupId);
         LOG.infof("Publisher bootstrap: user '%s' %s group '%s'", credentials.username(),
                 outcome == Outcome.CREATED ? "created in" : "added to", GROUP);
         return outcome;

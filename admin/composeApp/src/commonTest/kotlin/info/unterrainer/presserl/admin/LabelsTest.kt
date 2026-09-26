@@ -8,11 +8,14 @@ import info.unterrainer.presserl.admin.resources.status_draft
 import info.unterrainer.presserl.admin.resources.status_offline
 import info.unterrainer.presserl.admin.resources.status_published
 import info.unterrainer.presserl.admin.resources.status_submitted
+import info.unterrainer.presserl.admin.ui.account.canManageAccounts
 import info.unterrainer.presserl.admin.ui.roleLabel
 import info.unterrainer.presserl.admin.ui.statusLabel
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class LabelsTest {
 
@@ -36,5 +39,13 @@ class LabelsTest {
     fun unknownValuesHaveNoLabel() {
         assertNull(roleLabel("SECTION_EDITOR"))
         assertNull(statusLabel("ARCHIVED"))
+    }
+
+    @Test
+    fun onlyPublishersAndEditorsInChiefManageAccounts() {
+        assertTrue(canManageAccounts(listOf("PUBLISHER")))
+        assertTrue(canManageAccounts(listOf("EDITOR_IN_CHIEF", "READER")))
+        assertFalse(canManageAccounts(listOf("READER")))
+        assertFalse(canManageAccounts(emptyList()))
     }
 }

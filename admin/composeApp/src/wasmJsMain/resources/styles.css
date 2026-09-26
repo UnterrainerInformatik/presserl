@@ -5,3 +5,65 @@ html, body {
     padding: 0;
     overflow: hidden;
 }
+
+/* Account slip (BrowserSlipPrinter): only in print, and then alone on one A4 page */
+#presserl-slip {
+    display: none;
+}
+
+@media print {
+    @page {
+        size: A4;
+        margin: 20mm;
+    }
+
+    html, body {
+        height: auto;
+        overflow: visible;
+        background: #fff;
+    }
+
+    body > *:not(#presserl-slip) {
+        display: none !important;
+    }
+
+    #presserl-slip {
+        display: block;
+        color: #000;
+        font-family: Georgia, "Times New Roman", serif;
+        break-inside: avoid;
+    }
+
+    #presserl-slip h1 {
+        font-size: 28pt;
+        margin: 0 0 4mm;
+    }
+
+    #presserl-slip h2 {
+        font-size: 16pt;
+        font-weight: normal;
+        margin: 0 0 10mm;
+    }
+
+    #presserl-slip dt {
+        font-size: 11pt;
+        margin-top: 6mm;
+    }
+
+    #presserl-slip dd {
+        font-family: "DejaVu Sans Mono", Consolas, "Courier New", monospace;
+        font-size: 16pt;
+        margin: 1mm 0 0;
+        word-break: break-all;
+    }
+
+    #presserl-slip dd.secret {
+        font-size: 24pt;
+        font-weight: bold;
+    }
+
+    #presserl-slip p {
+        font-size: 11pt;
+        margin-top: 12mm;
+    }
+}

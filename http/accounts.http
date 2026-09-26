@@ -1,0 +1,155 @@
+### Token for the publisher
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{username}}&password={{password}}
+
+> {%
+    client.global.set("accessToken", response.body.access_token);
+%}
+
+### Token for the editor-in-chief
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{chiefUsername}}&password={{chiefPassword}}
+
+> {%
+    client.global.set("chiefToken", response.body.access_token);
+%}
+
+### Token for a reader
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{readerUsername}}&password={{readerPassword}}
+
+> {%
+    client.global.set("readerToken", response.body.access_token);
+%}
+
+### List accounts as publisher
+GET {{baseUrl}}/api/accounts
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200 with all assignable roles and the dev realm users", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(JSON.stringify(response.body.assignableRoles) === '["PUBLISHER","EDITOR_IN_CHIEF","READER"]',
+            "assignableRoles " + JSON.stringify(response.body.assignableRoles));
+        const chief = response.body.accounts.find(a => a.username === "chief");
+        client.assert(chief && JSON.stringify(chief.roles) === '["EDITOR_IN_CHIEF"]', "chief " + JSON.stringify(chief));
+        client.assert(!response.body.accounts.some(a => a.username.startsWith("service-account-")), "service account listed");
+    });
+%}
+
+### List accounts as editor-in-chief
+GET {{baseUrl}}/api/accounts
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("200 with editor-in-chief and reader assignable", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(JSON.stringify(response.body.assignableRoles) === '["EDITOR_IN_CHIEF","READER"]',
+            "assignableRoles " + JSON.stringify(response.body.assignableRoles));
+    });
+%}
+
+### Readers may not list accounts
+GET {{baseUrl}}/api/accounts
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("403", () => client.assert(response.status === 403, "status " + response.status));
+%}
+
+### Username suggestion
+GET {{baseUrl}}/api/accounts/username-suggestion?firstName=J%C3%BCrgen%20Maria
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("juergen-maria", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.username === "juergen-maria", "username " + response.body.username);
+    });
+%}
+
+### Suggestion for a free username based on "Http Test"
+GET {{baseUrl}}/api/accounts/username-suggestion?firstName=Http%20Test
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200, "status " + response.status));
+    client.global.set("newUsername", response.body.username);
+%}
+
+### Create an editor-in-chief as publisher
+POST {{baseUrl}}/api/accounts
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "firstName": "Http", "lastName": "Test", "username": "{{newUsername}}", "roles": ["EDITOR_IN_CHIEF"] }
+
+> {%
+    client.test("201 with location and a four-word password", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        client.assert(response.headers.valueOf("Location").endsWith("/api/accounts/" + response.body.account.id),
+            "Location " + response.headers.valueOf("Location"));
+        client.assert(JSON.stringify(response.body.account.roles) === '["EDITOR_IN_CHIEF"]', "roles");
+        client.assert(/^[a-z]{3,8}(-[a-z]{3,8}){3}$/.test(response.body.password), "password shape");
+    });
+    client.global.set("newPassword", response.body.password);
+%}
+
+### The new account can log in with the generated password
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{newUsername}}&password={{newPassword}}
+
+> {%
+    client.test("token issued", () => client.assert(response.status === 200, "status " + response.status));
+%}
+
+### The username is now taken
+POST {{baseUrl}}/api/accounts
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "firstName": "Http", "username": "{{newUsername}}", "roles": ["READER"] }
+
+> {%
+    client.test("409 at username", () => {
+        client.assert(response.status === 409, "status " + response.status);
+        client.assert(response.body.errors[0].field === "username", JSON.stringify(response.body));
+    });
+%}
+
+### Editor-in-chief may not create a publisher
+POST {{baseUrl}}/api/accounts
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "firstName": "Boss", "username": "http-boss", "roles": ["PUBLISHER"] }
+
+> {%
+    client.test("403 at roles", () => {
+        client.assert(response.status === 403, "status " + response.status);
+        client.assert(response.body.errors[0].field === "roles", JSON.stringify(response.body));
+    });
+%}
+
+### Invalid username and no roles
+POST {{baseUrl}}/api/accounts
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "firstName": "Max", "username": "Max Mustermann", "roles": [] }
+
+> {%
+    client.test("400 listing username and roles", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        const fields = response.body.errors.map(e => e.field);
+        client.assert(JSON.stringify(fields) === '["username","roles"]', JSON.stringify(fields));
+    });
+%}
