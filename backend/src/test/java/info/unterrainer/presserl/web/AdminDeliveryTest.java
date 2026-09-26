@@ -9,13 +9,16 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import info.unterrainer.presserl.TestSupport;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.response.Response;
 
 /**
- * Delivery of the admin bundle; the test classpath carries a stub {@code META-INF/resources/admin/index.html}.
+ * Delivery of the admin bundle; the test classpath carries stubs of {@code META-INF/resources/admin/index.html},
+ * {@code composeApp.js} and a content-hashed {@code .wasm} module.
  */
 @QuarkusTest
 class AdminDeliveryTest {
@@ -47,6 +50,38 @@ class AdminDeliveryTest {
                 .containsEntry("default-src", "'self'")
                 .doesNotContainKey("connect-src")
                 .doesNotContainKey("style-src");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "/admin/", "/admin/composeApp.js" })
+    void entryFilesAreRevalidated(String path) {
+        given().get(path).then()
+                .statusCode(200)
+                .header("Cache-Control", "no-cache");
+    }
+
+    @Test
+    void hashedWasmModuleIsCachedLongTerm() {
+        given().get("/admin/0123456789abcdef0123.wasm").then()
+                .statusCode(200)
+                .header("Cache-Control", "public, max-age=31536000, immutable");
+    }
+
+    @Test
+    void unchangedEntryFileAnswersNotModified() {
+        String lastModified = given().get("/admin/composeApp.js").then()
+                .statusCode(200)
+                .extract().header("Last-Modified");
+        assertThat(lastModified).isNotNull();
+
+        given().header("If-Modified-Since", lastModified).get("/admin/composeApp.js").then()
+                .statusCode(304)
+                .header("Cache-Control", "no-cache");
+    }
+
+    @Test
+    void apiCachingIsUnchanged() {
+        assertThat(given().get("/api/newspaper").header("Cache-Control")).isNull();
     }
 
     private static Map<String, String> directives(String policy) {

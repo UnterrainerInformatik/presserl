@@ -160,6 +160,11 @@ docker compose up -d
 Database migrations run automatically at start. The database lives in the named volume
 `presserl-db` and survives `docker compose down` (but not `docker compose down -v`).
 
+The admin app's entry files (`index.html`, `composeApp.js`, …) are sent with
+`Cache-Control: no-cache`, so a new version takes effect on the next page load. Versions before
+that sent them as cacheable for a day: if a CDN or caching proxy sits in front of Presserl, purge
+its cache for `/admin/*` once when upgrading from such a version. Later updates need no purge.
+
 ## 8. Troubleshooting
 
 | Symptom | Cause and fix |
@@ -168,3 +173,4 @@ Database migrations run automatically at start. The database lives in the named 
 | `presserl` stays **unhealthy** / `/q/health/ready` reports `publisher-bootstrap` DOWN | The backend cannot create the first publisher. `docker compose logs presserl` names the cause: Keycloak unreachable from the container, wrong `PRESSERL_OIDC_BACKEND_SECRET`, or the group `publisher` missing in the realm. It retries automatically; fix the cause and wait. |
 | `presserl` exits at start naming a variable | A mandatory variable in `.env` is missing or empty, or an optional one has an invalid value; the message lists the allowed values. |
 | Admin app loads but API calls answer **401** | `PRESSERL_OIDC_ISSUER` differs from the issuer in the tokens (check scheme, host and realm name), or the realm was changed so `presserl-admin` tokens no longer carry the `presserl-backend` audience. |
+| Admin app stays blank; the browser console shows **WebAssembly … unsupported MIME type 'text/html'** or a `.wasm` request answers **404** | A stale cached `composeApp.js` from the previous version references `.wasm` files the new image no longer contains. Hard-reload the page (Ctrl+Shift+R); if a CDN or caching proxy is in front, purge its cache for `/admin/*` (see step 7). |

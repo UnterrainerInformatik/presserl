@@ -17,6 +17,10 @@ import jakarta.inject.Inject;
  * {@code /admin} the admin policy) and redirects {@code /admin} to {@code /admin/}.
  * Registered on the Vert.x router so static resources are covered too.
  * <p>
+ * Responses under {@code /admin/} also get an explicit {@code Cache-Control} that replaces the static
+ * handler's default: content-hashed {@code .wasm} modules are cached for a year, everything else
+ * (stable names such as {@code composeApp.js}) is revalidated so a deploy takes effect on the next load.
+ * <p>
  * Compose injects a {@code <style>} into its shadow DOM; the admin bundle lists that style's CSP
  * hashes in {@code csp-style-hashes.txt} (verified by the admin build), and they are allowed here.
  */
@@ -24,6 +28,9 @@ import jakarta.inject.Inject;
 public class SecurityHeaders {
 
     static final String CSP = "Content-Security-Policy";
+    static final String CACHE_CONTROL = "Cache-Control";
+    static final String CACHE_IMMUTABLE = "public, max-age=31536000, immutable";
+    static final String CACHE_REVALIDATE = "no-cache";
     static final String READER_POLICY = "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; "
             + "base-uri 'self'; form-action 'self'";
     static final String STYLE_HASHES = "META-INF/resources/admin/csp-style-hashes.txt";
@@ -42,8 +49,14 @@ public class SecurityHeaders {
             }
             // Dev UI and health endpoints under /q/ bring their own resources
             if (!path.startsWith("/q/")) {
-                String policy = path.startsWith("/admin/") ? adminPolicy : READER_POLICY;
-                ctx.addHeadersEndHandler(v -> ctx.response().headers().set(CSP, policy));
+                boolean admin = path.startsWith("/admin/");
+                String policy = admin ? adminPolicy : READER_POLICY;
+                ctx.addHeadersEndHandler(v -> {
+                    ctx.response().headers().set(CSP, policy);
+                    if (admin) {
+                        ctx.response().headers().set(CACHE_CONTROL, adminCacheControl(path));
+                    }
+                });
             }
             ctx.next();
         });
@@ -53,6 +66,14 @@ public class SecurityHeaders {
         String styleSrc = styleHashes.isEmpty() ? "" : "; style-src 'self' " + String.join(" ", styleHashes);
         return "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' " + issuerOrigin
                 + styleSrc + "; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+    }
+
+    /**
+     * The webpack build names {@code .wasm} files by content hash, so they never change; should an
+     * unhashed {@code .wasm} ever be emitted, it would be cached as immutable too.
+     */
+    static String adminCacheControl(String path) {
+        return path.endsWith(".wasm") ? CACHE_IMMUTABLE : CACHE_REVALIDATE;
     }
 
     /**
