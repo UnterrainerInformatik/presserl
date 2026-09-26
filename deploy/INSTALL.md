@@ -52,8 +52,11 @@ Steps 1 and 3 above stay the same; instead of step 2, do the following in that r
    *Failure reset time* 12 hours. Save.
 3. **Realm settings → Tokens:** *Access token lifespan* 5 minutes. **Realm settings → Sessions:**
    *SSO session idle* 30 minutes, *SSO session max* 10 hours. Save.
-4. **Realm settings → User profile:** open the attribute `email`, switch off *Required field*,
-   save. The first publisher is created without an e-mail address.
+4. **Realm settings → User profile:** open each of the attributes `email`, `firstName` and
+   `lastName`, switch off *Required field*, save. The first publisher is created with a username
+   only; with required fields left on, Keycloak asks them for these values at their first login
+   (*Verify profile*). The partial import in the next step does not bring the template's user
+   profile along, so this has to be done by hand.
 5. **Realm settings → Action (top right) → Partial import:** choose
    `keycloak/presserl-realm.json`, tick *Users*, *Clients* and *Groups*, set
    *If a resource exists* to *Skip*, import. The result lists the groups `publisher`,

@@ -52,7 +52,7 @@
 - [x] 7.4 `deploy/keycloak/presserl-realm.json` template per design D4/D6; unit test comparing it with the dev realm (groups, clients, mappers, service-account roles, security flags)
 - [x] 7.5 `deploy/INSTALL.md`: prerequisites, realm import incl. hostname `sed` and secret copy, `.env`, `docker compose up -d`, Traefik label override, optional Caddy, first login, updates, troubleshooting (invalid redirect_uri, readiness down)
 - [x] 7.6 End-to-end check: image + compose against the local dev Keycloak (realm template imported), first publisher logs in to `/admin/` and sees `PUBLISHER`
-- [ ] 7.7 CI in `.github/workflows/` using UnterrainerInformatik `docker-build-workflow` (inputs read from that repo) plus a test job (`./mvnw verify`, `./gradlew check`)
+- [x] 7.7 CI in `.github/workflows/` using UnterrainerInformatik `docker-build-workflow` (inputs read from that repo) plus a test job (`./mvnw verify`, `./gradlew check`)
 - [x] 7.8 Admin CSP allows Compose's injected shadow-DOM style by hash (design D8 amendment): `csp-style-hashes.txt` in the admin bundle, `CspStyleHashTest` (Karma, SwiftShader), backend adds `style-src`; `AdminDeliveryTest` covers it
 
 ## 8. Deployment repo (`../presserl-deployment`)
@@ -60,7 +60,7 @@
 - [x] 8.1 Ask Gerald for Traefik entrypoint, cert resolver, external network name and public hostname
 - [x] 8.2 Populate from the templates: `compose.yaml` with Traefik labels, `.env.example` with the auth.unterrainer.info issuer, `.gitignore` (`.env`), short `README.md` pointing to upstream `INSTALL.md`; realm file with the real hostname for Gerald to import into `auth.unterrainer.info`
 - [x] 8.3 `deploy/INSTALL.md` step 2a: step-by-step setup of an existing (empty) realm from the template (needed for staging and the alexpresse fork)
-- [ ] 8.4 Staging deploy (added 2026-09-26 with Gerald): `presserl-deployment/deploy/` (`compose.yaml` with Traefik labels on `proxy_default`, `site.env`, `up.sh` loading `secrets.env` from the server), `.github/workflows/deploy.yml` calling `deploy-workflow`, upstream `dispatch-staging` job (`repository_dispatch` with the version); verify a first deploy to dev1 and the login at `https://presserl.unterrainer.info/admin/`
+- [x] 8.4 Staging deploy (added 2026-09-26 with Gerald): `presserl-deployment/deploy/` (`compose.yaml` with Traefik labels on `proxy_default`, `site.env`, `up.sh` loading `secrets.env` from the server), `.github/workflows/deploy.yml` calling `deploy-workflow`, upstream `dispatch-staging` job (`repository_dispatch` with the version); verify a first deploy to babylon5 and the login at `https://presserl.unterrainer.info/admin/`. Deploy of `0.0.1` verified 2026-09-26 (healthy, publisher bootstrapped, HTTPS endpoints, admin CSP, Keycloak accepts the redirect); needed `deploy-workflow` fix `edf9058` (install `iproute2` for `wg-quick`) and the per-site compose project name. Gerald logged in as publisher and out again; the first login asked for first name, last name and e-mail because the realm's user profile still required them (partial import does not carry the template profile) — INSTALL.md 2a.4 now covers all three attributes
 
 ## 9. Contract / Docs
 
@@ -73,4 +73,10 @@
 ## 10. Verification
 
 - [x] 10.1 `./mvnw verify` and `./gradlew check` green
-- [ ] 10.2 `openspec validate scaffold-skeleton --strict` passes; walk through every spec scenario and tick it off against a test or the manual end-to-end check
+- [x] 10.2 `openspec validate scaffold-skeleton --strict` passes; walk through every spec scenario and tick it off against a test or the manual end-to-end check
+  - admin-shell: opening/trailing slash/CSP → `AdminDeliveryTest`; framework styles by hash → `CspStyleHashTest`, `AdminDeliveryTest`, no violations in local e2e and on staging; login, failed login, logout → local Playwright e2e (7.6) and Gerald on staging (8.4)
+  - api-authentication: all six → `AuthenticationTest`, `NewspaperRoleTest`
+  - deployment: start, restart keeps data, template → local compose e2e (7.1/7.6), `.env.example` review; existing Keycloak → staging realm via INSTALL 2a (8.4); fresh host → local e2e plus staging, which found the user-profile gap fixed in INSTALL 2a.4
+  - newspaper-settings: all six → `NewspaperConfigTest`, `NewspaperResourceTest`, `DeploymentNameTest`
+  - publisher-bootstrap: password not set → `PublisherCredentialsTest`; fresh realm, existing user, restart → `PublisherBootstrapTest`; Keycloak later, template missing → `PublisherBootstrapRunnerTest`, `PublisherBootstrapTest`
+  - reader-shell: all three → `ReaderResourceTest`, `DeploymentNameTest`
