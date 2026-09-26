@@ -9,41 +9,14 @@ on:
       - 'ai/**'
       - 'docs/**'
       - 'http/**'
-  pull_request:
   workflow_dispatch:
 
 jobs:
-  test:
-    name: Test 🧪
-    # GitHub-hosted: the tests need Docker (Dev Services) and Chrome (admin Karma tests)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-
-      - name: Backend ☕
-        working-directory: backend
-        run: ./mvnw -B verify
-
-      - uses: gradle/actions/setup-gradle@v4
-
-      - name: Admin 🖥️
-        working-directory: admin
-        run: ./gradlew --console=plain check
-
   bump:
-    needs: test
-    if: github.event_name != 'pull_request'
     uses: UnterrainerInformatik/bump-semver-workflow/.github/workflows/workflow.yml@master
 
   docker-build:
-    needs: [test, bump]
-    if: github.event_name != 'pull_request'
+    needs: bump
     uses: UnterrainerInformatik/docker-build-workflow/.github/workflows/workflow.yml@master
     with:
       major_version: ${{ needs.bump.outputs.major_version }}
@@ -57,7 +30,6 @@ jobs:
   dispatch-staging:
     name: Trigger staging deploy 🚀
     needs: [bump, docker-build]
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: peter-evans/repository-dispatch@v3

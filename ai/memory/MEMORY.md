@@ -7,6 +7,7 @@
 - [Chat language is German](feedback_conversation_language_german.md) — Replies in German from the first message; repo content stays English
 - [Code in English only](feedback_english_only.md) — Identifiers, comments, logs, docs, commits: English
 - [Tests are welcome](feedback_tests_welcome.md) — Write backend (JUnit 5 + AssertJ) and admin (Kotlin) tests freely; no need to ask
+- [Run tests locally before push](feedback_tests_before_push.md) — CI runs no tests; run backend + admin suites before every commit/push
 - [Keep endpoints primer in sync](feedback_endpoints_primer.md) — REST contract change ⇒ update ./ai/primer/endpoints.md and the admin API client in the same change
 - [Always add .http test files for REST endpoints](feedback_http_tests.md) — Create/update .http files and run them against a live backend
 - [Evidence over speculation](feedback_evidence_over_speculation.md) — When the cause is not in the logs, add targeted diagnostic logging and wait for a reproduction instead of theorising
