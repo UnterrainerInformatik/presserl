@@ -1,44 +1,4 @@
-# newspaper-settings Specification
-
-## Purpose
-
-Resolves the newspaper's effective settings from the configuration layers (code default,
-deployment environment, newspaper overrides in the database) and exposes them to clients.
-
-## Requirements
-
-### Requirement: Layered resolution of newspaper settings
-The system SHALL resolve each newspaper setting from the layers code default, deployment
-(environment variable) and newspaper (database override), where a later layer wins over an
-earlier one. The database layer SHALL store only overrides; a setting without an override SHALL
-fall back to the deployment value or, if none is set, to the code default.
-
-The settings resolved in this change and their code defaults are:
-`name` = `My Newspaper`, `subtitle` = empty, `visibility` = `public`,
-`retract.author-can-retract` = `true`, `section.default` = `General`,
-`editor.level` = `standard`, `reader.text-size` = `m`, `media.max-size` = `10M`.
-
-#### Scenario: Fresh installation uses code defaults
-- **WHEN** no environment variable and no database override is set for any setting
-- **THEN** every setting resolves to its code default
-
-#### Scenario: Deployment variable overrides the code default
-- **WHEN** `PRESSERL_NEWSPAPER_NAME` is set to `Die Zwergenpost` and no database override exists
-- **THEN** the effective name is `Die Zwergenpost`
-
-#### Scenario: Database override wins over the deployment variable
-- **WHEN** `PRESSERL_NEWSPAPER_NAME` is `Die Zwergenpost` and the newspaper row overrides the name with `Zwergenpost Extra`
-- **THEN** the effective name is `Zwergenpost Extra`
-
-### Requirement: Invalid enumerated settings are rejected at startup
-The system SHALL refuse to start when a deployment variable for an enumerated setting holds a
-value outside its allowed set (`visibility`: `public`, `private`; `editor.level`: `starter`,
-`standard`, `profi`; `reader.text-size`: `s`, `m`, `l`, `xl`), and SHALL name the offending
-variable and the allowed values in the error message.
-
-#### Scenario: Unknown visibility value
-- **WHEN** the backend starts with `PRESSERL_NEWSPAPER_VISIBILITY=secret`
-- **THEN** startup fails with an error naming `PRESSERL_NEWSPAPER_VISIBILITY` and the values `public`, `private`
+## MODIFIED Requirements
 
 ### Requirement: Newspaper endpoint returns effective settings
 The system SHALL expose `GET /api/newspaper` without authentication and return the effective
@@ -58,6 +18,8 @@ values of `settings` that currently come from a valid newspaper override (`{}` w
 #### Scenario: Overridden text size
 - **WHEN** `PRESSERL_READER_TEXT_SIZE=l` is set and the newspaper overrides `reader.text-size` with `xl`
 - **THEN** `settings` contains `reader.text-size: "xl"` and `overrides` equals `{"reader.text-size": "xl"}`
+
+## ADDED Requirements
 
 ### Requirement: Newspaper settings can be overridden
 The system SHALL expose `PUT /api/newspaper/settings` to users holding `PUBLISHER` or
