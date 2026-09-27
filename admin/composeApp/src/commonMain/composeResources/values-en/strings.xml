@@ -8,6 +8,7 @@
     <string name="log_in_again">Log in again</string>
     <string name="log_out">Log out</string>
     <string name="no_roles">No newspaper roles</string>
+    <string name="no_writing_role">This account has no role for writing articles.</string>
     <string name="role_publisher">Publisher</string>
     <string name="role_editor_in_chief">Editor-in-chief</string>
     <string name="role_reader">Reader</string>

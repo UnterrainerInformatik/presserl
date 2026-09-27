@@ -1,9 +1,12 @@
 package info.unterrainer.presserl.section;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import info.unterrainer.presserl.auth.CurrentUser;
+import info.unterrainer.presserl.auth.NewspaperAction;
 import info.unterrainer.presserl.auth.NewspaperRole;
 
 /**
@@ -24,6 +27,27 @@ public record Newsroom(CurrentUser user, Map<Long, SectionRole> sectionRoles) {
      */
     public boolean isAdministrator() {
         return user.has(NewspaperRole.PUBLISHER) || user.has(NewspaperRole.EDITOR_IN_CHIEF);
+    }
+
+    /**
+     * Administrators create, change and reorder sections.
+     */
+    public boolean mayManageSections() {
+        return isAdministrator();
+    }
+
+    /**
+     * Administrators assign section roles everywhere, section editors in their own sections.
+     */
+    public boolean mayAssignSectionRolesIn(long sectionId) {
+        return isAdministrator() || isSectionEditorOf(sectionId);
+    }
+
+    /**
+     * Whether there is at least one section in which the user may assign section roles.
+     */
+    public boolean mayAssignSectionRolesAnywhere() {
+        return isAdministrator() || isSectionEditorAnywhere();
     }
 
     public boolean isSectionEditorAnywhere() {
@@ -57,5 +81,26 @@ public record Newsroom(CurrentUser user, Map<Long, SectionRole> sectionRoles) {
 
     public Optional<SectionRole> roleIn(long sectionId) {
         return Optional.ofNullable(sectionRoles.get(sectionId));
+    }
+
+    /**
+     * The newspaper-wide actions the user may perform, in declaration order of
+     * {@link NewspaperAction}; each follows the predicate its endpoints check.
+     */
+    public List<NewspaperAction> allowedActions() {
+        List<NewspaperAction> actions = new ArrayList<>();
+        if (isWriter()) {
+            actions.add(NewspaperAction.WRITE_ARTICLES);
+        }
+        if (mayManageSections()) {
+            actions.add(NewspaperAction.MANAGE_SECTIONS);
+        }
+        if (mayAssignSectionRolesAnywhere()) {
+            actions.add(NewspaperAction.ASSIGN_SECTION_ROLES);
+        }
+        if (mayAdministerAccounts()) {
+            actions.add(NewspaperAction.ADMINISTER_ACCOUNTS);
+        }
+        return List.copyOf(actions);
     }
 }

@@ -105,7 +105,7 @@ public class SectionResource {
      */
     private Uni<Newsroom> manager() {
         return newsroom().invoke(newsroom -> {
-            if (!newsroom.isAdministrator()) {
+            if (!newsroom.mayManageSections()) {
                 throw new ForbiddenException();
             }
         });

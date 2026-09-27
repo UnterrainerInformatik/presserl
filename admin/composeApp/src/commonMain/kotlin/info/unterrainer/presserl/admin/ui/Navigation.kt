@@ -1,0 +1,27 @@
+package info.unterrainer.presserl.admin.ui
+
+/** Header entries of the logged-in user, in display order. */
+enum class NavEntry { ARTICLES, SECTIONS, ACCOUNTS }
+
+/** Newspaper-wide actions of `GET /api/me` the app knows; any other value is ignored. */
+object NewspaperAction {
+    const val WRITE_ARTICLES = "WRITE_ARTICLES"
+    const val MANAGE_SECTIONS = "MANAGE_SECTIONS"
+    const val ASSIGN_SECTION_ROLES = "ASSIGN_SECTION_ROLES"
+    const val ADMINISTER_ACCOUNTS = "ADMINISTER_ACCOUNTS"
+}
+
+/**
+ * The header entries for [allowedActions] of `GET /api/me`; none when fewer than two remain. Only
+ * visibility, the server enforces access.
+ */
+fun navEntries(allowedActions: List<String>): List<NavEntry> {
+    val entries = buildList {
+        if (NewspaperAction.WRITE_ARTICLES in allowedActions) add(NavEntry.ARTICLES)
+        if (NewspaperAction.MANAGE_SECTIONS in allowedActions || NewspaperAction.ASSIGN_SECTION_ROLES in allowedActions) {
+            add(NavEntry.SECTIONS)
+        }
+        if (NewspaperAction.ADMINISTER_ACCOUNTS in allowedActions) add(NavEntry.ACCOUNTS)
+    }
+    return if (entries.size < 2) emptyList() else entries
+}

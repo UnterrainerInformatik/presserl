@@ -76,15 +76,28 @@ The logged-in user as seen by the backend.
 - **Params / body:** none
 - **Response `200`:**
   ```json
-  { "username": "papa", "displayName": "Papa", "roles": ["PUBLISHER"],
-    "sectionRoles": [ { "sectionId": 1, "sectionName": "Sport", "role": "SECTION_EDITOR" } ] }
+  { "username": "nogroups", "displayName": "No Groups", "roles": [],
+    "sectionRoles": [ { "sectionId": 1, "sectionName": "Sport", "role": "SECTION_EDITOR" } ],
+    "allowedActions": ["WRITE_ARTICLES", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS"] }
   ```
   - `username`: `preferred_username` claim, falling back to `sub`.
   - `displayName`: `name` claim, falling back to `username`.
   - `roles`: newspaper roles from the `groups` claim in the order `PUBLISHER`,
     `EDITOR_IN_CHIEF`, `READER`; empty array for a user without newspaper groups.
-  - `sectionRoles`: the user's section roles, ordered by section position; `[]` for none.
-  - M2 extends this response additively (scopes, allowed actions).
+  - `sectionRoles`: the user's section roles, ordered by section position; `[]` for none. Read
+    per call, so a changed section role shows at the next call; `roles` follow the token.
+  - `allowedActions`: the newspaper-wide actions the user may perform now, always present (`[]`
+    for none), in this order. Computed from the same rules that guard the endpoints; clients
+    render from it instead of re-deriving it from `roles`/`sectionRoles`, and ignore values they
+    do not know (M3 adds approval-chain actions). Per-section detail stays on
+    `GET /api/sections` (`canWrite`, `assignableRoles`).
+
+    | Action | Listed when the user holds | Stands for |
+    |---|---|---|
+    | `WRITE_ARTICLES` | `PUBLISHER`, `EDITOR_IN_CHIEF`, or a section role in any section | the article endpoints |
+    | `MANAGE_SECTIONS` | `PUBLISHER` or `EDITOR_IN_CHIEF` | creating, changing and reordering sections |
+    | `ASSIGN_SECTION_ROLES` | `PUBLISHER`, `EDITOR_IN_CHIEF`, or `SECTION_EDITOR` in any section | section members of at least one section |
+    | `ADMINISTER_ACCOUNTS` | `PUBLISHER`, `EDITOR_IN_CHIEF`, or `SECTION_EDITOR` in any section | listing and creating accounts |
 - **Errors:** `401` (empty body) without a valid token.
 - **Side effects:** none.
 

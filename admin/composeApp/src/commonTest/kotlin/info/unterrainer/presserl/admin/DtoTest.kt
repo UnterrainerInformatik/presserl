@@ -95,9 +95,35 @@ class DtoTest {
     }
 
     @Test
+    fun meWithoutAllowedActions() {
+        val dto = json.decodeFromString<MeDto>("""{ "username": "papa", "displayName": "Papa", "roles": [] }""")
+
+        assertEquals(emptyList(), dto.allowedActions)
+    }
+
+    @Test
+    fun meWithAllowedActions() {
+        val dto = json.decodeFromString<MeDto>(
+            """{ "username": "papa", "displayName": "Papa", "roles": ["PUBLISHER"],
+                 "allowedActions": ["WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS"] }""",
+        )
+
+        assertEquals(listOf("WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS"), dto.allowedActions)
+    }
+
+    @Test
+    fun meWithUnknownActionDecodes() {
+        val dto = json.decodeFromString<MeDto>(
+            """{ "username": "papa", "displayName": "Papa", "roles": [], "allowedActions": ["WRITE_ARTICLES", "REVIEW"] }""",
+        )
+
+        assertEquals(listOf("WRITE_ARTICLES", "REVIEW"), dto.allowedActions)
+    }
+
+    @Test
     fun additiveFieldsAreIgnored() {
         val dto = json.decodeFromString<MeDto>(
-            """{ "username": "papa", "displayName": "Papa", "roles": [], "allowedActions": ["x"] }""",
+            """{ "username": "papa", "displayName": "Papa", "roles": [], "scopes": ["x"] }""",
         )
 
         assertEquals("papa", dto.username)

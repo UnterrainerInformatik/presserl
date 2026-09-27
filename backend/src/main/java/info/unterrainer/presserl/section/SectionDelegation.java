@@ -18,8 +18,7 @@ public final class SectionDelegation {
      * manage the section's members at all.
      */
     public static List<SectionRole> assignable(Newsroom newsroom, long sectionId) {
-        if (newsroom.isAdministrator()
-                || newsroom.roleIn(sectionId).filter(role -> role == SectionRole.SECTION_EDITOR).isPresent()) {
+        if (newsroom.mayAssignSectionRolesIn(sectionId)) {
             return ALL;
         }
         return List.of();

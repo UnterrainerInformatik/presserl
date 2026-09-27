@@ -8,6 +8,7 @@
     <string name="log_in_again">Neu anmelden</string>
     <string name="log_out">Abmelden</string>
     <string name="no_roles">Keine Zeitungsrollen</string>
+    <string name="no_writing_role">Dieses Konto hat keine Rolle zum Schreiben von Artikeln.</string>
     <string name="role_publisher">Herausgeber:in</string>
     <string name="role_editor_in_chief">Chefredaktion</string>
     <string name="role_reader">Leser:in</string>

@@ -8,6 +8,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 import info.unterrainer.presserl.auth.CurrentUser;
+import info.unterrainer.presserl.auth.NewspaperAction;
 import info.unterrainer.presserl.auth.NewspaperRole;
 
 class NewsroomTest {
@@ -72,6 +73,69 @@ class NewsroomTest {
         assertThat(member.isSectionEditorOf(2L)).isTrue();
         assertThat(member.isSectionEditorOf(3L)).isFalse();
         assertThat(newsroom(Map.of(), NewspaperRole.PUBLISHER).isSectionEditorOf(1L)).isFalse();
+    }
+
+    @Test
+    void sectionManagementForAdministratorsOnly() {
+        assertThat(newsroom(Map.of(), NewspaperRole.PUBLISHER).mayManageSections()).isTrue();
+        assertThat(newsroom(Map.of(), NewspaperRole.EDITOR_IN_CHIEF).mayManageSections()).isTrue();
+        assertThat(newsroom(Map.of(1L, SectionRole.SECTION_EDITOR)).mayManageSections()).isFalse();
+    }
+
+    @Test
+    void sectionRolesAreAssignedByAdministratorsAndSectionEditorsOfTheSection() {
+        assertThat(newsroom(Map.of(), NewspaperRole.PUBLISHER).mayAssignSectionRolesIn(7L)).isTrue();
+        Newsroom member = newsroom(Map.of(1L, SectionRole.REPORTER, 2L, SectionRole.SECTION_EDITOR));
+        assertThat(member.mayAssignSectionRolesIn(1L)).isFalse();
+        assertThat(member.mayAssignSectionRolesIn(2L)).isTrue();
+        assertThat(member.mayAssignSectionRolesAnywhere()).isTrue();
+        assertThat(newsroom(Map.of(1L, SectionRole.REPORTER)).mayAssignSectionRolesAnywhere()).isFalse();
+    }
+
+    // --- allowedActions ---------------------------------------------------------------------
+
+    @Test
+    void publisherMayDoEverything() {
+        assertThat(newsroom(Map.of(), NewspaperRole.PUBLISHER).allowedActions()).containsExactly(
+                NewspaperAction.WRITE_ARTICLES, NewspaperAction.MANAGE_SECTIONS,
+                NewspaperAction.ASSIGN_SECTION_ROLES, NewspaperAction.ADMINISTER_ACCOUNTS);
+    }
+
+    @Test
+    void editorInChiefMayDoEverything() {
+        assertThat(newsroom(Map.of(), NewspaperRole.EDITOR_IN_CHIEF).allowedActions()).containsExactly(
+                NewspaperAction.WRITE_ARTICLES, NewspaperAction.MANAGE_SECTIONS,
+                NewspaperAction.ASSIGN_SECTION_ROLES, NewspaperAction.ADMINISTER_ACCOUNTS);
+    }
+
+    @Test
+    void readerOnlyMayDoNothing() {
+        assertThat(newsroom(Map.of(), NewspaperRole.READER).allowedActions()).isEmpty();
+    }
+
+    @Test
+    void userWithoutRolesMayDoNothing() {
+        assertThat(newsroom(Map.of()).allowedActions()).isEmpty();
+    }
+
+    @Test
+    void reporterMayOnlyWrite() {
+        assertThat(newsroom(Map.of(1L, SectionRole.REPORTER)).allowedActions())
+                .containsExactly(NewspaperAction.WRITE_ARTICLES);
+    }
+
+    @Test
+    void sectionEditorMayWriteAssignAndAdministerAccounts() {
+        assertThat(newsroom(Map.of(1L, SectionRole.SECTION_EDITOR)).allowedActions()).containsExactly(
+                NewspaperAction.WRITE_ARTICLES, NewspaperAction.ASSIGN_SECTION_ROLES,
+                NewspaperAction.ADMINISTER_ACCOUNTS);
+    }
+
+    @Test
+    void reporterInOneSectionAndSectionEditorInAnother() {
+        assertThat(newsroom(Map.of(1L, SectionRole.REPORTER, 2L, SectionRole.SECTION_EDITOR)).allowedActions())
+                .containsExactly(NewspaperAction.WRITE_ARTICLES, NewspaperAction.ASSIGN_SECTION_ROLES,
+                        NewspaperAction.ADMINISTER_ACCOUNTS);
     }
 
     static Newsroom newsroom(Map<Long, SectionRole> sectionRoles, NewspaperRole... roles) {

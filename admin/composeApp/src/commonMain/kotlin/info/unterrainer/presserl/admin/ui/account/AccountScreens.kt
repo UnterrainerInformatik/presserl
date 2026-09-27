@@ -44,7 +44,6 @@ import info.unterrainer.presserl.admin.api.AccountDto
 import info.unterrainer.presserl.admin.api.AccountListDto
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.CreatedAccountDto
-import info.unterrainer.presserl.admin.api.MeDto
 import info.unterrainer.presserl.admin.api.SectionDto
 import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.account_action_failed
@@ -89,13 +88,6 @@ import info.unterrainer.presserl.admin.ui.roleText
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
 import info.unterrainer.presserl.admin.ui.sectionRoleText
 import org.jetbrains.compose.resources.stringResource
-
-/**
- * Whether the user may open the accounts and sections screens (publishers, editors-in-chief and
- * section editors of any section); only visibility, the server enforces access.
- */
-fun canAdministerAccounts(me: MeDto): Boolean =
-    "PUBLISHER" in me.roles || "EDITOR_IN_CHIEF" in me.roles || me.sectionRoles.any { it.role == "SECTION_EDITOR" }
 
 /** The accounts, and the sections to name section roles and to offer them in "New account" and "Edit roles". */
 private data class AccountsView(val accounts: AccountListDto, val sections: List<SectionDto>)

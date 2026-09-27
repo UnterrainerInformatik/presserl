@@ -54,7 +54,9 @@ class AuthenticationTest {
                 .statusCode(200)
                 .body("username", equalTo("publisher"))
                 .body("displayName", equalTo("publisher"))
-                .body("roles", contains("PUBLISHER"));
+                .body("roles", contains("PUBLISHER"))
+                .body("allowedActions", contains("WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES",
+                        "ADMINISTER_ACCOUNTS"));
     }
 
     @Test
@@ -64,7 +66,16 @@ class AuthenticationTest {
                 .body("username", equalTo("nogroups"))
                 .body("displayName", equalTo("No Groups"))
                 .body("roles", empty())
-                .body("sectionRoles", empty());
+                .body("sectionRoles", empty())
+                .body("allowedActions", empty());
+    }
+
+    @Test
+    void readerHasNoActions() {
+        given().auth().oauth2(TestSupport.token("reader", "reader")).get("/api/me").then()
+                .statusCode(200)
+                .body("roles", contains("READER"))
+                .body("allowedActions", empty());
     }
 
     @Test

@@ -349,7 +349,22 @@ class SectionResourceTest {
         as(nogroups).get("/api/me").then().statusCode(200)
                 .body("sectionRoles.sectionId", contains((int) sport))
                 .body("sectionRoles.sectionName", contains("Sport"))
-                .body("sectionRoles.role", contains("SECTION_EDITOR"));
+                .body("sectionRoles.role", contains("SECTION_EDITOR"))
+                .body("allowedActions", contains("WRITE_ARTICLES", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS"));
+    }
+
+    @Test
+    void reporterMayOnlyWriteAndSeesPromotionAtTheNextCall() {
+        long sport = create(publisher, "Sport");
+        assign(publisher, sport, "nogroups", "REPORTER").statusCode(200);
+
+        as(nogroups).get("/api/me").then().statusCode(200)
+                .body("allowedActions", contains("WRITE_ARTICLES"));
+
+        assign(publisher, sport, "nogroups", "SECTION_EDITOR").statusCode(200);
+
+        as(nogroups).get("/api/me").then().statusCode(200)
+                .body("allowedActions", contains("WRITE_ARTICLES", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS"));
     }
 
     @Test

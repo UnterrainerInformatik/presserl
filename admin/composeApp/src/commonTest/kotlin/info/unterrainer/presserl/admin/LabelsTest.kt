@@ -1,7 +1,5 @@
 package info.unterrainer.presserl.admin
 
-import info.unterrainer.presserl.admin.api.MeDto
-import info.unterrainer.presserl.admin.api.MySectionRoleDto
 import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.color_pink
 import info.unterrainer.presserl.admin.resources.color_red
@@ -14,7 +12,6 @@ import info.unterrainer.presserl.admin.resources.status_draft
 import info.unterrainer.presserl.admin.resources.status_offline
 import info.unterrainer.presserl.admin.resources.status_published
 import info.unterrainer.presserl.admin.resources.status_submitted
-import info.unterrainer.presserl.admin.ui.account.canAdministerAccounts
 import info.unterrainer.presserl.admin.ui.colorLabel
 import info.unterrainer.presserl.admin.ui.roleLabel
 import info.unterrainer.presserl.admin.ui.section.SECTION_COLORS
@@ -23,9 +20,7 @@ import info.unterrainer.presserl.admin.ui.sectionRoleLabel
 import info.unterrainer.presserl.admin.ui.statusLabel
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class LabelsTest {
 
@@ -74,17 +69,4 @@ class LabelsTest {
         assertEquals("orange", defaultSectionColor(1))
         assertEquals("red", defaultSectionColor(8))
     }
-
-    @Test
-    fun administratorsAndSectionEditorsAdministerAccounts() {
-        assertTrue(canAdministerAccounts(me(listOf("PUBLISHER"))))
-        assertTrue(canAdministerAccounts(me(listOf("EDITOR_IN_CHIEF", "READER"))))
-        assertTrue(canAdministerAccounts(me(emptyList(), "SECTION_EDITOR")))
-        assertFalse(canAdministerAccounts(me(emptyList(), "REPORTER")))
-        assertFalse(canAdministerAccounts(me(listOf("READER"))))
-        assertFalse(canAdministerAccounts(me(emptyList())))
-    }
-
-    private fun me(roles: List<String>, vararg sectionRoles: String) =
-        MeDto("someone", "Someone", roles, sectionRoles.mapIndexed { index, role -> MySectionRoleDto(index + 1L, "Section", role) })
 }

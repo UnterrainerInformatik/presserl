@@ -23,13 +23,17 @@ data class OidcDto(
     val scopes: List<String>,
 )
 
-/** `GET /api/me`; [sectionRoles] are ordered by section position. */
+/**
+ * `GET /api/me`; [sectionRoles] are ordered by section position, [allowedActions] are the
+ * newspaper-wide actions the server grants (unknown values are kept and ignored by the app).
+ */
 @Serializable
 data class MeDto(
     val username: String,
     val displayName: String,
     val roles: List<String>,
     val sectionRoles: List<MySectionRoleDto> = emptyList(),
+    val allowedActions: List<String> = emptyList(),
 )
 
 /** A section role of the logged-in user, with the section's name. */

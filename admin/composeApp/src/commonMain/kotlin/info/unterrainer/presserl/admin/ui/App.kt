@@ -43,6 +43,7 @@ import info.unterrainer.presserl.admin.resources.nav_articles
 import info.unterrainer.presserl.admin.resources.nav_sections
 import info.unterrainer.presserl.admin.resources.login_failed
 import info.unterrainer.presserl.admin.resources.no_roles
+import info.unterrainer.presserl.admin.resources.no_writing_role
 import info.unterrainer.presserl.admin.resources.something_went_wrong
 import info.unterrainer.presserl.admin.resources.try_again
 import info.unterrainer.presserl.admin.ui.account.AccountListScreen
@@ -50,7 +51,6 @@ import info.unterrainer.presserl.admin.ui.account.AccountSlipScreen
 import info.unterrainer.presserl.admin.ui.account.EditRolesScreen
 import info.unterrainer.presserl.admin.ui.account.NewAccountScreen
 import info.unterrainer.presserl.admin.ui.account.SlipPrinter
-import info.unterrainer.presserl.admin.ui.account.canAdministerAccounts
 import info.unterrainer.presserl.admin.ui.editor.EditorScreen
 import info.unterrainer.presserl.admin.ui.section.SectionFormScreen
 import info.unterrainer.presserl.admin.ui.section.SectionListScreen
@@ -62,8 +62,10 @@ sealed interface Screen {
     data object Loading : Screen
     data class LoginFailed(val reason: String) : Screen
     data class LoggedIn(val newspaper: NewspaperDto, val me: MeDto) : Screen {
-        /** Shows the "Sections" and "Accounts" entries. */
-        val canAdministerAccounts: Boolean get() = canAdministerAccounts(me)
+        val navEntries: List<NavEntry> get() = navEntries(me.allowedActions)
+
+        /** Without it the article list is replaced by a notice. */
+        val mayWriteArticles: Boolean get() = NewspaperAction.WRITE_ARTICLES in me.allowedActions
     }
     data class Error(val message: String) : Screen
 }
@@ -130,14 +132,18 @@ private fun Message(content: @Composable () -> Unit) {
 
 @Composable
 private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, slipPrinter: SlipPrinter, onLogout: () -> Unit) {
-    var stack by remember { mutableStateOf(listOf<Route>(Route.ArticleList(ListTab.MINE))) }
+    // empty without a writing role: the notice is shown instead of a route
+    var stack by remember {
+        mutableStateOf(if (screen.mayWriteArticles) listOf<Route>(Route.ArticleList(ListTab.MINE)) else emptyList())
+    }
     val push = { route: Route -> stack = stack + route }
     val back = { stack = stack.dropLast(1) }
 
     Column(Modifier.fillMaxSize()) {
         Header(
             screen,
-            entry = when (stack.first()) {
+            entry = when (stack.firstOrNull()) {
+                null -> null
                 Route.Accounts -> NavEntry.ACCOUNTS
                 Route.Sections -> NavEntry.SECTIONS
                 else -> NavEntry.ARTICLES
@@ -156,7 +162,8 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
         HorizontalDivider()
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Box(Modifier.widthIn(max = 900.dp).fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
-                when (val route = stack.last()) {
+                when (val route = stack.lastOrNull()) {
+                    null -> Text(stringResource(Res.string.no_writing_role), style = MaterialTheme.typography.titleMedium)
                     is Route.ArticleList -> ArticleListScreen(
                         api,
                         route.tab,
@@ -222,10 +229,8 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
     }
 }
 
-private enum class NavEntry { ARTICLES, SECTIONS, ACCOUNTS }
-
 @Composable
-private fun Header(screen: Screen.LoggedIn, entry: NavEntry, onEntry: (NavEntry) -> Unit, onLogout: () -> Unit) {
+private fun Header(screen: Screen.LoggedIn, entry: NavEntry?, onEntry: (NavEntry) -> Unit, onLogout: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -240,10 +245,13 @@ private fun Header(screen: Screen.LoggedIn, entry: NavEntry, onEntry: (NavEntry)
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
-        if (screen.canAdministerAccounts) {
-            NavButton(stringResource(Res.string.nav_articles), entry == NavEntry.ARTICLES) { onEntry(NavEntry.ARTICLES) }
-            NavButton(stringResource(Res.string.nav_sections), entry == NavEntry.SECTIONS) { onEntry(NavEntry.SECTIONS) }
-            NavButton(stringResource(Res.string.nav_accounts), entry == NavEntry.ACCOUNTS) { onEntry(NavEntry.ACCOUNTS) }
+        for (navEntry in screen.navEntries) {
+            val label = when (navEntry) {
+                NavEntry.ARTICLES -> Res.string.nav_articles
+                NavEntry.SECTIONS -> Res.string.nav_sections
+                NavEntry.ACCOUNTS -> Res.string.nav_accounts
+            }
+            NavButton(stringResource(label), entry == navEntry) { onEntry(navEntry) }
         }
         OutlinedButton(onClick = onLogout) { Text(stringResource(Res.string.log_out)) }
     }

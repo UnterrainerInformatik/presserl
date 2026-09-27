@@ -2,6 +2,7 @@ package info.unterrainer.presserl.auth;
 
 import org.eclipse.microprofile.jwt.JsonWebToken;
 
+import info.unterrainer.presserl.section.NewsroomService;
 import info.unterrainer.presserl.section.SectionRoleStore;
 import io.quarkus.security.Authenticated;
 import io.smallrye.mutiny.Uni;
@@ -21,11 +22,16 @@ public class MeResource {
     @Inject
     SectionRoleStore sectionRoles;
 
+    @Inject
+    NewsroomService newsrooms;
+
     @GET
     @Produces(MediaType.APPLICATION_JSON)
     public Uni<MeDto> get() {
         CurrentUser user = CurrentUser.of(token);
-        return sectionRoles.namedRolesOf(user.sub())
-                .map(roles -> new MeDto(user.username(), user.displayName(), user.roles(), roles));
+        // one after the other: both queries use the request's reactive session
+        return newsrooms.of(user).flatMap(newsroom -> sectionRoles.namedRolesOf(user.sub())
+                .map(roles -> new MeDto(user.username(), user.displayName(), user.roles(), roles,
+                        newsroom.allowedActions())));
     }
 }

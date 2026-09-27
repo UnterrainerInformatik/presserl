@@ -9,7 +9,7 @@ import java.util.List;
 public record SectionListDto(boolean canManage, List<SectionDto> sections) {
 
     public static SectionListDto of(List<SectionEntity> sections, Newsroom newsroom) {
-        return new SectionListDto(newsroom.isAdministrator(),
+        return new SectionListDto(newsroom.mayManageSections(),
                 sections.stream().map(section -> SectionDto.of(section, newsroom)).toList());
     }
 }

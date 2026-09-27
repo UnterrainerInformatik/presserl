@@ -162,10 +162,10 @@ POST   /api/accounts/{id}/unlock          publisher; never a publisher, never on
 PUT    /api/accounts/{id}/roles           anyone above the person, never oneself; changed roles at or below mine, within my scope (implemented)
 PUT    /api/accounts/{id}/trust           set/clear trust for my level
 POST   /api/media                         reporter+ (size/type limit)
-GET    /api/me                            my roles and section roles (implemented); later scopes and allowed actions
+GET    /api/me                            my roles, section roles and allowed actions (implemented)
 ```
 
-Article and account responses carry `allowedActions`; clients render buttons from it and never re-implement the approval chain or the account rules. In M1, `publish` goes directly to `PUBLISHED` for a publisher-author only and `offline` does not lock; see `ai/primer/endpoints.md` for the binding contract of the implemented endpoints.
+Article and account responses and `GET /api/me` carry `allowedActions`; clients render buttons from it and never re-implement the approval chain or the account rules. In M1, `publish` goes directly to `PUBLISHED` for a publisher-author only and `offline` does not lock; see `ai/primer/endpoints.md` for the binding contract of the implemented endpoints.
 
 ## Views
 
