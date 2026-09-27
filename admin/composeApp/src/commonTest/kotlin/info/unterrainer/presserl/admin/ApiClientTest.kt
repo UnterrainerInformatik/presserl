@@ -4,6 +4,8 @@ import info.unterrainer.presserl.admin.api.AccountDto
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.ArticleContent
 import info.unterrainer.presserl.admin.api.CreateAccountRequest
+import info.unterrainer.presserl.admin.api.SectionRequest
+import info.unterrainer.presserl.admin.api.SectionRoleDto
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -51,6 +53,11 @@ class ApiClientTest {
                 path == "/api/accounts" && request.method == HttpMethod.Get -> """{ "assignableRoles": ["EDITOR_IN_CHIEF", "READER"],
                     "accounts": [$ACCOUNT] }"""
                 path == "/api/accounts" -> """{ "account": $ACCOUNT, "password": "tiger-wolke-apfel-leiter" }"""
+                path == "/api/sections" && request.method == HttpMethod.Get || path == "/api/sections/order" ->
+                    """{ "canManage": true, "sections": [$SECTION] }"""
+                path.endsWith("/members") -> """{ "assignableRoles": ["SECTION_EDITOR", "REPORTER"], "members": [$MEMBER] }"""
+                path.contains("/members/") -> MEMBER
+                path.startsWith("/api/sections") -> SECTION
                 else -> """{ "oidc": { "issuer": "https://kc/realms/presserl", "clientId": "presserl-admin", "scopes": ["openid"] } }"""
             }
             if (request.method == HttpMethod.Delete) {
@@ -189,7 +196,101 @@ class ApiClientTest {
         assertEquals("Bearer token-123", request.authorization)
     }
 
+    @Test
+    fun createAccountWithSectionRolesOnly() = runTest {
+        api.createAccount(CreateAccountRequest("Max", "", "max", emptyList(), listOf(SectionRoleDto(1, "REPORTER"))))
+        assertEquals(
+            buildJsonObject {
+                put("firstName", "Max")
+                put("lastName", "")
+                put("username", "max")
+                putJsonArray("roles") {}
+                putJsonArray("sectionRoles") {
+                    add(buildJsonObject {
+                        put("sectionId", 1)
+                        put("role", "REPORTER")
+                    })
+                }
+            },
+            requests.single().body,
+        )
+    }
+
+    @Test
+    fun listSections() = runTest {
+        val list = api.sections()
+        assertEquals(true, list.canManage)
+        assertEquals("sport", list.sections.single().slug)
+        assertEquals(Recorded(HttpMethod.Get, "https://news.example.org/api/sections", "Bearer token-123", null), requests.single())
+    }
+
+    @Test
+    fun createSectionWithoutColourLeavesItOut() = runTest {
+        assertEquals("green", api.createSection(SectionRequest("Sport")).color)
+        val request = requests.single()
+        assertEquals(HttpMethod.Post to "https://news.example.org/api/sections", request.method to request.url)
+        assertEquals(buildJsonObject { put("name", "Sport") }, request.body)
+        assertEquals("Bearer token-123", request.authorization)
+    }
+
+    @Test
+    fun updateAndReorderSections() = runTest {
+        api.updateSection(1, SectionRequest("Sportnews", "blue"))
+        api.reorderSections(listOf(2, 1))
+        assertEquals(
+            listOf(
+                Recorded(
+                    HttpMethod.Put,
+                    "https://news.example.org/api/sections/1",
+                    "Bearer token-123",
+                    buildJsonObject {
+                        put("name", "Sportnews")
+                        put("color", "blue")
+                    },
+                ),
+                Recorded(
+                    HttpMethod.Put,
+                    "https://news.example.org/api/sections/order",
+                    "Bearer token-123",
+                    buildJsonObject {
+                        putJsonArray("ids") {
+                            add(JsonPrimitive(2))
+                            add(JsonPrimitive(1))
+                        }
+                    },
+                ),
+            ),
+            requests,
+        )
+    }
+
+    @Test
+    fun members() = runTest {
+        val list = api.members(1)
+        assertEquals(listOf("SECTION_EDITOR", "REPORTER"), list.assignableRoles)
+        assertEquals("nogroups", list.members.single().username)
+        assertEquals("REPORTER", api.assignMember(1, "5f0c", "REPORTER").role)
+        api.removeMember(1, "5f0c")
+        assertEquals(
+            listOf(
+                Recorded(HttpMethod.Get, "https://news.example.org/api/sections/1/members", "Bearer token-123", null),
+                Recorded(
+                    HttpMethod.Put,
+                    "https://news.example.org/api/sections/1/members/5f0c",
+                    "Bearer token-123",
+                    buildJsonObject { put("role", "REPORTER") },
+                ),
+                Recorded(HttpMethod.Delete, "https://news.example.org/api/sections/1/members/5f0c", "Bearer token-123", null),
+            ),
+            requests,
+        )
+    }
+
     private companion object {
+        const val SECTION = """{ "id": 1, "name": "Sport", "slug": "sport", "color": "green", "position": 0,
+            "assignableRoles": ["SECTION_EDITOR", "REPORTER"] }"""
+        const val MEMBER = """{ "accountId": "5f0c", "username": "nogroups", "firstName": "No", "lastName": "Groups",
+            "role": "REPORTER" }"""
         const val ACCOUNT = """{ "id": "9a1e", "username": "lena", "firstName": "Lena", "lastName": "",
             "roles": ["EDITOR_IN_CHIEF"], "enabled": true }"""
         const val SUMMARY = """{ "id": 42, "status": "DRAFT", "author": { "username": "papa", "displayName": "Papa" },

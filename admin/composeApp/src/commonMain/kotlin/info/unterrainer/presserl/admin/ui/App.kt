@@ -30,6 +30,7 @@ import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.CreatedAccountDto
 import info.unterrainer.presserl.admin.api.MeDto
 import info.unterrainer.presserl.admin.api.NewspaperDto
+import info.unterrainer.presserl.admin.api.SectionDto
 import info.unterrainer.presserl.admin.auth.AuthClient
 import info.unterrainer.presserl.admin.auth.AuthState
 import info.unterrainer.presserl.admin.resources.Res
@@ -38,6 +39,7 @@ import info.unterrainer.presserl.admin.resources.log_in_again
 import info.unterrainer.presserl.admin.resources.log_out
 import info.unterrainer.presserl.admin.resources.nav_accounts
 import info.unterrainer.presserl.admin.resources.nav_articles
+import info.unterrainer.presserl.admin.resources.nav_sections
 import info.unterrainer.presserl.admin.resources.login_failed
 import info.unterrainer.presserl.admin.resources.no_roles
 import info.unterrainer.presserl.admin.resources.something_went_wrong
@@ -46,15 +48,21 @@ import info.unterrainer.presserl.admin.ui.account.AccountListScreen
 import info.unterrainer.presserl.admin.ui.account.AccountSlipScreen
 import info.unterrainer.presserl.admin.ui.account.NewAccountScreen
 import info.unterrainer.presserl.admin.ui.account.SlipPrinter
-import info.unterrainer.presserl.admin.ui.account.canManageAccounts
+import info.unterrainer.presserl.admin.ui.account.canAdministerAccounts
 import info.unterrainer.presserl.admin.ui.editor.EditorScreen
+import info.unterrainer.presserl.admin.ui.section.SectionFormScreen
+import info.unterrainer.presserl.admin.ui.section.SectionListScreen
+import info.unterrainer.presserl.admin.ui.section.SectionMembersScreen
 import kotlinx.coroutines.CancellationException
 import org.jetbrains.compose.resources.stringResource
 
 sealed interface Screen {
     data object Loading : Screen
     data class LoginFailed(val reason: String) : Screen
-    data class LoggedIn(val newspaper: NewspaperDto, val me: MeDto) : Screen
+    data class LoggedIn(val newspaper: NewspaperDto, val me: MeDto) : Screen {
+        /** Shows the "Sections" and "Accounts" entries. */
+        val canAdministerAccounts: Boolean get() = canAdministerAccounts(me)
+    }
     data class Error(val message: String) : Screen
 }
 
@@ -64,8 +72,12 @@ sealed interface Route {
     data class Editor(val articleId: Long) : Route
     data class Revisions(val articleId: Long) : Route
     data class Revision(val articleId: Long, val number: Int) : Route
+    data object Sections : Route
+    /** "New section" when [section] is `null`, preselecting [defaultColor]; otherwise "Edit". */
+    data class SectionForm(val section: SectionDto?, val defaultColor: String) : Route
+    data class SectionMembers(val section: SectionDto) : Route
     data object Accounts : Route
-    data class NewAccount(val assignableRoles: List<String>) : Route
+    data class NewAccount(val assignableRoles: List<String>, val sections: List<SectionDto>) : Route
     /** Holds the generated password; leaving the slip drops it. */
     data class AccountSlip(val created: CreatedAccountDto) : Route
 }
@@ -122,9 +134,19 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
     Column(Modifier.fillMaxSize()) {
         Header(
             screen,
-            section = if (stack.first() == Route.Accounts) Section.ACCOUNTS else Section.ARTICLES,
-            onSection = { section ->
-                stack = listOf(if (section == Section.ACCOUNTS) Route.Accounts else Route.ArticleList(ListTab.MINE))
+            entry = when (stack.first()) {
+                Route.Accounts -> NavEntry.ACCOUNTS
+                Route.Sections -> NavEntry.SECTIONS
+                else -> NavEntry.ARTICLES
+            },
+            onEntry = { entry ->
+                stack = listOf(
+                    when (entry) {
+                        NavEntry.ARTICLES -> Route.ArticleList(ListTab.MINE)
+                        NavEntry.SECTIONS -> Route.Sections
+                        NavEntry.ACCOUNTS -> Route.Accounts
+                    },
+                )
             },
             onLogout = onLogout,
         )
@@ -149,11 +171,22 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                     }
                     is Route.Revisions -> RevisionsScreen(api, route.articleId, onBack = back, onOpen = { push(Route.Revision(route.articleId, it)) })
                     is Route.Revision -> key(route) { RevisionScreen(api, route.articleId, route.number, onBack = back) }
-                    Route.Accounts -> AccountListScreen(api, onNew = { push(Route.NewAccount(it)) })
+                    Route.Sections -> SectionListScreen(
+                        api,
+                        onNew = { push(Route.SectionForm(null, it)) },
+                        onEdit = { push(Route.SectionForm(it, it.color)) },
+                        onOpen = { push(Route.SectionMembers(it)) },
+                    )
+                    is Route.SectionForm -> key(route) {
+                        SectionFormScreen(api, route.section, route.defaultColor, onBack = back, onSaved = { stack = listOf(Route.Sections) })
+                    }
+                    is Route.SectionMembers -> key(route) { SectionMembersScreen(api, route.section, onBack = back) }
+                    Route.Accounts -> AccountListScreen(api, onNew = { roles, sections -> push(Route.NewAccount(roles, sections)) })
                     is Route.NewAccount -> key(route) {
                         NewAccountScreen(
                             api,
                             route.assignableRoles,
+                            route.sections,
                             onBack = back,
                             onCreated = { stack = stack.dropLast(1) + Route.AccountSlip(it) },
                         )
@@ -171,10 +204,10 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
     }
 }
 
-private enum class Section { ARTICLES, ACCOUNTS }
+private enum class NavEntry { ARTICLES, SECTIONS, ACCOUNTS }
 
 @Composable
-private fun Header(screen: Screen.LoggedIn, section: Section, onSection: (Section) -> Unit, onLogout: () -> Unit) {
+private fun Header(screen: Screen.LoggedIn, entry: NavEntry, onEntry: (NavEntry) -> Unit, onLogout: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -182,22 +215,24 @@ private fun Header(screen: Screen.LoggedIn, section: Section, onSection: (Sectio
     ) {
         Column(Modifier.weight(1f)) {
             Text(screen.newspaper.name, style = MaterialTheme.typography.titleLarge)
-            val roles = screen.me.roles.map { roleText(it) }
+            val roles = screen.me.roles.map { roleText(it) } +
+                screen.me.sectionRoles.map { sectionRoleText(it.role) + " · " + it.sectionName }
             Text(
                 screen.me.displayName + " · " + (if (roles.isEmpty()) stringResource(Res.string.no_roles) else roles.joinToString(", ")),
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
-        if (canManageAccounts(screen.me.roles)) {
-            SectionButton(stringResource(Res.string.nav_articles), section == Section.ARTICLES) { onSection(Section.ARTICLES) }
-            SectionButton(stringResource(Res.string.nav_accounts), section == Section.ACCOUNTS) { onSection(Section.ACCOUNTS) }
+        if (screen.canAdministerAccounts) {
+            NavButton(stringResource(Res.string.nav_articles), entry == NavEntry.ARTICLES) { onEntry(NavEntry.ARTICLES) }
+            NavButton(stringResource(Res.string.nav_sections), entry == NavEntry.SECTIONS) { onEntry(NavEntry.SECTIONS) }
+            NavButton(stringResource(Res.string.nav_accounts), entry == NavEntry.ACCOUNTS) { onEntry(NavEntry.ACCOUNTS) }
         }
         OutlinedButton(onClick = onLogout) { Text(stringResource(Res.string.log_out)) }
     }
 }
 
 @Composable
-private fun SectionButton(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun NavButton(label: String, selected: Boolean, onClick: () -> Unit) {
     if (selected) {
         FilledTonalButton(onClick = onClick) { Text(label) }
     } else {

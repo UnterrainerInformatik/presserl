@@ -1,0 +1,388 @@
+### Token for the publisher; also picks a suffix so section names are new on every run
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{username}}&password={{password}}
+
+> {%
+    client.global.set("accessToken", response.body.access_token);
+    client.global.set("suffix", Math.random().toString(36).slice(2, 8));
+%}
+
+### Token for the editor-in-chief
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{chiefUsername}}&password={{chiefPassword}}
+
+> {%
+    client.global.set("chiefToken", response.body.access_token);
+%}
+
+### Token for a reader
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{readerUsername}}&password={{readerPassword}}
+
+> {%
+    client.global.set("readerToken", response.body.access_token);
+%}
+
+### Token for the user without groups (becomes section editor below)
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{nogroupsUsername}}&password={{nogroupsPassword}}
+
+> {%
+    client.global.set("nogroupsToken", response.body.access_token);
+%}
+
+### Account ids of reader and nogroups
+GET {{baseUrl}}/api/accounts
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.global.set("readerId", response.body.accounts.find(a => a.username === "reader").id);
+    client.global.set("nogroupsId", response.body.accounts.find(a => a.username === "nogroups").id);
+%}
+
+### Readers list sections but may manage nothing
+GET {{baseUrl}}/api/sections
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("200, canManage false, nothing assignable", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.canManage === false, "canManage");
+        client.assert(response.body.sections.every(s => s.assignableRoles.length === 0), "assignableRoles");
+    });
+%}
+
+### Editor-in-chief creates a section; the slug is derived from the name
+POST {{baseUrl}}/api/sections
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "name": "Sport & Spiel {{suffix}}" }
+
+> {%
+    client.test("201 with slug, palette colour and last position", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        client.assert(response.headers.valueOf("Location").endsWith("/api/sections/" + response.body.id), "Location");
+        client.assert(response.body.slug === "sport-spiel-" + client.global.get("suffix"), "slug " + response.body.slug);
+        client.assert(["red", "orange", "yellow", "green", "teal", "blue", "purple", "pink"].includes(response.body.color), "color");
+        client.assert(JSON.stringify(response.body.assignableRoles) === '["SECTION_EDITOR","REPORTER"]', "assignableRoles");
+    });
+    client.global.set("sportId", response.body.id);
+    client.global.set("sportSlug", response.body.slug);
+%}
+
+### Publisher creates a second section with a colour
+POST {{baseUrl}}/api/sections
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "name": "Kultur {{suffix}}", "color": "purple" }
+
+> {%
+    client.test("201 purple", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        client.assert(response.body.color === "purple", "color " + response.body.color);
+    });
+    client.global.set("kulturId", response.body.id);
+%}
+
+### Readers may not create sections
+POST {{baseUrl}}/api/sections
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{ "name": "Reader section {{suffix}}" }
+
+> {%
+    client.test("403", () => client.assert(response.status === 403, "status " + response.status));
+%}
+
+### Duplicate name, ignoring case
+POST {{baseUrl}}/api/sections
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "name": "kultur {{suffix}}" }
+
+> {%
+    client.test("409 at name", () => {
+        client.assert(response.status === 409, "status " + response.status);
+        client.assert(response.body.errors[0].field === "name", JSON.stringify(response.body));
+    });
+%}
+
+### Blank name and colour outside the palette
+POST {{baseUrl}}/api/sections
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "name": "  ", "color": "#ff0000" }
+
+> {%
+    client.test("400 at name and color", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        const fields = response.body.errors.map(e => e.field);
+        client.assert(JSON.stringify(fields) === '["name","color"]', JSON.stringify(fields));
+    });
+%}
+
+### Rename keeps the slug
+PUT {{baseUrl}}/api/sections/{{sportId}}
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "name": "Sportnews {{suffix}}", "color": "blue" }
+
+> {%
+    client.test("200, slug unchanged", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.color === "blue", "color");
+        client.assert(response.body.slug === client.global.get("sportSlug"), "slug " + response.body.slug);
+    });
+%}
+
+### Unknown section
+PUT {{baseUrl}}/api/sections/999999
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "name": "Nowhere", "color": "red" }
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### Current order
+GET {{baseUrl}}/api/sections
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200, canManage", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.canManage === true, "canManage");
+    });
+    client.global.set("reversedIds", JSON.stringify(response.body.sections.map(s => s.id).reverse()));
+    client.global.set("firstId", response.body.sections[0].id);
+%}
+
+### Reverse the order
+PUT {{baseUrl}}/api/sections/order
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "ids": {{reversedIds}} }
+
+> {%
+    client.test("200 in the new order", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(JSON.stringify(response.body.sections.map(s => s.id)) === client.global.get("reversedIds"), "order");
+        client.assert(response.body.sections.every((s, i) => s.position === i), "positions");
+    });
+%}
+
+### An incomplete order is refused
+PUT {{baseUrl}}/api/sections/order
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "ids": [{{firstId}}] }
+
+> {%
+    client.test("400 at ids", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "ids", JSON.stringify(response.body));
+    });
+%}
+
+### Publisher makes nogroups section editor of Sport
+PUT {{baseUrl}}/api/sections/{{sportId}}/members/{{nogroupsId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "role": "SECTION_EDITOR" }
+
+> {%
+    client.test("200 section editor", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.username === "nogroups" && response.body.role === "SECTION_EDITOR", JSON.stringify(response.body));
+    });
+%}
+
+### nogroups sees the section role in /api/me
+GET {{baseUrl}}/api/me
+Authorization: Bearer {{nogroupsToken}}
+
+> {%
+    client.test("sectionRoles contains Sport", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const role = response.body.sectionRoles.find(r => r.sectionId === client.global.get("sportId"));
+        client.assert(role && role.role === "SECTION_EDITOR" && role.sectionName.startsWith("Sportnews"), JSON.stringify(response.body.sectionRoles));
+    });
+%}
+
+### Section editor makes reader a reporter of their section
+PUT {{baseUrl}}/api/sections/{{sportId}}/members/{{readerId}}
+Authorization: Bearer {{nogroupsToken}}
+Content-Type: application/json
+
+{ "role": "REPORTER" }
+
+> {%
+    client.test("200 reporter", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.role === "REPORTER", JSON.stringify(response.body));
+    });
+%}
+
+### Section editor outside their section
+PUT {{baseUrl}}/api/sections/{{kulturId}}/members/{{readerId}}
+Authorization: Bearer {{nogroupsToken}}
+Content-Type: application/json
+
+{ "role": "REPORTER" }
+
+> {%
+    client.test("403", () => client.assert(response.status === 403, "status " + response.status));
+%}
+
+### Members: section editors first
+GET {{baseUrl}}/api/sections/{{sportId}}/members
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("nogroups before reader", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(JSON.stringify(response.body.members.map(m => m.username)) === '["nogroups","reader"]', JSON.stringify(response.body));
+    });
+%}
+
+### Reporters may not list members
+GET {{baseUrl}}/api/sections/{{sportId}}/members
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("403", () => client.assert(response.status === 403, "status " + response.status));
+%}
+
+### Unknown role
+PUT {{baseUrl}}/api/sections/{{sportId}}/members/{{readerId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "role": "PUBLISHER" }
+
+> {%
+    client.test("400 at role", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "role", JSON.stringify(response.body));
+    });
+%}
+
+### Unknown account
+PUT {{baseUrl}}/api/sections/{{sportId}}/members/no-such-account
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "role": "REPORTER" }
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### Section editor lists accounts (nothing newspaper-wide to assign)
+GET {{baseUrl}}/api/accounts
+Authorization: Bearer {{nogroupsToken}}
+
+> {%
+    client.test("200, assignableRoles empty, reader listed with its section role", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.assignableRoles.length === 0, "assignableRoles");
+        const reader = response.body.accounts.find(a => a.username === "reader");
+        client.assert(reader.sectionRoles.some(r => r.sectionId === client.global.get("sportId") && r.role === "REPORTER"), JSON.stringify(reader));
+    });
+%}
+
+### A free username for the section editor's new reporter
+GET {{baseUrl}}/api/accounts/username-suggestion?firstName=Http%20Reporter
+Authorization: Bearer {{nogroupsToken}}
+
+> {%
+    client.global.set("reporterUsername", response.body.username);
+%}
+
+### Section editor creates a reporter of their section
+POST {{baseUrl}}/api/accounts
+Authorization: Bearer {{nogroupsToken}}
+Content-Type: application/json
+
+{ "firstName": "Http", "lastName": "Reporter", "username": "{{reporterUsername}}", "roles": [],
+  "sectionRoles": [{ "sectionId": {{sportId}}, "role": "REPORTER" }] }
+
+> {%
+    client.test("201 with the section role only", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        client.assert(response.body.account.roles.length === 0, "roles");
+        client.assert(JSON.stringify(response.body.account.sectionRoles) === JSON.stringify([{ sectionId: client.global.get("sportId"), role: "REPORTER" }]),
+            JSON.stringify(response.body.account.sectionRoles));
+    });
+%}
+
+### Section editor may not create a reporter outside their section
+POST {{baseUrl}}/api/accounts
+Authorization: Bearer {{nogroupsToken}}
+Content-Type: application/json
+
+{ "firstName": "Http", "username": "http-outsider", "roles": [], "sectionRoles": [{ "sectionId": {{kulturId}}, "role": "REPORTER" }] }
+
+> {%
+    client.test("403 at sectionRoles", () => {
+        client.assert(response.status === 403, "status " + response.status);
+        client.assert(response.body.errors[0].field === "sectionRoles", JSON.stringify(response.body));
+    });
+%}
+
+### Section editor may not assign newspaper roles
+POST {{baseUrl}}/api/accounts
+Authorization: Bearer {{nogroupsToken}}
+Content-Type: application/json
+
+{ "firstName": "Http", "username": "http-leser", "roles": ["READER"] }
+
+> {%
+    client.test("403 at roles", () => {
+        client.assert(response.status === 403, "status " + response.status);
+        client.assert(response.body.errors[0].field === "roles", JSON.stringify(response.body));
+    });
+%}
+
+### Remove the reporter
+DELETE {{baseUrl}}/api/sections/{{sportId}}/members/{{readerId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("204", () => client.assert(response.status === 204, "status " + response.status));
+%}
+
+### Removing again finds no membership
+DELETE {{baseUrl}}/api/sections/{{sportId}}/members/{{readerId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### Clean up: nogroups is no section editor any more
+DELETE {{baseUrl}}/api/sections/{{sportId}}/members/{{nogroupsId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("204", () => client.assert(response.status === 204, "status " + response.status));
+%}

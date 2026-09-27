@@ -7,6 +7,7 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -32,8 +33,9 @@ import jakarta.ws.rs.core.Response;
 
 /**
  * Newspaper accounts on top of the Keycloak Admin API: Keycloak users are the accounts, the
- * groups of the {@link NewspaperRole}s their newspaper-wide roles. Nothing is stored in the
- * Presserl database. Blocking — call it on a worker thread.
+ * groups of the {@link NewspaperRole}s their newspaper-wide roles. Section roles live in the
+ * Presserl database and are added by the callers ({@link AccountCreation}). Blocking — call it on a
+ * worker thread ({@link KeycloakCalls}).
  */
 @ApplicationScoped
 public class AccountService {
@@ -54,7 +56,8 @@ public class AccountService {
     PassPhraseGenerator passPhrases;
 
     /**
-     * Every account except service accounts, sorted by username; at most {@value #LIST_MAX}.
+     * Every account except service accounts, sorted by username, without section roles; at most
+     * {@value #LIST_MAX}.
      */
     public List<AccountDto> list() {
         return keycloakCall(() -> {
@@ -83,19 +86,34 @@ public class AccountService {
     }
 
     /**
+     * The account with this id; empty when there is none or it is a service account.
+     */
+    public Optional<AccountDto> find(String id) {
+        return keycloakCall(() -> {
+            try {
+                UserRepresentation user = realm().users().get(id).toRepresentation();
+                return isServiceAccount(user) ? Optional.empty() : Optional.of(account(user, List.of()));
+            } catch (WebApplicationException e) {
+                Response response = e.getResponse();
+                if (response != null && response.getStatus() == Response.Status.NOT_FOUND.getStatusCode()) {
+                    return Optional.empty();
+                }
+                throw e;
+            }
+        });
+    }
+
+    /**
      * Creates an enabled account with a generated password and joins the groups of its roles. All
-     * or nothing: when a step after the creation fails, the new user is deleted again.
+     * or nothing: when a step after the creation fails, the new user is deleted again. Section
+     * roles are not stored here; the returned account has none.
      *
      * @throws AccountException {@code 403 roles} when {@code creator} may not assign a role,
      *                          {@code 409 username} when the username is taken, {@code 400} when
      *                          Keycloak rejects a name, {@code 503} when Keycloak is unavailable
      */
     public CreatedAccountDto create(CurrentUser creator, CreateAccountRequest request) {
-        List<NewspaperRole> assignable = RoleDelegation.assignableBy(creator);
-        List<NewspaperRole> refused = request.roles().stream().filter(role -> !assignable.contains(role)).toList();
-        if (!refused.isEmpty()) {
-            throw AccountException.forbidden("roles", "you may not assign " + refused + "; assignable: " + assignable);
-        }
+        requireAssignable(creator, request.roles());
         String password = passPhrases.generate();
         AccountDto account = keycloakCall(() -> {
             RealmResource realm = realm();
@@ -111,11 +129,33 @@ public class AccountService {
                 throw e;
             }
             return new AccountDto(id, request.username(), request.firstName(), request.lastName(), request.roles(),
-                    true);
+                    List.of(), true);
         });
-        LOG.infof("Account '%s' created by '%s' with roles %s", account.username(), creator.username(),
-                account.roles());
         return new CreatedAccountDto(account, password);
+    }
+
+    /**
+     * Deletes an account whose creation could not be completed; failures are logged, not thrown.
+     */
+    public void deleteIncomplete(String id, String username) {
+        try {
+            deleteOrphan(realm(), id, username);
+        } catch (RuntimeException e) {
+            LOG.errorf(e, "Account '%s' (%s) was created incompletely and could not be deleted; "
+                    + "remove it in the Keycloak admin console", username, id);
+        }
+    }
+
+    /**
+     * @throws AccountException {@code 403 roles} when {@code creator} may not assign one of
+     *                          {@code roles}
+     */
+    static void requireAssignable(CurrentUser creator, List<NewspaperRole> roles) {
+        List<NewspaperRole> assignable = RoleDelegation.assignableBy(creator);
+        List<NewspaperRole> refused = roles.stream().filter(role -> !assignable.contains(role)).toList();
+        if (!refused.isEmpty()) {
+            throw AccountException.forbidden("roles", "you may not assign " + refused + "; assignable: " + assignable);
+        }
     }
 
     /**
@@ -192,7 +232,7 @@ public class AccountService {
 
     private static AccountDto account(UserRepresentation user, List<NewspaperRole> roles) {
         return new AccountDto(user.getId(), user.getUsername(), orEmpty(user.getFirstName()),
-                orEmpty(user.getLastName()), roles, Boolean.TRUE.equals(user.isEnabled()));
+                orEmpty(user.getLastName()), roles, List.of(), Boolean.TRUE.equals(user.isEnabled()));
     }
 
     private static String orEmpty(String value) {

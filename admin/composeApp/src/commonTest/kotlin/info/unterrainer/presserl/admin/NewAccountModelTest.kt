@@ -4,6 +4,8 @@ import info.unterrainer.presserl.admin.api.AccountDto
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.CreateAccountRequest
 import info.unterrainer.presserl.admin.api.CreatedAccountDto
+import info.unterrainer.presserl.admin.api.SectionDto
+import info.unterrainer.presserl.admin.api.SectionRoleDto
 import info.unterrainer.presserl.admin.ui.account.AccountField
 import info.unterrainer.presserl.admin.ui.account.NewAccountModel
 import io.ktor.client.HttpClient
@@ -37,13 +39,20 @@ class NewAccountModelTest {
 
     /** Answers `POST /api/accounts`; the default creates the account. */
     private var create: suspend (CreateAccountRequest) -> CreatedAccountDto = { request ->
-        CreatedAccountDto(AccountDto("id", request.username, request.firstName, request.lastName, request.roles, true), "tiger-wolke-apfel-leiter")
+        CreatedAccountDto(
+            AccountDto("id", request.username, request.firstName, request.lastName, request.roles, true, request.sectionRoles),
+            "tiger-wolke-apfel-leiter",
+        )
     }
 
-    private fun TestScope.model(assignable: List<String> = listOf("PUBLISHER", "EDITOR_IN_CHIEF", "READER")) =
+    private fun TestScope.model(
+        assignable: List<String> = listOf("PUBLISHER", "EDITOR_IN_CHIEF", "READER"),
+        sections: List<SectionDto> = emptyList(),
+    ) =
         NewAccountModel(
             backgroundScope,
             assignable,
+            sections,
             suggest = { firstName -> suggested += firstName; suggest(firstName) },
             create = { request -> sent += request; create(request) },
         )
@@ -230,6 +239,72 @@ class NewAccountModelTest {
         assertEquals("Lena", model.state.value.firstName)
     }
 
+    @Test
+    fun onlySectionsWithAssignableRolesAreOffered() = runTest {
+        val model = model(emptyList(), listOf(SPORT, KULTUR_READ_ONLY))
+
+        assertEquals(listOf(SPORT), model.sections)
+    }
+
+    @Test
+    fun sectionRoleAloneAllowsCreate() = runTest {
+        val model = model(emptyList(), listOf(SPORT))
+        model.firstName("Max")
+        model.username("max")
+        assertFalse(model.state.value.canCreate)
+
+        model.sectionRole(SPORT.id, "REPORTER")
+        assertTrue(model.state.value.canCreate)
+
+        model.sectionRole(SPORT.id, null)
+        assertFalse(model.state.value.canCreate)
+    }
+
+    @Test
+    fun onlyAssignableSectionRolesCanBeChosen() = runTest {
+        val model = model(emptyList(), listOf(SPORT.copy(assignableRoles = listOf("REPORTER")), KULTUR_READ_ONLY))
+        model.sectionRole(SPORT.id, "SECTION_EDITOR")
+        model.sectionRole(KULTUR_READ_ONLY.id, "REPORTER")
+        assertEquals(emptyMap(), model.state.value.sectionRoles)
+
+        model.sectionRole(SPORT.id, "REPORTER")
+        assertEquals(mapOf(SPORT.id to "REPORTER"), model.state.value.sectionRoles)
+    }
+
+    @Test
+    fun submitSendsSectionRolesInSectionOrder() = runTest {
+        val wetter = SectionDto(3, "Wetter", "wetter", "blue", 1, listOf("SECTION_EDITOR", "REPORTER"))
+        val model = model(listOf("READER"), listOf(SPORT, wetter))
+        model.firstName("Max")
+        model.username("max")
+        model.sectionRole(wetter.id, "SECTION_EDITOR")
+        model.sectionRole(SPORT.id, "REPORTER")
+        var created: CreatedAccountDto? = null
+        model.submit { created = it }
+        runCurrent()
+
+        assertEquals(
+            CreateAccountRequest("Max", "", "max", emptyList(), listOf(SectionRoleDto(1, "REPORTER"), SectionRoleDto(3, "SECTION_EDITOR"))),
+            sent.single(),
+        )
+        assertEquals(2, created?.account?.sectionRoles?.size)
+    }
+
+    @Test
+    fun sectionRoleRefusalIsShownAtTheSectionRoles() = runTest {
+        val api = api(HttpStatusCode.Forbidden, """{ "errors": [{ "field": "sectionRoles", "message": "you may not assign" }] }""")
+        create = { api.createAccount(it) }
+        val model = model(emptyList(), listOf(SPORT))
+        model.firstName("Max")
+        model.username("max")
+        model.sectionRole(SPORT.id, "REPORTER")
+        model.submit {}
+        runCurrent()
+
+        assertEquals(mapOf(AccountField.SECTION_ROLES to "you may not assign"), model.state.value.errors)
+        assertEquals(mapOf(SPORT.id to "REPORTER"), model.state.value.sectionRoles)
+    }
+
     private fun TestScope.filled(model: NewAccountModel): NewAccountModel {
         model.firstName("Lena")
         model.username("lena")
@@ -249,4 +324,9 @@ class NewAccountModelTest {
         ),
         "https://news.example.org",
     ) { "token" }
+
+    private companion object {
+        val SPORT = SectionDto(1, "Sport", "sport", "green", 0, listOf("SECTION_EDITOR", "REPORTER"))
+        val KULTUR_READ_ONLY = SectionDto(2, "Kultur", "kultur", "red", 2, emptyList())
+    }
 }

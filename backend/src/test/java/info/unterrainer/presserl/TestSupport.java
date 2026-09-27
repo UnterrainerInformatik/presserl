@@ -2,14 +2,20 @@ package info.unterrainer.presserl;
 
 import static io.restassured.RestAssured.given;
 
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Duration;
+
+import javax.sql.DataSource;
 
 import org.eclipse.microprofile.config.ConfigProvider;
 
 import io.restassured.response.Response;
 
 /**
- * Tokens from the Dev Services Keycloak (dev realm, dev-only public clients) and readiness waiting.
+ * Tokens from the Dev Services Keycloak (dev realm, dev-only public clients), readiness waiting and
+ * database clean-up.
  */
 public final class TestSupport {
 
@@ -37,6 +43,17 @@ public final class TestSupport {
 
     public static String token(String username, String password) {
         return token(HTTP_CLIENT, username, password);
+    }
+
+    /**
+     * Deletes every section and with them every section role, so the dev users hold none.
+     */
+    public static void deleteSections(DataSource dataSource) {
+        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+            statement.executeUpdate("DELETE FROM section");
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /**

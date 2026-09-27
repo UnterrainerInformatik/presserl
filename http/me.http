@@ -18,6 +18,7 @@ Accept: application/json
         client.assert(response.status === 200, "status " + response.status);
         client.assert(response.body.username === request.environment.get("username"), "username");
         client.assert(response.body.roles.includes("PUBLISHER"), "roles " + JSON.stringify(response.body.roles));
+        client.assert(Array.isArray(response.body.sectionRoles), "sectionRoles " + JSON.stringify(response.body.sectionRoles));
     });
 %}
 

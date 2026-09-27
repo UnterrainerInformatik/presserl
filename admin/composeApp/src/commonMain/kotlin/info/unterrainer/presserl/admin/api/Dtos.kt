@@ -23,12 +23,21 @@ data class OidcDto(
     val scopes: List<String>,
 )
 
-/** `GET /api/me` */
+/** `GET /api/me`; [sectionRoles] are ordered by section position. */
 @Serializable
 data class MeDto(
     val username: String,
     val displayName: String,
     val roles: List<String>,
+    val sectionRoles: List<MySectionRoleDto> = emptyList(),
+)
+
+/** A section role of the logged-in user, with the section's name. */
+@Serializable
+data class MySectionRoleDto(
+    val sectionId: Long,
+    val sectionName: String,
+    val role: String,
 )
 
 /** Author snapshot of an article. */
@@ -126,7 +135,10 @@ data class FieldErrorDto(
     val message: String,
 )
 
-/** Entry of `GET /api/accounts`; [roles] are newspaper roles in the order publisher, editor-in-chief, reader. */
+/**
+ * Entry of `GET /api/accounts`; [roles] are newspaper roles in the order publisher, editor-in-chief, reader,
+ * [sectionRoles] are ordered by section position.
+ */
 @Serializable
 data class AccountDto(
     val id: String,
@@ -135,6 +147,14 @@ data class AccountDto(
     val lastName: String,
     val roles: List<String>,
     val enabled: Boolean,
+    val sectionRoles: List<SectionRoleDto> = emptyList(),
+)
+
+/** A section role of an account (`SECTION_EDITOR` or `REPORTER`), in account lists and `POST /api/accounts`. */
+@Serializable
+data class SectionRoleDto(
+    val sectionId: Long,
+    val role: String,
 )
 
 /** `GET /api/accounts`: all accounts and the roles the requesting user may assign. */
@@ -148,13 +168,14 @@ data class AccountListDto(
 @Serializable
 data class UsernameSuggestionDto(val username: String)
 
-/** Request body of `POST /api/accounts`. */
+/** Request body of `POST /api/accounts`; [roles] may be empty when [sectionRoles] is not. */
 @Serializable
 data class CreateAccountRequest(
     val firstName: String,
     val lastName: String,
     val username: String,
     val roles: List<String>,
+    val sectionRoles: List<SectionRoleDto> = emptyList(),
 )
 
 /** Response of `POST /api/accounts`; [password] exists only in this response. */
@@ -165,3 +186,45 @@ data class CreatedAccountDto(
 ) {
     override fun toString(): String = "CreatedAccountDto(account=$account, password=***)"
 }
+
+/** One section; [color] is a palette key (`red` … `pink`), [assignableRoles] the section roles the user may assign in it. */
+@Serializable
+data class SectionDto(
+    val id: Long,
+    val name: String,
+    val slug: String,
+    val color: String,
+    val position: Int,
+    val assignableRoles: List<String>,
+)
+
+/** `GET /api/sections` and `PUT /api/sections/order`: [canManage] allows creating, changing and reordering sections. */
+@Serializable
+data class SectionListDto(
+    val canManage: Boolean,
+    val sections: List<SectionDto>,
+)
+
+/** Request body of `POST /api/sections` (without [color] the server picks one) and `PUT /api/sections/{id}`. */
+@Serializable
+data class SectionRequest(
+    val name: String,
+    val color: String? = null,
+)
+
+/** A member of a section with their section role. */
+@Serializable
+data class MemberDto(
+    val accountId: String,
+    val username: String,
+    val firstName: String,
+    val lastName: String,
+    val role: String,
+)
+
+/** `GET /api/sections/{id}/members`: section editors first, then by username. */
+@Serializable
+data class MemberListDto(
+    val assignableRoles: List<String>,
+    val members: List<MemberDto>,
+)

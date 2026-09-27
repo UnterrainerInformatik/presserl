@@ -100,7 +100,56 @@ class ApiClient(
             contentType(ContentType.Application.Json)
             setBody(request)
         }.body()
+
+    /** All sections by position, with what the user may do. */
+    suspend fun sections(): SectionListDto = http.get("$baseUrl/api/sections") { bearerAuth(accessToken()) }.body()
+
+    suspend fun createSection(request: SectionRequest): SectionDto =
+        http.post("$baseUrl/api/sections") {
+            bearerAuth(accessToken())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
+    /** Replaces name and colour; both are required. */
+    suspend fun updateSection(id: Long, request: SectionRequest): SectionDto =
+        http.put("$baseUrl/api/sections/$id") {
+            bearerAuth(accessToken())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
+    /** Sets the order; [ids] must name every section once. */
+    suspend fun reorderSections(ids: List<Long>): SectionListDto =
+        http.put("$baseUrl/api/sections/order") {
+            bearerAuth(accessToken())
+            contentType(ContentType.Application.Json)
+            setBody(SectionOrder(ids))
+        }.body()
+
+    suspend fun members(sectionId: Long): MemberListDto =
+        http.get("$baseUrl/api/sections/$sectionId/members") { bearerAuth(accessToken()) }.body()
+
+    /** Gives the account [role] in the section, replacing its current one. */
+    suspend fun assignMember(sectionId: Long, accountId: String, role: String): MemberDto =
+        http.put("$baseUrl/api/sections/$sectionId/members/$accountId") {
+            bearerAuth(accessToken())
+            contentType(ContentType.Application.Json)
+            setBody(MemberRole(role))
+        }.body()
+
+    suspend fun removeMember(sectionId: Long, accountId: String) {
+        http.delete("$baseUrl/api/sections/$sectionId/members/$accountId") { bearerAuth(accessToken()) }
+    }
 }
+
+/** Body of `PUT /api/sections/order`. */
+@Serializable
+private data class SectionOrder(val ids: List<Long>)
+
+/** Body of `PUT /api/sections/{id}/members/{accountId}`. */
+@Serializable
+private data class MemberRole(val role: String)
 
 /** Body of `PUT /api/articles/{id}`: [ArticleContent] plus the article version. */
 @Serializable

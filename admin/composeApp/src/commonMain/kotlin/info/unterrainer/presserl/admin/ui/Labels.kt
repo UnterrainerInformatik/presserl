@@ -2,9 +2,19 @@ package info.unterrainer.presserl.admin.ui
 
 import androidx.compose.runtime.Composable
 import info.unterrainer.presserl.admin.resources.Res
+import info.unterrainer.presserl.admin.resources.color_blue
+import info.unterrainer.presserl.admin.resources.color_green
+import info.unterrainer.presserl.admin.resources.color_orange
+import info.unterrainer.presserl.admin.resources.color_pink
+import info.unterrainer.presserl.admin.resources.color_purple
+import info.unterrainer.presserl.admin.resources.color_red
+import info.unterrainer.presserl.admin.resources.color_teal
+import info.unterrainer.presserl.admin.resources.color_yellow
 import info.unterrainer.presserl.admin.resources.role_editor_in_chief
 import info.unterrainer.presserl.admin.resources.role_publisher
 import info.unterrainer.presserl.admin.resources.role_reader
+import info.unterrainer.presserl.admin.resources.role_reporter
+import info.unterrainer.presserl.admin.resources.role_section_editor
 import info.unterrainer.presserl.admin.resources.status_draft
 import info.unterrainer.presserl.admin.resources.status_offline
 import info.unterrainer.presserl.admin.resources.status_published
@@ -17,6 +27,26 @@ fun roleLabel(role: String): StringResource? = when (role) {
     "PUBLISHER" -> Res.string.role_publisher
     "EDITOR_IN_CHIEF" -> Res.string.role_editor_in_chief
     "READER" -> Res.string.role_reader
+    else -> null
+}
+
+/** Label of a section role; `null` for a role this app does not know. */
+fun sectionRoleLabel(role: String): StringResource? = when (role) {
+    "SECTION_EDITOR" -> Res.string.role_section_editor
+    "REPORTER" -> Res.string.role_reporter
+    else -> null
+}
+
+/** Label of a section palette colour; `null` for a colour this app does not know. */
+fun colorLabel(color: String): StringResource? = when (color) {
+    "red" -> Res.string.color_red
+    "orange" -> Res.string.color_orange
+    "yellow" -> Res.string.color_yellow
+    "green" -> Res.string.color_green
+    "teal" -> Res.string.color_teal
+    "blue" -> Res.string.color_blue
+    "purple" -> Res.string.color_purple
+    "pink" -> Res.string.color_pink
     else -> null
 }
 
@@ -35,3 +65,9 @@ fun roleText(role: String): String = roleLabel(role)?.let { stringResource(it) }
 
 @Composable
 fun statusText(status: String): String = statusLabel(status)?.let { stringResource(it) } ?: status
+
+@Composable
+fun sectionRoleText(role: String): String = sectionRoleLabel(role)?.let { stringResource(it) } ?: role
+
+@Composable
+fun colorText(color: String): String = colorLabel(color)?.let { stringResource(it) } ?: color

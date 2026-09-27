@@ -1,12 +1,11 @@
 package info.unterrainer.presserl.admin.ui.account
 
-import info.unterrainer.presserl.admin.api.ApiErrorDto
 import info.unterrainer.presserl.admin.api.CreateAccountRequest
 import info.unterrainer.presserl.admin.api.CreatedAccountDto
-import info.unterrainer.presserl.admin.api.json
+import info.unterrainer.presserl.admin.api.SectionDto
+import info.unterrainer.presserl.admin.api.SectionRoleDto
+import info.unterrainer.presserl.admin.ui.apiErrorsOf
 import info.unterrainer.presserl.admin.ui.describe
-import io.ktor.client.plugins.ResponseException
-import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -22,6 +21,7 @@ enum class AccountField(val wire: String) {
     LAST_NAME("lastName"),
     USERNAME("username"),
     ROLES("roles"),
+    SECTION_ROLES("sectionRoles"),
 }
 
 /** Form state of "New account"; [errors] are the server's messages per field, [general] the rest. */
@@ -31,26 +31,33 @@ data class NewAccountState(
     val username: String = "",
     val usernameEdited: Boolean = false,
     val roles: Set<String> = emptySet(),
+    /** The chosen section role per section id; sections without a choice are absent. */
+    val sectionRoles: Map<Long, String> = emptyMap(),
     val errors: Map<AccountField, String> = emptyMap(),
     val general: String? = null,
     val creating: Boolean = false,
 ) {
-    val canCreate: Boolean get() = firstName.isNotBlank() && username.isNotBlank() && roles.isNotEmpty() && !creating
+    val canCreate: Boolean
+        get() = firstName.isNotBlank() && username.isNotBlank() && (roles.isNotEmpty() || sectionRoles.isNotEmpty()) && !creating
 }
 
 /**
  * "New account" form (design D9). While the user has not edited the username, it follows the first
  * name: [debounceMillis] after the last change the server is asked for a suggestion, and answers to
- * outdated first names are ignored. Roles are sent in the order of [assignableRoles]. Timing uses
+ * outdated first names are ignored. Roles are sent in the order of [assignableRoles], section roles
+ * in the order of [sections]; only sections with assignable roles are offered. Timing uses
  * [scope]'s dispatcher, so tests control it with virtual time.
  */
 class NewAccountModel(
     private val scope: CoroutineScope,
     val assignableRoles: List<String>,
+    sections: List<SectionDto> = emptyList(),
     private val suggest: suspend (firstName: String) -> String,
     private val create: suspend (CreateAccountRequest) -> CreatedAccountDto,
     private val debounceMillis: Long = 300,
 ) {
+    val sections: List<SectionDto> = sections.filter { it.assignableRoles.isNotEmpty() }
+
     private val _state = MutableStateFlow(NewAccountState())
     val state: StateFlow<NewAccountState> = _state.asStateFlow()
 
@@ -75,7 +82,19 @@ class NewAccountModel(
     fun role(role: String, selected: Boolean) {
         if (role !in assignableRoles) return
         _state.update {
-            it.copy(roles = if (selected) it.roles + role else it.roles - role, errors = it.errors - AccountField.ROLES)
+            it.copy(roles = if (selected) it.roles + role else it.roles - role, errors = it.errors - AccountField.ROLES - AccountField.SECTION_ROLES)
+        }
+    }
+
+    /** Chooses [role] in the section, or no role for `null`. */
+    fun sectionRole(sectionId: Long, role: String?) {
+        val section = sections.firstOrNull { it.id == sectionId } ?: return
+        if (role != null && role !in section.assignableRoles) return
+        _state.update {
+            it.copy(
+                sectionRoles = if (role == null) it.sectionRoles - sectionId else it.sectionRoles + (sectionId to role),
+                errors = it.errors - AccountField.SECTION_ROLES - AccountField.ROLES,
+            )
         }
     }
 
@@ -91,6 +110,7 @@ class NewAccountModel(
                 lastName = current.lastName.trim(),
                 username = current.username,
                 roles = assignableRoles.filter { it in current.roles },
+                sectionRoles = sections.mapNotNull { section -> current.sectionRoles[section.id]?.let { SectionRoleDto(section.id, it) } },
             )
             try {
                 val created = create(request)
@@ -133,15 +153,7 @@ class NewAccountModel(
 
     /** Field errors of a refused request; anything not about a form field becomes the general message. */
     private suspend fun refusal(e: Throwable): Pair<Map<AccountField, String>, String?> {
-        val errors = if (e is ResponseException && e.response.status.value in 400..499) {
-            try {
-                json.decodeFromString<ApiErrorDto>(e.response.bodyAsText()).errors
-            } catch (_: Exception) {
-                null
-            }
-        } else {
-            null
-        } ?: return emptyMap<AccountField, String>() to describe(e)
+        val errors = apiErrorsOf(e) ?: return emptyMap<AccountField, String>() to describe(e)
         val fields = mutableMapOf<AccountField, String>()
         val general = mutableListOf<String>()
         errors.forEach { error ->

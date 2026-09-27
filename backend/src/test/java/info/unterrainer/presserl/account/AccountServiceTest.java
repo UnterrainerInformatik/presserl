@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.junit.jupiter.api.Test;
 import org.keycloak.admin.client.resource.GroupResource;
@@ -22,20 +23,26 @@ import info.unterrainer.presserl.api.FieldError;
 import info.unterrainer.presserl.auth.CurrentUser;
 import info.unterrainer.presserl.auth.NewspaperRole;
 import info.unterrainer.presserl.bootstrap.KeycloakAdminProducer.KeycloakRealm;
+import info.unterrainer.presserl.section.Newsroom;
+import info.unterrainer.presserl.section.SectionRole;
+import info.unterrainer.presserl.section.SectionRoleDto;
+import info.unterrainer.presserl.section.SectionRoleStore;
+import io.smallrye.mutiny.Uni;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.Status;
 
 /**
- * {@link AccountService} against a stubbed Keycloak realm: compensation and error mapping.
+ * {@link AccountService} and {@link AccountCreation} against a stubbed Keycloak realm: compensation
+ * and error mapping.
  */
 class AccountServiceTest {
 
     private static final CurrentUser PUBLISHER = new CurrentUser("sub", "publisher", "Publisher",
             List.of(NewspaperRole.PUBLISHER));
     private static final CreateAccountRequest LENA = new CreateAccountRequest("Lena", "", "lena",
-            List.of(NewspaperRole.EDITOR_IN_CHIEF));
+            List.of(NewspaperRole.EDITOR_IN_CHIEF), List.of());
 
     private final List<String> deleted = new ArrayList<>();
 
@@ -50,6 +57,35 @@ class AccountServiceTest {
                 .isInstanceOfSatisfying(AccountException.class,
                         e -> assertThat(e.status()).isEqualTo(Status.SERVICE_UNAVAILABLE));
         assertThat(deleted).containsExactly("id-1");
+    }
+
+    @Test
+    void failedSectionRoleInsertDeletesTheNewUser() {
+        AccountCreation creation = new AccountCreation();
+        creation.accounts = service(users(Response.created(URI.create("http://kc/users/id-2")).build(), null));
+        creation.keycloakCalls = new KeycloakCalls() {
+            @Override
+            public <T> Uni<T> call(Supplier<T> blocking) {
+                return Uni.createFrom().item(blocking);
+            }
+        };
+        creation.sectionRoles = new SectionRoleStore() {
+            @Override
+            public Uni<List<Long>> sectionIds() {
+                return Uni.createFrom().item(List.of(7L));
+            }
+
+            @Override
+            public Uni<Void> insert(String accountId, List<SectionRoleDto> roles, String assignedBy) {
+                return Uni.createFrom().failure(new IllegalStateException("database down"));
+            }
+        };
+        CreateAccountRequest max = new CreateAccountRequest("Max", "", "max", List.of(),
+                List.of(new SectionRoleDto(7L, SectionRole.REPORTER)));
+
+        assertThatThrownBy(() -> creation.create(new Newsroom(PUBLISHER, Map.of()), max).await().indefinitely())
+                .hasMessageContaining("database down");
+        assertThat(deleted).containsExactly("id-2");
     }
 
     @Test
@@ -106,7 +142,8 @@ class AccountServiceTest {
     void delegationIsCheckedBeforeKeycloakIsCalled() {
         AccountService service = service(stub(RealmResource.class, Map.of()));
         CurrentUser chief = new CurrentUser("sub", "chief", "Chief", List.of(NewspaperRole.EDITOR_IN_CHIEF));
-        CreateAccountRequest boss = new CreateAccountRequest("Boss", "", "boss", List.of(NewspaperRole.PUBLISHER));
+        CreateAccountRequest boss = new CreateAccountRequest("Boss", "", "boss", List.of(NewspaperRole.PUBLISHER),
+                List.of());
 
         assertThatThrownBy(() -> service.create(chief, boss)).isInstanceOfSatisfying(AccountException.class, e -> {
             assertThat(e.status()).isEqualTo(Status.FORBIDDEN);
@@ -117,7 +154,7 @@ class AccountServiceTest {
     @Test
     void createdAccountHidesThePasswordInToString() {
         CreatedAccountDto created = new CreatedAccountDto(
-                new AccountDto("id", "lena", "Lena", "", List.of(NewspaperRole.READER), true), "tiger-wolke-apfel-leiter");
+                new AccountDto("id", "lena", "Lena", "", List.of(NewspaperRole.READER), List.of(), true), "tiger-wolke-apfel-leiter");
 
         assertThat(created.toString()).contains("lena").doesNotContain("tiger");
     }

@@ -39,6 +39,7 @@ Authorization: Bearer {{accessToken}}
             "assignableRoles " + JSON.stringify(response.body.assignableRoles));
         const chief = response.body.accounts.find(a => a.username === "chief");
         client.assert(chief && JSON.stringify(chief.roles) === '["EDITOR_IN_CHIEF"]', "chief " + JSON.stringify(chief));
+        client.assert(response.body.accounts.every(a => Array.isArray(a.sectionRoles)), "sectionRoles missing");
         client.assert(!response.body.accounts.some(a => a.username.startsWith("service-account-")), "service account listed");
     });
 %}
@@ -107,6 +108,7 @@ Content-Type: application/json
         client.assert(response.headers.valueOf("Location").endsWith("/api/accounts/" + response.body.account.id),
             "Location " + response.headers.valueOf("Location"));
         client.assert(JSON.stringify(response.body.account.roles) === '["EDITOR_IN_CHIEF"]', "roles");
+        client.assert(JSON.stringify(response.body.account.sectionRoles) === '[]', "sectionRoles");
         client.assert(/^[a-z]{3,8}(-[a-z]{3,8}){3}$/.test(response.body.password), "password shape");
     });
     client.global.set("newPassword", response.body.password);
@@ -178,5 +180,34 @@ Content-Type: application/json
         const fields = response.body.errors.map(e => e.field);
         client.assert(JSON.stringify(fields) === '["username"]', JSON.stringify(response.body));
         client.assert(response.body.errors[0].message === "must be at least 3 characters", JSON.stringify(response.body));
+    });
+%}
+
+### Neither roles nor section roles
+POST {{baseUrl}}/api/accounts
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "firstName": "Nobody", "username": "http-nobody", "roles": [], "sectionRoles": [] }
+
+> {%
+    client.test("400 at roles", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        const fields = response.body.errors.map(e => e.field);
+        client.assert(JSON.stringify(fields) === '["roles"]', JSON.stringify(response.body));
+    });
+%}
+
+### Unknown section
+POST {{baseUrl}}/api/accounts
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "firstName": "Ghost", "username": "http-ghost", "roles": [], "sectionRoles": [{ "sectionId": 999999, "role": "REPORTER" }] }
+
+> {%
+    client.test("400 at sectionRoles", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "sectionRoles", JSON.stringify(response.body));
     });
 %}

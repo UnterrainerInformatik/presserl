@@ -63,7 +63,8 @@ class AuthenticationTest {
                 .statusCode(200)
                 .body("username", equalTo("nogroups"))
                 .body("displayName", equalTo("No Groups"))
-                .body("roles", empty());
+                .body("roles", empty())
+                .body("sectionRoles", empty());
     }
 
     @Test

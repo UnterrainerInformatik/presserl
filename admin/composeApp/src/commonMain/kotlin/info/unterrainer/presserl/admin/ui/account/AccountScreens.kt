@@ -2,6 +2,7 @@ package info.unterrainer.presserl.admin.ui.account
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -14,6 +15,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -38,6 +40,8 @@ import info.unterrainer.presserl.admin.api.AccountDto
 import info.unterrainer.presserl.admin.api.AccountListDto
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.CreatedAccountDto
+import info.unterrainer.presserl.admin.api.MeDto
+import info.unterrainer.presserl.admin.api.SectionDto
 import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.account_disabled
 import info.unterrainer.presserl.admin.resources.create_account
@@ -45,11 +49,13 @@ import info.unterrainer.presserl.admin.resources.done
 import info.unterrainer.presserl.admin.resources.field_first_name
 import info.unterrainer.presserl.admin.resources.field_last_name
 import info.unterrainer.presserl.admin.resources.field_roles
+import info.unterrainer.presserl.admin.resources.field_section_roles
 import info.unterrainer.presserl.admin.resources.field_username
 import info.unterrainer.presserl.admin.resources.loading
 import info.unterrainer.presserl.admin.resources.new_account
 import info.unterrainer.presserl.admin.resources.no_roles
 import info.unterrainer.presserl.admin.resources.print
+import info.unterrainer.presserl.admin.resources.section_role_none
 import info.unterrainer.presserl.admin.resources.slip_address
 import info.unterrainer.presserl.admin.resources.slip_heading
 import info.unterrainer.presserl.admin.resources.slip_note
@@ -61,36 +67,50 @@ import info.unterrainer.presserl.admin.ui.BackButton
 import info.unterrainer.presserl.admin.ui.LoadFailed
 import info.unterrainer.presserl.admin.ui.attempt
 import info.unterrainer.presserl.admin.ui.roleText
+import info.unterrainer.presserl.admin.ui.section.ColorMarker
+import info.unterrainer.presserl.admin.ui.sectionRoleText
 import org.jetbrains.compose.resources.stringResource
 
-/** Whether the user may open the accounts screens; only visibility, the server enforces access. */
-fun canManageAccounts(roles: List<String>): Boolean = "PUBLISHER" in roles || "EDITOR_IN_CHIEF" in roles
+/**
+ * Whether the user may open the accounts and sections screens (publishers, editors-in-chief and
+ * section editors of any section); only visibility, the server enforces access.
+ */
+fun canAdministerAccounts(me: MeDto): Boolean =
+    "PUBLISHER" in me.roles || "EDITOR_IN_CHIEF" in me.roles || me.sectionRoles.any { it.role == "SECTION_EDITOR" }
+
+/** The accounts, and the sections to name section roles and to offer them in "New account". */
+private data class AccountsView(val accounts: AccountListDto, val sections: List<SectionDto>)
 
 @Composable
-fun AccountListScreen(api: ApiClient, onNew: (assignableRoles: List<String>) -> Unit) {
-    var list by remember { mutableStateOf<AccountListDto?>(null) }
+fun AccountListScreen(api: ApiClient, onNew: (assignableRoles: List<String>, sections: List<SectionDto>) -> Unit) {
+    var view by remember { mutableStateOf<AccountsView?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var loads by remember { mutableStateOf(0) }
 
     LaunchedEffect(loads) {
         error = null
-        list = attempt({ error = it }) { api.accounts() }
+        view = attempt({ error = it }) { AccountsView(api.accounts(), api.sections().sections) }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        val current = list
+        val current = view
+        val canCreate = current != null &&
+            (current.accounts.assignableRoles.isNotEmpty() || current.sections.any { it.assignableRoles.isNotEmpty() })
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Button(enabled = current != null && current.assignableRoles.isNotEmpty(), onClick = { current?.let { onNew(it.assignableRoles) } }) {
+            Button(enabled = canCreate, onClick = { current?.let { onNew(it.accounts.assignableRoles, it.sections) } }) {
                 Text(stringResource(Res.string.new_account))
             }
         }
         when {
             error != null -> LoadFailed(error!!, onReload = { loads++ })
             current == null -> Text(stringResource(Res.string.loading))
-            else -> LazyColumn {
-                items(current.accounts, key = { it.id }) { account ->
-                    AccountRow(account)
-                    HorizontalDivider()
+            else -> {
+                val sectionNames = current.sections.associate { it.id to it.name }
+                LazyColumn {
+                    items(current.accounts.accounts, key = { it.id }) { account ->
+                        AccountRow(account, sectionNames)
+                        HorizontalDivider()
+                    }
                 }
             }
         }
@@ -98,11 +118,12 @@ fun AccountListScreen(api: ApiClient, onNew: (assignableRoles: List<String>) -> 
 }
 
 @Composable
-private fun AccountRow(account: AccountDto) {
+private fun AccountRow(account: AccountDto, sectionNames: Map<Long, String>) {
     Column(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(vertical = 12.dp, horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         val title = listOfNotNull(account.username, stringResource(Res.string.account_disabled).takeIf { !account.enabled })
         Text(title.joinToString(" · "), style = MaterialTheme.typography.titleMedium)
-        val roles = account.roles.map { roleText(it) }
+        val roles = account.roles.map { roleText(it) } +
+            account.sectionRoles.map { sectionRoleText(it.role) + " · " + (sectionNames[it.sectionId] ?: "#${it.sectionId}") }
         val details = listOf(
             listOf(account.firstName, account.lastName).filter { it.isNotEmpty() }.joinToString(" "),
             if (roles.isEmpty()) stringResource(Res.string.no_roles) else roles.joinToString(", "),
@@ -112,9 +133,17 @@ private fun AccountRow(account: AccountDto) {
 }
 
 @Composable
-fun NewAccountScreen(api: ApiClient, assignableRoles: List<String>, onBack: () -> Unit, onCreated: (CreatedAccountDto) -> Unit) {
+fun NewAccountScreen(
+    api: ApiClient,
+    assignableRoles: List<String>,
+    sections: List<SectionDto>,
+    onBack: () -> Unit,
+    onCreated: (CreatedAccountDto) -> Unit,
+) {
     val scope = rememberCoroutineScope()
-    val model = remember(assignableRoles) { NewAccountModel(scope, assignableRoles, api::usernameSuggestion, api::createAccount) }
+    val model = remember(assignableRoles, sections) {
+        NewAccountModel(scope, assignableRoles, sections, api::usernameSuggestion, api::createAccount)
+    }
     val state by model.state.collectAsState()
 
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -130,7 +159,7 @@ fun NewAccountScreen(api: ApiClient, assignableRoles: List<String>, onBack: () -
             state.errors[AccountField.USERNAME],
             hint = stringResource(Res.string.username_hint),
         )
-        Text(stringResource(Res.string.field_roles), style = MaterialTheme.typography.titleSmall)
+        if (model.assignableRoles.isNotEmpty()) Text(stringResource(Res.string.field_roles), style = MaterialTheme.typography.titleSmall)
         model.assignableRoles.forEach { role ->
             val selected = role in state.roles
             Row(
@@ -142,7 +171,36 @@ fun NewAccountScreen(api: ApiClient, assignableRoles: List<String>, onBack: () -
             }
         }
         state.errors[AccountField.ROLES]?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        if (model.sections.isNotEmpty()) Text(stringResource(Res.string.field_section_roles), style = MaterialTheme.typography.titleSmall)
+        model.sections.forEach { section ->
+            SectionRoleRow(section, state.sectionRoles[section.id]) { model.sectionRole(section.id, it) }
+        }
+        state.errors[AccountField.SECTION_ROLES]?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         Button(enabled = state.canCreate, onClick = { model.submit(onCreated) }) { Text(stringResource(Res.string.create_account)) }
+    }
+}
+
+/** A section with the choice "none" or one of its assignable roles. */
+@Composable
+private fun SectionRoleRow(section: SectionDto, selected: String?, onChoose: (String?) -> Unit) {
+    FlowRow(
+        Modifier.fillMaxWidth().heightIn(min = 44.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(Modifier.padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ColorMarker(section.color)
+            Text(section.name, style = MaterialTheme.typography.bodyLarge)
+        }
+        (listOf<String?>(null) + section.assignableRoles).forEach { role ->
+            val label = role?.let { sectionRoleText(it) } ?: stringResource(Res.string.section_role_none)
+            if (role == selected) {
+                FilledTonalButton(onClick = {}) { Text(label) }
+            } else {
+                OutlinedButton(onClick = { onChoose(role) }) { Text(label) }
+            }
+        }
     }
 }
 

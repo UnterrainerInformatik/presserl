@@ -82,8 +82,8 @@ Deployment-only values (no defaults, set in `.env`):
 One newspaper per server; a second newspaper is a second deployment.
 
 - **Newspaper** — singleton: name, subtitle, visibility, settings (JSON, overrides only)
-- **Section** — name, colour, order, settings (JSON, overrides only)
-- **SectionRole** — user × section × role (`SECTION_EDITOR` | `REPORTER`). Newspaper-wide roles (`PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`) are Keycloak groups, not rows.
+- **Section** — name (unique ignoring case), slug (derived once from the name, stable for reader URLs), colour (palette key `red` | `orange` | `yellow` | `green` | `teal` | `blue` | `purple` | `pink`, mapped to `--presserl-section-<key>` by the theme), position, settings (JSON, overrides only)
+- **SectionRole** — user (Keycloak id = token `sub`) × section × role (`SECTION_EDITOR` | `REPORTER`), at most one role per user and section. Newspaper-wide roles (`PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`) are Keycloak groups, not rows.
 - **Trust** — approving level × trusted user (+ who set it). One row skips that level for that user.
 - **Article** — author (token `sub` plus username/display-name snapshot for the byline), status (`DRAFT` | `SUBMITTED` | `PUBLISHED` | `OFFLINE`; `SUBMITTED` reserved for the approval chain), live revision (by number, `NULL` until the first publication), first publication time, optimistic-lock version; later: section, pending approval level, emergency-brake lock, lead image
 - **ArticleRevision** — numbered per article (`1, 2, …`), holds the content: kicker, headline, subheadline, lead (plain text) and body (**body format v1**: structured JSON of blocks — paragraph, subhead, quote, bullet list — with inline runs whose only mark is bold; validated server-side against an allowlist, never raw HTML). The latest revision is the **working revision**: saves overwrite it until it is published; after that the next save starts a new revision. Publishing makes the latest revision the article's live revision, which stays unchanged until the next publication. Taking offline keeps the live revision reference.
@@ -136,8 +136,13 @@ Draft only — the contract becomes binding in `ai/primer/endpoints.md` once an 
 
 ```
 GET    /api/newspaper                     name, subtitle, effective settings
-GET    /api/sections
-POST   /api/sections                      editor-in-chief+
+GET    /api/sections                      every user; canManage and assignable section roles     (implemented)
+POST   /api/sections                      editor-in-chief+                                   (implemented)
+PUT    /api/sections/{id}                 name and colour, editor-in-chief+                  (implemented)
+PUT    /api/sections/order                editor-in-chief+                                   (implemented)
+GET    /api/sections/{id}/members         who may assign section roles there                 (implemented)
+PUT    /api/sections/{id}/members/{acc}   assign/replace a section role, within my scope     (implemented)
+DELETE /api/sections/{id}/members/{acc}   remove a section role, within my scope             (implemented)
 GET    /api/articles?status=…&mine=true   my articles / archive                              (implemented)
 GET    /api/articles/{id}                                                                    (implemented)
 POST   /api/articles                      reporter+                                          (implemented)
@@ -149,14 +154,14 @@ POST   /api/articles/{id}/offline         take offline: author, section editor, 
 GET    /api/articles/{id}/revisions       revision history                                   (implemented)
 GET    /api/articles/{id}/revisions/{n}   one revision                                       (implemented)
 GET    /api/review-queue                  what I have to approve (empty for solo)
-GET    /api/accounts                      accounts I may manage
-POST   /api/accounts                      create account (role ≤ mine) → username + pass-phrase for the slip
+GET    /api/accounts                      section editor+; all accounts with their section roles (implemented)
+POST   /api/accounts                      create account (roles and section roles ≤ mine, within my scope) → username + pass-phrase for the slip (implemented)
 POST   /api/accounts/{id}/password-reset  anyone above the person
 POST   /api/accounts/{id}/lock            publisher
 PUT    /api/accounts/{id}/roles           roles at or below mine, within my scope
 PUT    /api/accounts/{id}/trust           set/clear trust for my level
 POST   /api/media                         reporter+ (size/type limit)
-GET    /api/me                            my roles, scopes and allowed actions
+GET    /api/me                            my roles and section roles (implemented); later scopes and allowed actions
 ```
 
 Article responses carry `allowedActions`; clients render buttons from it and never re-implement the approval chain. In M1, `publish` goes directly to `PUBLISHED` for a publisher-author only and `offline` does not lock; see `ai/primer/endpoints.md` for the binding contract of the implemented endpoints.

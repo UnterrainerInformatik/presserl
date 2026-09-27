@@ -3,8 +3,10 @@ package info.unterrainer.presserl.account;
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.emptyOrNullString;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.matchesPattern;
 
@@ -12,6 +14,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Handler;
 import java.util.logging.LogRecord;
+
+import javax.sql.DataSource;
 
 import org.jboss.logmanager.ExtLogRecord;
 import org.junit.jupiter.api.AfterEach;
@@ -32,7 +36,8 @@ import jakarta.inject.Inject;
 
 /**
  * Account endpoints against the Dev Services Keycloak. Every user a test creates is deleted
- * afterwards, so the dev realm keeps its four users.
+ * afterwards, so the dev realm keeps its four users; sections and section roles are deleted before
+ * and after every test.
  */
 @QuarkusTest
 class AccountResourceTest {
@@ -45,6 +50,9 @@ class AccountResourceTest {
     @Inject
     KeycloakRealm keycloakRealm;
 
+    @Inject
+    DataSource dataSource;
+
     private RealmResource realm;
     private String publisher;
     private String chief;
@@ -53,6 +61,7 @@ class AccountResourceTest {
     @BeforeEach
     void setUp() {
         TestSupport.awaitReady();
+        TestSupport.deleteSections(dataSource);
         realm = keycloak.realm(keycloakRealm.name());
         publisher = TestSupport.token("publisher", "publisher");
         chief = TestSupport.token("chief", "chief");
@@ -62,6 +71,18 @@ class AccountResourceTest {
     void deleteCreatedUsers() {
         created.forEach(username -> realm.users().searchByUsername(username, true)
                 .forEach(user -> realm.users().delete(user.getId()).close()));
+        TestSupport.deleteSections(dataSource);
+    }
+
+    private long section(String name) {
+        return as(publisher).body("{\"name\": \"%s\"}".formatted(name)).post("/api/sections").then()
+                .statusCode(201).extract().jsonPath().getLong("id");
+    }
+
+    private void sectionRole(long section, String username, String role) {
+        String id = realm.users().searchByUsername(username, true).getFirst().getId();
+        as(publisher).body("{\"role\": \"%s\"}".formatted(role))
+                .put("/api/sections/%d/members/%s".formatted(section, id)).then().statusCode(200);
     }
 
     private static RequestSpecification as(String token) {
@@ -98,7 +119,41 @@ class AccountResourceTest {
         as(chief).get("/api/accounts").then().statusCode(200);
     }
 
+    @Test
+    void sectionEditorMayListWithoutAssignableRoles() {
+        sectionRole(section("Sport"), "nogroups", "SECTION_EDITOR");
+
+        as(TestSupport.token("nogroups", "nogroups")).get("/api/accounts").then().statusCode(200)
+                .body("assignableRoles", empty());
+        as(TestSupport.token("nogroups", "nogroups")).get("/api/accounts/username-suggestion?firstName=Anna")
+                .then().statusCode(200);
+    }
+
+    @Test
+    void reporterIsForbidden() {
+        sectionRole(section("Sport"), "nogroups", "REPORTER");
+
+        as(TestSupport.token("nogroups", "nogroups")).get("/api/accounts").then().statusCode(403)
+                .body(emptyOrNullString());
+    }
+
     // --- list -------------------------------------------------------------------------------
+
+    @Test
+    void listShowsSectionRolesByPosition() {
+        long sport = section("Sport");
+        long kultur = section("Kultur");
+        sectionRole(kultur, "reader", "SECTION_EDITOR");
+        sectionRole(sport, "reader", "REPORTER");
+
+        JsonPath json = as(publisher).get("/api/accounts").then().statusCode(200).extract().jsonPath();
+
+        assertThat(json.getList("accounts.find { it.username == 'reader' }.sectionRoles.sectionId", Long.class))
+                .containsExactly(sport, kultur);
+        assertThat(json.getList("accounts.find { it.username == 'reader' }.sectionRoles.role", String.class))
+                .containsExactly("REPORTER", "SECTION_EDITOR");
+        assertThat(json.getList("accounts.find { it.username == 'chief' }.sectionRoles")).isEmpty();
+    }
 
     @Test
     void publisherListsDevRealmAccountsSortedWithoutServiceAccounts() {
@@ -220,7 +275,94 @@ class AccountResourceTest {
         post(chief, "kid", "[\"READER\"]", "Kid").then().statusCode(201).body("account.roles", contains("READER"));
     }
 
+    @Test
+    void publisherCreatesAccountWithSectionRoleOnly() {
+        long sport = section("Sport");
+        long kultur = section("Kultur");
+
+        io.restassured.response.Response response = post(publisher, "max", """
+                {"firstName": "Max", "username": "max", "roles": [],
+                 "sectionRoles": [{"sectionId": %d, "role": "SECTION_EDITOR"}, {"sectionId": %d, "role": "REPORTER"}]}"""
+                .formatted(kultur, sport));
+
+        response.then().statusCode(201)
+                .body("account.roles", empty())
+                .body("account.sectionRoles.sectionId", contains((int) sport, (int) kultur))
+                .body("account.sectionRoles.role", contains("REPORTER", "SECTION_EDITOR"));
+        as(TestSupport.token("max", response.path("password"))).get("/api/me").then().statusCode(200)
+                .body("roles", empty())
+                .body("sectionRoles.sectionName", contains("Sport", "Kultur"))
+                .body("sectionRoles.role", contains("REPORTER", "SECTION_EDITOR"));
+    }
+
+    @Test
+    void sectionEditorCreatesReporterOfOwnSection() {
+        long sport = section("Sport");
+        sectionRole(sport, "nogroups", "SECTION_EDITOR");
+
+        post(TestSupport.token("nogroups", "nogroups"), "kiddo", """
+                {"firstName": "Kiddo", "username": "kiddo", "roles": [],
+                 "sectionRoles": [{"sectionId": %d, "role": "REPORTER"}]}""".formatted(sport))
+                .then().statusCode(201).body("account.sectionRoles.role", contains("REPORTER"));
+    }
+
     // --- refusals ---------------------------------------------------------------------------
+
+    @Test
+    void sectionEditorOutsideScope() {
+        long sport = section("Sport");
+        long kultur = section("Kultur");
+        sectionRole(sport, "nogroups", "SECTION_EDITOR");
+
+        post(TestSupport.token("nogroups", "nogroups"), "outsider", """
+                {"firstName": "Out", "username": "outsider", "roles": [],
+                 "sectionRoles": [{"sectionId": %d, "role": "REPORTER"}]}""".formatted(kultur))
+                .then().statusCode(403).body("errors.field", contains("sectionRoles"));
+
+        assertThat(realm.users().searchByUsername("outsider", true)).isEmpty();
+    }
+
+    @Test
+    void sectionEditorMayNotAssignNewspaperRoles() {
+        sectionRole(section("Sport"), "nogroups", "SECTION_EDITOR");
+
+        post(TestSupport.token("nogroups", "nogroups"), "leser", "[\"READER\"]", "Leser").then().statusCode(403)
+                .body("errors.field", contains("roles"));
+
+        assertThat(realm.users().searchByUsername("leser", true)).isEmpty();
+    }
+
+    @Test
+    void unknownSection() {
+        post(publisher, "ghost", """
+                {"firstName": "Ghost", "username": "ghost", "roles": [],
+                 "sectionRoles": [{"sectionId": 999999, "role": "REPORTER"}]}""")
+                .then().statusCode(400).body("errors.field", contains("sectionRoles"));
+
+        assertThat(realm.users().searchByUsername("ghost", true)).isEmpty();
+    }
+
+    @Test
+    void invalidSectionRoles() {
+        long sport = section("Sport");
+
+        post(publisher, "bad", """
+                {"firstName": "Bad", "username": "bad", "roles": ["READER"],
+                 "sectionRoles": [{"sectionId": %d, "role": "PUBLISHER"}, {"sectionId": %d, "role": "REPORTER"},
+                                  {"sectionId": %d, "role": "REPORTER"}, "x"]}""".formatted(sport, sport, sport))
+                .then().statusCode(400).body("errors.field", everyItem(equalTo("sectionRoles")))
+                .body("errors.size()", equalTo(3));
+        post(publisher, "bad", """
+                {"firstName": "Bad", "username": "bad", "roles": ["READER"], "sectionRoles": {}}""")
+                .then().statusCode(400).body("errors.field", contains("sectionRoles"));
+    }
+
+    @Test
+    void noRoleOfEitherKind() {
+        post(publisher, "norole", """
+                {"firstName": "No", "username": "norole", "roles": [], "sectionRoles": []}""")
+                .then().statusCode(400).body("errors.field", contains("roles"));
+    }
 
     @Test
     void invalidUsernameAndNoRolesAreReportedTogether() {
@@ -295,18 +437,21 @@ class AccountResourceTest {
             public void close() {
             }
         };
-        java.util.logging.Logger logger = java.util.logging.Logger.getLogger(AccountService.class.getName());
+        long sport = section("Sport");
+        java.util.logging.Logger logger = java.util.logging.Logger.getLogger(AccountCreation.class.getName());
         logger.addHandler(handler);
         String password;
         try {
-            password = post(publisher, "logged", "[\"EDITOR_IN_CHIEF\", \"READER\"]", "Logged").then().statusCode(201)
-                    .extract().path("password");
+            password = post(publisher, "logged", """
+                    {"firstName": "Logged", "username": "logged", "roles": ["EDITOR_IN_CHIEF", "READER"],
+                     "sectionRoles": [{"sectionId": %d, "role": "REPORTER"}]}""".formatted(sport))
+                    .then().statusCode(201).extract().path("password");
         } finally {
             logger.removeHandler(handler);
         }
 
         assertThat(messages).anySatisfy(message -> assertThat(message).contains("'logged'", "'publisher'",
-                "EDITOR_IN_CHIEF", "READER"));
+                "EDITOR_IN_CHIEF", "READER", "REPORTER"));
         assertThat(messages).allSatisfy(message -> assertThat(message).doesNotContain(password));
         assertThat(password).isNotBlank();
     }

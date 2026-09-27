@@ -12,8 +12,10 @@ Conventions:
   must carry the audience `presserl-backend` and be issued by `PRESSERL_OIDC_ISSUER`. Endpoints not
   marked public answer `401` with an empty body when the token is missing, expired, from a foreign
   issuer or lacks the audience.
-- Roles come from the token's `groups` claim (group names without path): `publisher` →
+- Newspaper roles come from the token's `groups` claim (group names without path): `publisher` →
   `PUBLISHER`, `editor-in-chief` → `EDITOR_IN_CHIEF`, `reader` → `READER`; other groups are ignored.
+- Section roles (`SECTION_EDITOR`, `REPORTER`) are stored in the Presserl database per account and
+  section, keyed by the token's `sub` (= Keycloak user id); they are not in the token.
 - Every response carries a `Content-Security-Policy` header (reader policy).
 
 ---
@@ -74,12 +76,14 @@ The logged-in user as seen by the backend.
 - **Params / body:** none
 - **Response `200`:**
   ```json
-  { "username": "papa", "displayName": "Papa", "roles": ["PUBLISHER"] }
+  { "username": "papa", "displayName": "Papa", "roles": ["PUBLISHER"],
+    "sectionRoles": [ { "sectionId": 1, "sectionName": "Sport", "role": "SECTION_EDITOR" } ] }
   ```
   - `username`: `preferred_username` claim, falling back to `sub`.
   - `displayName`: `name` claim, falling back to `username`.
   - `roles`: newspaper roles from the `groups` claim in the order `PUBLISHER`,
     `EDITOR_IN_CHIEF`, `READER`; empty array for a user without newspaper groups.
+  - `sectionRoles`: the user's section roles, ordered by section position; `[]` for none.
   - M2 extends this response additively (scopes, allowed actions).
 - **Errors:** `401` (empty body) without a valid token.
 - **Side effects:** none.
@@ -294,12 +298,12 @@ Takes a published article offline without approval. No request body.
 
 Accounts are the users of the operator's Keycloak realm; their newspaper-wide roles are the groups
 `publisher`, `editor-in-chief`, `reader`. The backend manages them through the `presserl-backend`
-service account — Presserl stores nothing about them in its database.
+service account. Their section roles live in the Presserl database (see Sections).
 
-All account endpoints require a bearer token **and** the role `PUBLISHER` or `EDITOR_IN_CHIEF`.
-Users with neither role get `403` with an empty body; missing/invalid token → `401`. Every other
-refusal carries the error body of the articles (`{"errors": [{"field": …, "message": …}]}`); a
-`400` lists every violation.
+All account endpoints require a bearer token **and** the role `PUBLISHER` or `EDITOR_IN_CHIEF`, or
+`SECTION_EDITOR` in at least one section. Other users (readers, reporters) get `403` with an empty
+body; missing/invalid token → `401`. Every other refusal carries the error body of the articles
+(`{"errors": [{"field": …, "message": …}]}`); a `400` lists every violation.
 
 **Delegation** (newspaper-wide roles are assigned at or below the own level; the server decides,
 `assignableRoles` reports it):
@@ -308,6 +312,9 @@ refusal carries the error body of the articles (`{"errors": [{"field": …, "mes
 |---|---|
 | `PUBLISHER` | `PUBLISHER`, `EDITOR_IN_CHIEF`, `READER` |
 | `EDITOR_IN_CHIEF` (not `PUBLISHER`) | `EDITOR_IN_CHIEF`, `READER` |
+| `SECTION_EDITOR` only | — |
+
+Section roles given on creation follow the section-role delegation (see Sections).
 
 **Keycloak unavailable:** when Keycloak cannot be reached or refuses the service account, every
 account endpoint answers `503` with
@@ -317,24 +324,27 @@ account endpoint answers `503` with
 
 ```json
 { "id": "5f0c…", "username": "chief", "firstName": "Chief", "lastName": "Editor",
-  "roles": ["EDITOR_IN_CHIEF"], "enabled": true }
+  "roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [ { "sectionId": 1, "role": "REPORTER" } ],
+  "enabled": true }
 ```
 `id` is the Keycloak user id. `firstName`/`lastName` are `""` when unset. `roles` are the newspaper
 roles from the account's groups in the order `PUBLISHER`, `EDITOR_IN_CHIEF`, `READER` (`[]` for
-none).
+none). `sectionRoles` are the account's section roles ordered by section position (`[]` for none).
 
 ## `GET /api/accounts`
 
 Every account of the realm except service accounts, sorted by `username`. At most 1000 accounts
 (no paging; far above a family newspaper).
 
-- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`
+- **Auth:** `PUBLISHER`, `EDITOR_IN_CHIEF` or `SECTION_EDITOR` in any section
 - **Response `200`:**
   ```json
   { "assignableRoles": ["PUBLISHER", "EDITOR_IN_CHIEF", "READER"],
     "accounts": [ { "id": "5f0c…", "username": "chief", "firstName": "Chief", "lastName": "Editor",
-                    "roles": ["EDITOR_IN_CHIEF"], "enabled": true } ] }
+                    "roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [], "enabled": true } ] }
   ```
+  `assignableRoles` are the newspaper roles only (`[]` for a section editor); the section roles a
+  user may assign are reported per section by `GET /api/sections`.
 - **Errors:** `503` Keycloak unavailable.
 - **Side effects:** none.
 
@@ -346,7 +356,7 @@ most 32 characters; `user` when nothing is left. If taken, `-2`, `-3`, … is ap
 shortened to stay within 32). A base shorter than 3 characters is never returned as is but
 numbered from `-1` (`li` → `li-1`, then `li-2`, …), so every suggestion is a valid username.
 
-- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`
+- **Auth:** `PUBLISHER`, `EDITOR_IN_CHIEF` or `SECTION_EDITOR` in any section
 - **Query:** `firstName` (required, not blank)
 - **Response `200`:** `{ "username": "juergen-maria" }`
 - **Errors:** `400` missing/blank `firstName` (field `firstName`), `503`.
@@ -354,30 +364,176 @@ numbered from `-1` (`li` → `li-1`, then `li-2`, …), so every suggestion is a
 
 ## `POST /api/accounts`
 
-Creates an enabled account with a generated default password and joins the groups of its roles.
+Creates an enabled account with a generated default password, joins the groups of its roles and
+stores its section roles.
 
-- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`; every role must be assignable (see delegation)
+- **Auth:** `PUBLISHER`, `EDITOR_IN_CHIEF` or `SECTION_EDITOR` in any section; every role and
+  section role must be assignable (see the delegation tables)
 - **Body:**
   ```json
-  { "firstName": "Lena", "lastName": "", "username": "lena", "roles": ["EDITOR_IN_CHIEF"] }
+  { "firstName": "Lena", "lastName": "", "username": "lena", "roles": ["EDITOR_IN_CHIEF"],
+    "sectionRoles": [ { "sectionId": 1, "role": "REPORTER" } ] }
   ```
   `firstName` required, not blank, ≤ 100 characters; `lastName` optional, ≤ 100; names must not
   contain control characters and are stored trimmed. `username` must match
-  `^[a-z0-9]+(-[a-z0-9]+)*$`, 3–32 characters, not start with `service-account-`. `roles`: at least
-  one of `PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`; duplicates are collapsed. Unknown fields are
-  rejected.
+  `^[a-z0-9]+(-[a-z0-9]+)*$`, 3–32 characters, not start with `service-account-`. `roles`
+  (required): any of `PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`, may be `[]`; duplicates are
+  collapsed. `sectionRoles` (optional): a list of `{sectionId, role}` with `role`
+  `SECTION_EDITOR` | `REPORTER`, each section at most once, every section must exist. At least one
+  role of either kind is required (field `roles`). Unknown fields are rejected.
 - **Response `201`:** header `Location: /api/accounts/{id}`
   ```json
   { "account": { "id": "9a1e…", "username": "lena", "firstName": "Lena", "lastName": "",
-                 "roles": ["EDITOR_IN_CHIEF"], "enabled": true },
+                 "roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [ { "sectionId": 1, "role": "REPORTER" } ],
+                 "enabled": true },
     "password": "tiger-wolke-apfel-leiter" }
   ```
   `password` is four words from a curated German word list (`a-z`, 3–8 letters each) joined by
   `-`, chosen with a secure random source. It is **not temporary** and appears **only in this
   response** — the server neither stores nor logs it. Show it on the account slip.
 - **Errors:** `400` validation (every violation; also names Keycloak rejects, e.g. forbidden
-  characters, at `firstName`/`lastName`/`username`), `403` a role that may not be assigned (field
-  `roles`, nothing created), `409` username taken, ignoring case (field `username`), `503`.
-- **Side effects:** Keycloak user created with the password credential and group memberships; all
-  or nothing (a failure after the creation deletes the user again). Logged at INFO with username,
-  creator and roles.
+  characters, at `firstName`/`lastName`/`username`; unknown section at `sectionRoles`), `403` a
+  role that may not be assigned (field `roles`) or a section role outside the own scope (field
+  `sectionRoles`) — nothing created, `409` username taken, ignoring case (field `username`), `503`.
+- **Side effects:** Keycloak user created with the password credential and group memberships,
+  section roles stored; all or nothing (a failure after the creation deletes the user again).
+  Logged at INFO with username, creator, roles and section roles.
+
+---
+
+# Sections
+
+Sections structure the newspaper; each has a name, a colour from the palette and a stable `slug`
+(later reader URLs). Section roles are held per account and section, at most one per section:
+`SECTION_EDITOR` or `REPORTER` (cumulative: a section editor may do everything a reporter may).
+
+All section endpoints require a bearer token (missing/invalid → `401`). Access refusals answer
+`403` with an empty body, unknown ids `404` with an empty body; every other refusal carries the
+error body (`{"errors": [{"field": …, "message": …}]}`), a `400` lists every violation.
+
+**Access:**
+
+| Endpoint | Who |
+|---|---|
+| `GET /api/sections` | every authenticated user |
+| `POST`, `PUT /api/sections/{id}`, `PUT /api/sections/order` | `PUBLISHER`, `EDITOR_IN_CHIEF` |
+| `GET /api/sections/{id}/members`, `PUT`/`DELETE …/members/{accountId}` | whoever may assign section roles in that section |
+
+**Delegation of section roles** (the server decides, `assignableRoles` reports it):
+
+| Requesting user | In section S may assign and remove |
+|---|---|
+| `PUBLISHER` or `EDITOR_IN_CHIEF` | `SECTION_EDITOR`, `REPORTER` |
+| `SECTION_EDITOR` in S | `SECTION_EDITOR`, `REPORTER` |
+| anyone else (incl. `REPORTER` in S) | — |
+
+Replacing a role needs both the old and the new role to be assignable; removing needs the current
+one.
+
+**Palette** (palette order): `red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink`.
+Colours are keys, not colour values; the reader theme maps them to `--presserl-section-<key>`.
+
+## `SectionDto`
+
+```json
+{ "id": 1, "name": "Sport", "slug": "sport", "color": "green", "position": 0,
+  "assignableRoles": ["SECTION_EDITOR", "REPORTER"] }
+```
+`assignableRoles`: the section roles the requesting user may assign in this section, in the order
+`SECTION_EDITOR`, `REPORTER` (`[]` for none).
+
+## `GET /api/sections`
+
+All sections ordered by `position` (ties by `id`).
+
+- **Auth:** any authenticated user
+- **Response `200`:**
+  ```json
+  { "canManage": true,
+    "sections": [ { "id": 1, "name": "Sport", "slug": "sport", "color": "green", "position": 0,
+                    "assignableRoles": ["SECTION_EDITOR", "REPORTER"] } ] }
+  ```
+  `canManage`: whether the user may create, change and reorder sections (`PUBLISHER`,
+  `EDITOR_IN_CHIEF`).
+- **Errors:** none specific.
+- **Side effects:** none.
+
+## `POST /api/sections`
+
+Creates a section at the last position.
+
+- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`
+- **Body:** `{ "name": "Sport & Spiel", "color": "green" }` — `name` required, trimmed, 1–40
+  characters, no control characters, unique ignoring case; `color` optional, a palette key.
+  Without `color` the server picks the palette colour at index (number of sections mod 8).
+  Unknown fields are rejected.
+- **Response `201`:** header `Location: /api/sections/{id}`, body a `SectionDto`. The `slug` is
+  derived from the name like a username suggestion (umlauts spelled out, runs outside `a-z0-9` →
+  `-`, at most 40 characters, `section` when empty; `-2`, `-3`, … when taken) and never changes.
+  `"Sport & Spiel"` → `sport-spiel`.
+- **Errors:** `400` validation, `403`, `409` name taken (field `name`).
+- **Side effects:** section stored.
+
+## `PUT /api/sections/{id}`
+
+Replaces name and colour; `slug` and `position` stay.
+
+- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`
+- **Body:** `{ "name": "Sportnews", "color": "blue" }` — both required, rules as for creation.
+- **Response `200`:** a `SectionDto`.
+- **Errors:** `400`, `403`, `404` unknown section, `409` name taken by another section (field
+  `name`).
+- **Side effects:** section updated.
+
+## `PUT /api/sections/order`
+
+Sets the positions `0, 1, 2, …` in the given order.
+
+- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`
+- **Body:** `{ "ids": [2, 1] }` — every existing section id exactly once.
+- **Response `200`:** as `GET /api/sections`.
+- **Errors:** `400` field `ids` when an id is missing, unknown or repeated (nothing changed),
+  `403`.
+- **Side effects:** all positions rewritten in one transaction.
+
+## `GET /api/sections/{id}/members`
+
+The accounts holding a role in the section, section editors first, then by username. Members whose
+Keycloak user no longer exists are left out.
+
+- **Auth:** users who may assign section roles in this section
+- **Response `200`:**
+  ```json
+  { "assignableRoles": ["SECTION_EDITOR", "REPORTER"],
+    "members": [ { "accountId": "5f0c…", "username": "nogroups", "firstName": "No",
+                   "lastName": "Groups", "role": "SECTION_EDITOR" } ] }
+  ```
+  `lastName` is `""` when unset.
+- **Errors:** `403`, `404` unknown section, `503` Keycloak unavailable.
+- **Side effects:** none.
+
+## `PUT /api/sections/{id}/members/{accountId}`
+
+Gives the account the role in the section, replacing its current one.
+
+- **Auth:** users who may assign section roles in this section; old and new role must be
+  assignable
+- **Body:** `{ "role": "REPORTER" }` — `SECTION_EDITOR` | `REPORTER`.
+- **Response `200`:** one member (as in the members list).
+- **Errors:** `400` unknown role (field `role`), `403` (empty body without access to the section's
+  members; field `role` when the change itself is not allowed), `404` unknown section or account
+  (service accounts count as unknown), `503`.
+- **Side effects:** section role stored; logged at INFO with section, account, old and new role
+  and the acting user.
+
+## `DELETE /api/sections/{id}/members/{accountId}`
+
+Removes the account's role in the section.
+
+- **Auth:** users who may assign section roles in this section; the current role must be
+  assignable
+- **Response `204`**, empty body.
+- **Errors:** `403`, `404` unknown section, account without a role in the section or unknown
+  account, `503`.
+- **Side effects:** section role deleted; logged at INFO with section, account, role and the
+  acting user.

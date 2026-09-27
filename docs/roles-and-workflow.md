@@ -16,7 +16,7 @@ Hierarchy: **Publisher > Editor-in-chief > Section editor > Reporter > Reader.**
 
 - **Several people per role.** Two publishers (both parents), two editors-in-chief, several section editors per section are all fine.
 - **Several roles per person.** A person can hold roles on several levels; for an article, the highest role the author holds *in the article's section* counts.
-- **Delegation.** Anyone may create accounts and assign roles **at or below their own level, within their own scope** — a section editor assigns reporters only to their own sections. There is no confirmation step; publishers see every account and can lock it.
+- **Delegation.** Everyone from section editor up may create accounts and assign roles **at or below their own level, within their own scope** — a section editor assigns section editors and reporters only in their own sections and no newspaper-wide roles. Reporters and readers do not delegate. There is no confirmation step; publishers see every account and can lock it.
 - **Implementation split.** Newspaper-wide roles (`PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`) are Keycloak groups and end up in the token. Per-section roles (`SECTION_EDITOR`, `REPORTER`) and trust switches live in the Presserl database. The backend manages Keycloak users and groups through a service account, so nobody needs the Keycloak admin console.
 
 ## Accounts

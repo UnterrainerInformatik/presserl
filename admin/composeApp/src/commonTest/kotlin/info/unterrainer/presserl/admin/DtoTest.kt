@@ -9,7 +9,13 @@ import info.unterrainer.presserl.admin.api.ClientConfigDto
 import info.unterrainer.presserl.admin.api.CreatedAccountDto
 import info.unterrainer.presserl.admin.api.FieldErrorDto
 import info.unterrainer.presserl.admin.api.MeDto
+import info.unterrainer.presserl.admin.api.MemberDto
+import info.unterrainer.presserl.admin.api.MemberListDto
+import info.unterrainer.presserl.admin.api.MySectionRoleDto
 import info.unterrainer.presserl.admin.api.NewspaperDto
+import info.unterrainer.presserl.admin.api.SectionDto
+import info.unterrainer.presserl.admin.api.SectionListDto
+import info.unterrainer.presserl.admin.api.SectionRoleDto
 import info.unterrainer.presserl.admin.api.json
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
@@ -73,6 +79,16 @@ class DtoTest {
         val dto = json.decodeFromString<MeDto>("""{ "username": "papa", "displayName": "Papa", "roles": ["PUBLISHER"] }""")
 
         assertEquals(MeDto("papa", "Papa", listOf("PUBLISHER")), dto)
+    }
+
+    @Test
+    fun meWithSectionRoles() {
+        val dto = json.decodeFromString<MeDto>(
+            """{ "username": "nogroups", "displayName": "No Groups", "roles": [],
+                 "sectionRoles": [{ "sectionId": 1, "sectionName": "Sport", "role": "SECTION_EDITOR" }] }""",
+        )
+
+        assertEquals(listOf(MySectionRoleDto(1, "Sport", "SECTION_EDITOR")), dto.sectionRoles)
     }
 
     @Test
@@ -140,7 +156,7 @@ class DtoTest {
                 { "id": "5f0c", "username": "chief", "firstName": "Chief", "lastName": "Editor",
                   "roles": ["EDITOR_IN_CHIEF"], "enabled": true },
                 { "id": "77aa", "username": "nogroups", "firstName": "No", "lastName": "Groups",
-                  "roles": [], "enabled": false }
+                  "roles": [], "sectionRoles": [{ "sectionId": 1, "role": "REPORTER" }], "enabled": false }
               ]
             }
             """,
@@ -149,6 +165,7 @@ class DtoTest {
         assertEquals(listOf("PUBLISHER", "EDITOR_IN_CHIEF", "READER"), dto.assignableRoles)
         assertEquals(AccountDto("5f0c", "chief", "Chief", "Editor", listOf("EDITOR_IN_CHIEF"), true), dto.accounts[0])
         assertEquals(emptyList(), dto.accounts[1].roles)
+        assertEquals(listOf(SectionRoleDto(1, "REPORTER")), dto.accounts[1].sectionRoles)
         assertEquals(false, dto.accounts[1].enabled)
     }
 
@@ -167,6 +184,41 @@ class DtoTest {
         assertEquals("lena", dto.account.username)
         assertEquals("tiger-wolke-apfel-leiter", dto.password)
         assertEquals(false, dto.toString().contains("tiger"))
+    }
+
+    @Test
+    fun sectionList() {
+        val dto = json.decodeFromString<SectionListDto>(
+            """
+            {
+              "canManage": true,
+              "sections": [
+                { "id": 1, "name": "Sport", "slug": "sport", "color": "green", "position": 0,
+                  "assignableRoles": ["SECTION_EDITOR", "REPORTER"] }
+              ]
+            }
+            """,
+        )
+
+        assertEquals(true, dto.canManage)
+        assertEquals(SectionDto(1, "Sport", "sport", "green", 0, listOf("SECTION_EDITOR", "REPORTER")), dto.sections.single())
+    }
+
+    @Test
+    fun memberList() {
+        val dto = json.decodeFromString<MemberListDto>(
+            """
+            {
+              "assignableRoles": ["SECTION_EDITOR", "REPORTER"],
+              "members": [
+                { "accountId": "5f0c", "username": "nogroups", "firstName": "No", "lastName": "Groups",
+                  "role": "SECTION_EDITOR" }
+              ]
+            }
+            """,
+        )
+
+        assertEquals(MemberDto("5f0c", "nogroups", "No", "Groups", "SECTION_EDITOR"), dto.members.single())
     }
 
     @Test
