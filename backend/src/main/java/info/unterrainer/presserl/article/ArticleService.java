@@ -7,6 +7,7 @@ import java.util.Map;
 
 import org.hibernate.reactive.mutiny.Mutiny;
 
+import info.unterrainer.presserl.auth.NewspaperRole;
 import info.unterrainer.presserl.newspaper.NewspaperConfig;
 import info.unterrainer.presserl.section.Newsroom;
 import info.unterrainer.presserl.section.SectionEntity;
@@ -215,7 +216,7 @@ public class ArticleService {
                     requireHeadline(view, "submitting");
                     ArticleEntity article = view.article();
                     article.pendingLevel = ApprovalChain.next(ApprovalChain.authorLevel(newsroom, article.sectionId),
-                            article.sectionId, article.authorSub, staffed).orElseThrow();
+                            article.sectionId, article.authorSub, staffed, article.locked).orElseThrow();
                     if (article.liveRevision == null) {
                         article.status = ArticleStatus.SUBMITTED;
                     }
@@ -237,7 +238,7 @@ public class ArticleService {
                 Instant now = now();
                 ArticleReviewEntity review = review(newsroom, view, ReviewDecision.APPROVED, null, now);
                 article.pendingLevel = ApprovalChain.next(ApprovalChain.approverLevel(newsroom, article.sectionId),
-                        article.sectionId, article.authorSub, staffed).orElse(null);
+                        article.sectionId, article.authorSub, staffed, article.locked).orElse(null);
                 if (article.pendingLevel == null) {
                     goLive(view, now);
                 }
@@ -286,13 +287,29 @@ public class ArticleService {
     }
 
     /**
-     * Takes a published article offline; it keeps its live revision and a pending submission.
+     * Takes a published article offline; it keeps its live revision and a pending submission. Taken
+     * offline by a publisher, it is locked (emergency brake).
      */
     @WithTransaction
     public Uni<ArticleView> takeOffline(Newsroom newsroom, long id) {
         return load(newsroom, id).flatMap(view -> {
             require(ArticleAction.TAKE_OFFLINE, newsroom, view, Staffing.NOT_NEEDED);
             view.article().status = ArticleStatus.OFFLINE;
+            view.article().locked = newsroom.user().has(NewspaperRole.PUBLISHER);
+            view.article().updatedAt = now();
+            return flushed(view);
+        });
+    }
+
+    /**
+     * A publisher lifts the emergency-brake lock; the article stays offline and keeps a pending
+     * submission, and the ordinary chain applies again.
+     */
+    @WithTransaction
+    public Uni<ArticleView> unlock(Newsroom newsroom, long id) {
+        return load(newsroom, id).flatMap(view -> {
+            require(ArticleAction.UNLOCK, newsroom, view, Staffing.NOT_NEEDED);
+            view.article().locked = false;
             view.article().updatedAt = now();
             return flushed(view);
         });
@@ -322,7 +339,7 @@ public class ArticleService {
 
     /**
      * Makes the latest revision live: status {@code PUBLISHED}, publication timestamps set on first
-     * publication, nothing pending.
+     * publication, nothing pending, not locked.
      */
     private static void goLive(ArticleView view, Instant now) {
         ArticleEntity article = view.article();
@@ -336,6 +353,7 @@ public class ArticleService {
         article.liveRevision = latest.number;
         article.status = ArticleStatus.PUBLISHED;
         article.pendingLevel = null;
+        article.locked = false;
         article.updatedAt = now;
     }
 
@@ -452,6 +470,7 @@ public class ArticleService {
                 case APPROVE -> "you may not approve this article at the level it waits for";
                 case REJECT -> "you may not reject this article at the level it waits for";
                 case TAKE_OFFLINE -> "you may not take this article offline";
+                case UNLOCK -> "only a publisher may unlock this article";
             });
             case CONFLICT -> throw ArticleException.conflict(switch (action) {
                 case EDIT -> "this article waits for approval and cannot be edited; withdraw the submission first";
@@ -461,6 +480,7 @@ public class ArticleService {
                         : "this article is already published and has no unpublished changes";
                 case WITHDRAW, APPROVE, REJECT -> "this article does not wait for approval";
                 case TAKE_OFFLINE -> "only a published article can be taken offline";
+                case UNLOCK -> "this article is not locked";
             });
         }
     }

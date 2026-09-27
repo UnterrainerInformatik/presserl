@@ -19,6 +19,7 @@ public record ArticleDto(
         Integer liveRevision,
         boolean hasUnpublishedChanges,
         ApprovalLevel pendingLevel,
+        boolean locked,
         long version,
         Instant createdAt,
         Instant updatedAt,
@@ -37,7 +38,7 @@ public record ArticleDto(
         ArticleEntity a = view.article();
         ArticleRevisionEntity r = view.revision();
         return new ArticleDto(a.id, a.status, AuthorDto.of(a), SectionRefDto.of(view.section()), r.number, a.liveRevision,
-                ArticlePolicy.hasUnpublishedChanges(a, r.number), a.pendingLevel, a.version, a.createdAt, a.updatedAt, a.publishedAt,
+                ArticlePolicy.hasUnpublishedChanges(a, r.number), a.pendingLevel, a.locked, a.version, a.createdAt, a.updatedAt, a.publishedAt,
                 r.kicker, r.headline, r.subheadline, r.lead, r.body, ArticlePolicy.allowedActions(newsroom, a, r.number, staffing));
     }
 }

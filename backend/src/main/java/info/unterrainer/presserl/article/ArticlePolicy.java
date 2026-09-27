@@ -13,7 +13,8 @@ import info.unterrainer.presserl.section.Newsroom;
  * checked in the order role → ownership → state: a missing role, ownership or section access is
  * {@link Verdict#FORBIDDEN}, a state that does not permit the action is {@link Verdict#CONFLICT}.
  * "Pending" means a submission waits for an approval level ({@link ArticleEntity#pendingLevel}); the
- * chain is computed by {@link ApprovalChain} from the author's level and the {@link Staffing}.
+ * chain is computed by {@link ApprovalChain} from the author's level, the {@link Staffing} and the
+ * emergency-brake lock, which keeps {@code PUBLISHER} in it.
  * <table>
  * <tr><td>EDIT</td><td>user is author and may write in the article's section; nothing pending</td></tr>
  * <tr><td>SUBMIT</td><td>user is author, may write in the article's section and their chain is not
@@ -23,7 +24,8 @@ import info.unterrainer.presserl.section.Newsroom;
  * <tr><td>APPROVE, REJECT</td><td>user is not the author and their approval level is at least the
  * pending level (any level while nothing is pending); a submission is pending</td></tr>
  * <tr><td>TAKE_OFFLINE</td><td>user is author, EDITOR_IN_CHIEF, PUBLISHER or section editor of the
- * article's section; the article is PUBLISHED</td></tr>
+ * article's section; the article is PUBLISHED (taken offline by a PUBLISHER, it becomes locked)</td></tr>
+ * <tr><td>UNLOCK</td><td>user holds PUBLISHER; the article is locked</td></tr>
  * <tr><td>DELETE</td><td>user is author and may write in the article's section; the article was
  * never published</td></tr>
  * </table>
@@ -86,6 +88,8 @@ public final class ArticlePolicy {
                     && !isSectionEditor(newsroom, article)
                     ? Verdict.FORBIDDEN
                     : article.status != ArticleStatus.PUBLISHED ? Verdict.CONFLICT : Verdict.ALLOWED;
+            case UNLOCK -> !user.has(NewspaperRole.PUBLISHER) ? Verdict.FORBIDDEN
+                    : !article.locked ? Verdict.CONFLICT : Verdict.ALLOWED;
         };
     }
 
@@ -94,7 +98,7 @@ public final class ArticlePolicy {
      */
     private static boolean chainIsEmpty(Newsroom author, ArticleEntity article, Staffing staffing) {
         return ApprovalChain.next(ApprovalChain.authorLevel(author, article.sectionId), article.sectionId,
-                article.authorSub, staffing).isEmpty();
+                article.authorSub, staffing, article.locked).isEmpty();
     }
 
     /**

@@ -114,7 +114,7 @@ section; section editors and reporters only in the sections where they hold a se
 **Visibility.** Publishers and editors-in-chief see every article. Every other writer sees the
 articles they authored and, in each section where they are `SECTION_EDITOR`, all articles of that
 section. Lists contain only visible articles; every `/api/articles/{id}…` endpoint (get,
-revisions, reviews, save, delete, publish, offline, submit, approve, reject, withdraw) answers an
+revisions, reviews, save, delete, publish, offline, unlock, submit, approve, reject, withdraw) answers an
 invisible article with `404`, exactly like an unknown id.
 
 **Sections.** Every article belongs to one section (`section` in `ArticleDto` and
@@ -143,7 +143,7 @@ latest revision the **live revision** (`liveRevision`); later saves do not touch
 next publish. `hasUnpublishedChanges` = `liveRevision != null && revision != liveRevision`.
 
 **Versions.** `version` is the optimistic-lock counter. Every successful save, publish,
-take-offline, submit, approve, reject and withdraw increases it. The chain actions carry no
+take-offline, unlock, submit, approve, reject and withdraw increases it. The chain actions carry no
 version: of two concurrent decisions on the same article the second gets `409`. `PUT` must send the version last received; a different stored version
 → `409` and nothing changes (reload, then save again).
 
@@ -152,6 +152,8 @@ version: of two concurrent decisions on the same article the second gets `409`. 
 hold (`PUBLISHER` role, `EDITOR_IN_CHIEF` role, `SECTION_EDITOR` of that section); none = reporter.
 The author's **chain** = the levels above the author's level that are **staffed**, i.e. held by at
 least one account other than the author (locked accounts count); unstaffed levels are skipped.
+While the article is **locked** by the emergency brake (`locked: true`), `PUBLISHER` belongs to the
+chain of every author below `PUBLISHER`, staffed or not — only a publisher brings it back online.
 An author whose chain is empty publishes directly (`PUBLISH`); everyone else submits (`SUBMIT`) and
 the article waits for the lowest level of the chain (`pendingLevel`). Any user other than the
 author whose level is at least the pending level may approve or reject; an approval settles every
@@ -163,7 +165,7 @@ articles, every approve) read the role holders from Keycloak; when Keycloak is u
 answer `503` with the error body.
 
 **`allowedActions`.** Every article representation lists what the requesting user may do now, in
-the order `EDIT`, `SUBMIT`, `PUBLISH`, `WITHDRAW`, `APPROVE`, `REJECT`, `TAKE_OFFLINE`, `DELETE`.
+the order `EDIT`, `SUBMIT`, `PUBLISH`, `WITHDRAW`, `APPROVE`, `REJECT`, `TAKE_OFFLINE`, `UNLOCK`, `DELETE`.
 Render buttons only from this list: an action is accepted exactly when it is listed (apart from
 content validation, a missing headline or note, and `409` on concurrency). `SUBMIT` and `PUBLISH`
 are never listed together. Rules ("pending" = `pendingLevel != null`):
@@ -176,6 +178,7 @@ are never listed together. Rules ("pending" = `pendingLevel != null`):
 | `WITHDRAW` | user is the author; pending |
 | `APPROVE`, `REJECT` | user is not the author and their level ≥ `pendingLevel`; pending |
 | `TAKE_OFFLINE` | status = `PUBLISHED` and user is the author, an `EDITOR_IN_CHIEF`, a `PUBLISHER` or `SECTION_EDITOR` of the article's section |
+| `UNLOCK` | user holds `PUBLISHER`; the article is locked |
 | `DELETE` | user is the author, may write in the article's section, and the article was never published (`liveRevision == null`); also while pending |
 
 Endpoints check writer (`403`, empty body) → request body (`400`, reject only) → visibility (`404`)
@@ -189,6 +192,11 @@ submission.
 waiting for approval. A `PUBLISHED` or `OFFLINE` article keeps its status while changes (or its way
 back online) wait; the reader keeps showing its live revision. `pendingLevel`
 (`SECTION_EDITOR` | `EDITOR_IN_CHIEF` | `PUBLISHER` | `null`) says what it waits for.
+
+**Emergency brake.** An article a `PUBLISHER` takes offline is locked (`locked: true`; only
+`OFFLINE` articles are locked). While locked, its chain ends with `PUBLISHER` (see above). The lock
+ends when the article goes online (publish by a publisher-author, or the final approval) or when a
+publisher unlocks it (`POST /api/articles/{id}/unlock`). Taking offline by anyone else does not lock.
 
 ## Content fields and body format v1
 
@@ -233,7 +241,7 @@ back online) wait; the reader keeps showing its live revision. `pendingLevel`
 
 ## `ArticleDto`
 
-Returned by get, create, save, publish, take-offline, submit, approve, reject and withdraw.
+Returned by get, create, save, publish, take-offline, unlock, submit, approve, reject and withdraw.
 Content fields are those of the latest revision (`revision`).
 ```json
 {
@@ -245,6 +253,7 @@ Content fields are those of the latest revision (`revision`).
   "liveRevision": 1,
   "hasUnpublishedChanges": true,
   "pendingLevel": null,
+  "locked": false,
   "version": 5,
   "createdAt": "2026-09-26T10:00:00Z",
   "updatedAt": "2026-09-26T10:05:00Z",
@@ -261,6 +270,7 @@ Content fields are those of the latest revision (`revision`).
 - `section`: the article's section with its current name and palette colour.
 - `liveRevision`, `publishedAt` (first publication): `null` until the first publish.
 - `pendingLevel`: the approval level the article waits for, `null` while no submission is pending.
+- `locked`: `true` while the emergency-brake lock is set (see above), otherwise `false`.
 - Timestamps: ISO-8601 UTC, millisecond precision.
 
 ## `GET /api/articles`
@@ -277,7 +287,7 @@ pagination yet.
   [ { "id": 42, "status": "DRAFT", "author": { "username": "papa", "displayName": "Papa" },
       "section": { "id": 1, "name": "Sport", "slug": "sport", "color": "green" },
       "headline": "Hello", "kicker": "", "revision": 1, "liveRevision": null,
-      "hasUnpublishedChanges": false, "pendingLevel": null, "updatedAt": "2026-09-26T10:05:00Z", "publishedAt": null,
+      "hasUnpublishedChanges": false, "pendingLevel": null, "locked": false, "updatedAt": "2026-09-26T10:05:00Z", "publishedAt": null,
       "allowedActions": ["EDIT", "PUBLISH", "DELETE"] } ]
   ```
 - **Errors:** `400` unknown `status` (field `status`).
@@ -346,13 +356,25 @@ Makes the latest revision live without approval. No request body.
 ## `POST /api/articles/{id}/offline`
 
 Takes a published article offline without approval. No request body. A pending submission stays
-pending; approving it later puts the article back online with its latest revision.
+pending; approving it later puts the article back online with its latest revision. Taken offline by
+a `PUBLISHER`, the article is locked (emergency brake).
 
 - **Auth:** writer; `TAKE_OFFLINE` (author, any editor-in-chief, any publisher, section editors
   of the article's section)
-- **Response `200`:** `ArticleDto` with `status` `OFFLINE`; `liveRevision` is kept
+- **Response `200`:** `ArticleDto` with `status` `OFFLINE` and `locked` `true` when the user holds
+  `PUBLISHER`, otherwise `false`; `liveRevision` is kept
 - **Errors:** `403`, `404`, `409` status is not `PUBLISHED`.
-- **Side effects:** status `OFFLINE`; `updatedAt` and `version` change.
+- **Side effects:** status `OFFLINE`, `locked` set for a publisher; `updatedAt` and `version` change.
+
+## `POST /api/articles/{id}/unlock`
+
+Lifts the emergency-brake lock; the ordinary chain applies again. No request body.
+
+- **Auth:** writer; `UNLOCK` (any `PUBLISHER`)
+- **Response `200`:** `ArticleDto` with `locked` `false`; status (`OFFLINE`), `liveRevision` and
+  `pendingLevel` unchanged
+- **Errors:** `403` not a publisher, `404`, `409` the article is not locked.
+- **Side effects:** `locked` cleared; `updatedAt` and `version` change.
 
 ## `POST /api/articles/{id}/submit`
 
@@ -375,8 +397,8 @@ Approves the pending submission up to the approver's level. No request body.
 
 - **Auth:** writer; `APPROVE` (not the author; level ≥ `pendingLevel`)
 - **Response `200`:** `ArticleDto` waiting for the next staffed level above the approver's level
-  (`pendingLevel`), or, when none remains, `PUBLISHED` with `pendingLevel` `null` and the latest
-  revision live
+  (`pendingLevel`; `PUBLISHER` is always next for a locked article), or, when none remains,
+  `PUBLISHED` with `pendingLevel` `null`, `locked` `false` and the latest revision live
 - **Errors:** `403` the author or level too low, `404`, `409` nothing pending or a concurrent
   decision.
 - **Side effects:** review `APPROVED` recorded with the level the article waited for; when

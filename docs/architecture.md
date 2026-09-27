@@ -85,7 +85,7 @@ One newspaper per server; a second newspaper is a second deployment.
 - **Section** — name (unique ignoring case), slug (derived once from the name, stable for reader URLs), colour (palette key `red` | `orange` | `yellow` | `green` | `teal` | `blue` | `purple` | `pink`, mapped to `--presserl-section-<key>` by the theme), position, settings (JSON, overrides only)
 - **SectionRole** — user (Keycloak id = token `sub`) × section × role (`SECTION_EDITOR` | `REPORTER`), at most one role per user and section. Newspaper-wide roles (`PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`) are Keycloak groups, not rows.
 - **Trust** — approving level × trusted user (+ who set it). One row skips that level for that user.
-- **Article** — section (exactly one, `NOT NULL` in the database; the section belongs to the article, not to a revision, so moving an article creates no revision; a section with articles cannot be deleted), author (token `sub` plus username/display-name snapshot for the byline), status (`DRAFT` | `SUBMITTED` | `PUBLISHED` | `OFFLINE`; `SUBMITTED` = never published and waiting for approval), pending approval level (`SECTION_EDITOR` | `EDITOR_IN_CHIEF` | `PUBLISHER`, `NULL` while no submission is pending; published and offline articles keep their status while it is set), live revision (by number, `NULL` until the first publication), first publication time, optimistic-lock version; later: emergency-brake lock, lead image
+- **Article** — section (exactly one, `NOT NULL` in the database; the section belongs to the article, not to a revision, so moving an article creates no revision; a section with articles cannot be deleted), author (token `sub` plus username/display-name snapshot for the byline), status (`DRAFT` | `SUBMITTED` | `PUBLISHED` | `OFFLINE`; `SUBMITTED` = never published and waiting for approval), pending approval level (`SECTION_EDITOR` | `EDITOR_IN_CHIEF` | `PUBLISHER`, `NULL` while no submission is pending; published and offline articles keep their status while it is set), live revision (by number, `NULL` until the first publication), first publication time, emergency-brake lock (only `OFFLINE` articles; set when a publisher takes the article offline, cleared when it goes online or a publisher unlocks it), optimistic-lock version; later: lead image
 - **ArticleRevision** — numbered per article (`1, 2, …`), holds the content: kicker, headline, subheadline, lead (plain text) and body (**body format v1**: structured JSON of blocks — paragraph, subhead, quote, bullet list — with inline runs whose only mark is bold; validated server-side against an allowlist, never raw HTML). The latest revision is the **working revision**: saves overwrite it until it is published; after that the next save with changed content starts a new revision. Publishing makes the latest revision the article's live revision, which stays unchanged until the next publication. Taking offline keeps the live revision reference.
 - **ArticleReview** — one approval or rejection: decision, the level the article waited for, the reviewed revision, reviewer (token `sub` plus username/display-name snapshot), note (rejections only, feedback to the author), time; deleted with the article
 - **Issue** — number and publication date; groups articles; basis for the issue print view
@@ -155,6 +155,7 @@ POST   /api/articles/{id}/approve|reject  holder of the pending level or a highe
 POST   /api/articles/{id}/withdraw        author ends the pending submission                  (implemented)
 GET    /api/articles/{id}/reviews         approvals and rejections, newest first             (implemented)
 POST   /api/articles/{id}/offline         take offline: author, section editor, editor-in-chief, publisher (publisher ⇒ locked)
+POST   /api/articles/{id}/unlock          publisher: lift the emergency-brake lock, the article stays offline
 GET    /api/articles/{id}/revisions       revision history                                   (implemented)
 GET    /api/articles/{id}/revisions/{n}   one revision                                       (implemented)
 GET    /api/review-queue                  what I have to approve (empty for solo)
@@ -169,7 +170,7 @@ POST   /api/media                         reporter+ (size/type limit)
 GET    /api/me                            my roles, section roles and allowed actions (implemented)
 ```
 
-Article and account responses and `GET /api/me` carry `allowedActions`; clients render buttons from it and never re-implement the approval chain or the account rules. The approval chain follows roles only (trust is not implemented yet) and `offline` does not lock; see `ai/primer/endpoints.md` for the binding contract of the implemented endpoints.
+Article and account responses and `GET /api/me` carry `allowedActions`; clients render buttons from it and never re-implement the approval chain or the account rules. The approval chain follows roles and the emergency-brake lock only (trust is not implemented yet); see `ai/primer/endpoints.md` for the binding contract of the implemented endpoints.
 
 ## Views
 

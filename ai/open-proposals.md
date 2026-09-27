@@ -12,8 +12,6 @@ Still open:
   applies to the whole level) — one more skip predicate in `ApprovalChain.next`, storage, endpoints,
   admin UI.
 - **Review queue** — "waiting for me" view in the admin app (on top of `pending=true`), counts.
-- **Emergency-brake lock** — an article taken offline by a publisher is locked; only publishers
-  release it (new action, `allowedActions` rule).
 
 ## M4 — Look
 Reader theme built on `--presserl-*` design tokens per `docs/design-guidelines.md`,

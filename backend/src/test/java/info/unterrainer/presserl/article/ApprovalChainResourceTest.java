@@ -291,6 +291,101 @@ class ApprovalChainResourceTest {
                 .body("liveRevision", equalTo(2));
     }
 
+    // --- emergency brake
+
+    private static ValidatableResponse unlock(String token, long id) {
+        return action(token, id, "unlock");
+    }
+
+    @Test
+    void publisherPullsTheBrake() {
+        long id = publishedByChief(section("Sport"), "Brake");
+        action(publisher, id, "offline").statusCode(200)
+                .body("status", equalTo("OFFLINE"))
+                .body("locked", equalTo(true))
+                .body("allowedActions", contains("UNLOCK"));
+        get(chief, id).body("locked", equalTo(true)).body("allowedActions", contains("EDIT", "SUBMIT"));
+        as(chief).get("/api/articles?mine=true").then().statusCode(200).body("locked", contains(true));
+    }
+
+    @Test
+    void takingOfflineByOthersDoesNotLock() {
+        long sport = staffedSport();
+        long id = create(reader, in(sport, "Goal"));
+        submit(reader, id).statusCode(200);
+        approve(publisher, id).statusCode(200).body("status", equalTo("PUBLISHED")).body("locked", equalTo(false));
+        action(chief, id, "offline").statusCode(200)
+                .body("status", equalTo("OFFLINE"))
+                .body("locked", equalTo(false));
+    }
+
+    @Test
+    void publisherUnlocks() {
+        long id = publishedByChief(section("Sport"), "Brake");
+        long before = action(publisher, id, "offline").statusCode(200).extract().jsonPath().getLong("version");
+        unlock(publisher, id).statusCode(200)
+                .body("status", equalTo("OFFLINE"))
+                .body("locked", equalTo(false))
+                .body("liveRevision", equalTo(1))
+                .body("version", greaterThan((int) before))
+                .body("allowedActions", empty());
+        unlock(publisher, id).statusCode(409);
+    }
+
+    @Test
+    void onlyPublishersUnlock() {
+        long id = publishedByChief(section("Sport"), "Brake");
+        action(publisher, id, "offline").statusCode(200);
+        unlock(chief, id).statusCode(403);
+        get(publisher, id).body("locked", equalTo(true));
+    }
+
+    @Test
+    void unlockingAnInvisibleArticle() {
+        long sport = staffedSport();
+        long id = create(reader, in(sport, "Goal"));
+        submit(reader, id).statusCode(200);
+        approve(publisher, id).statusCode(200);
+        action(publisher, id, "offline").statusCode(200).body("locked", equalTo(true));
+        unlock(nogroups, id).statusCode(403);
+        long kultur = section("Kultur");
+        assign(kultur, "reader", "REPORTER");
+        long foreign = create(publisher, in(kultur, "Theatre"));
+        unlock(reader, foreign).statusCode(404);
+    }
+
+    @Test
+    void publisherRepublishesTheirOwnLockedArticle() {
+        long id = create(publisher, in(section("Sport"), "Mine"));
+        action(publisher, id, "publish").statusCode(200);
+        action(publisher, id, "offline").statusCode(200).body("locked", equalTo(true))
+                .body("allowedActions", contains("EDIT", "PUBLISH", "UNLOCK"));
+        action(publisher, id, "publish").statusCode(200)
+                .body("status", equalTo("PUBLISHED"))
+                .body("locked", equalTo(false));
+    }
+
+    @Test
+    void lockedArticleGoesBackOnlineOnlyThroughAPublisher() {
+        long sport = staffedSport();
+        long id = create(reader, in(sport, "Goal"));
+        submit(reader, id).statusCode(200);
+        approve(publisher, id).statusCode(200);
+        action(publisher, id, "offline").statusCode(200).body("locked", equalTo(true));
+
+        submit(reader, id).statusCode(200).body("pendingLevel", equalTo("SECTION_EDITOR"));
+        approve(nogroups, id).statusCode(200).body("pendingLevel", equalTo("EDITOR_IN_CHIEF"));
+        approve(chief, id).statusCode(200)
+                .body("status", equalTo("OFFLINE"))
+                .body("pendingLevel", equalTo("PUBLISHER"))
+                .body("locked", equalTo(true));
+        readerPage(id, 404);
+        approve(publisher, id).statusCode(200)
+                .body("status", equalTo("PUBLISHED"))
+                .body("locked", equalTo(false));
+        readerPage(id, 200);
+    }
+
     // --- submitting
 
     @Test

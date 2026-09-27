@@ -50,6 +50,9 @@
     <string name="redo">Redo</string>
     <string name="publish">Publish</string>
     <string name="take_offline">Take offline</string>
+    <string name="unlock">Unlock</string>
+    <string name="locked">Locked</string>
+    <string name="locked_notice">Locked by a publisher – only a publisher can put it back online.</string>
     <string name="submit">Submit</string>
     <string name="withdraw">Withdraw</string>
     <string name="approve">Approve</string>

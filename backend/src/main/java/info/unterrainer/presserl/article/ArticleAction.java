@@ -11,5 +11,6 @@ public enum ArticleAction {
     APPROVE,
     REJECT,
     TAKE_OFFLINE,
+    UNLOCK,
     DELETE
 }

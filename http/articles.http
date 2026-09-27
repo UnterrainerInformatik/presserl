@@ -302,6 +302,7 @@ Authorization: Bearer {{chiefToken}}
     client.test("200 offline, live revision kept", () => {
         client.assert(response.status === 200, "status " + response.status);
         client.assert(response.body.status === "OFFLINE", "status " + response.body.status);
+        client.assert(response.body.locked === false, "locked " + response.body.locked);
         client.assert(response.body.liveRevision === 2, "liveRevision");
     });
 %}
@@ -657,9 +658,60 @@ GET {{baseUrl}}/articles/{{chainId}}
     client.test("200", () => client.assert(response.status === 200, "status " + response.status));
 %}
 
-### Chain clean up: take it offline
+### Emergency brake: the publisher takes it offline, which locks it
 POST {{baseUrl}}/api/articles/{{chainId}}/offline
 Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200 OFFLINE and locked", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.status === "OFFLINE", "status " + response.body.status);
+        client.assert(response.body.locked === true, "locked " + response.body.locked);
+        client.assert(JSON.stringify(response.body.allowedActions) === '["UNLOCK"]',
+            JSON.stringify(response.body.allowedActions));
+    });
+%}
+
+### Emergency brake: the reporter sees the lock and may only submit
+GET {{baseUrl}}/api/articles/{{chainId}}
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("200 locked, EDIT and SUBMIT", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.locked === true, "locked " + response.body.locked);
+        client.assert(JSON.stringify(response.body.allowedActions) === '["EDIT","SUBMIT"]',
+            JSON.stringify(response.body.allowedActions));
+    });
+%}
+
+### Emergency brake: the editor-in-chief may not unlock
+POST {{baseUrl}}/api/articles/{{chainId}}/unlock
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("403", () => client.assert(response.status === 403, "status " + response.status));
+%}
+
+### Emergency brake: the publisher unlocks, the article stays offline
+POST {{baseUrl}}/api/articles/{{chainId}}/unlock
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200 OFFLINE, not locked", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.status === "OFFLINE", "status " + response.body.status);
+        client.assert(response.body.locked === false, "locked " + response.body.locked);
+    });
+%}
+
+### Emergency brake: nothing left to unlock
+POST {{baseUrl}}/api/articles/{{chainId}}/unlock
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("409", () => client.assert(response.status === 409, "status " + response.status));
+%}
 
 ### Clean up: reporter deletes the draft
 DELETE {{baseUrl}}/api/articles/{{reporterDraftId}}

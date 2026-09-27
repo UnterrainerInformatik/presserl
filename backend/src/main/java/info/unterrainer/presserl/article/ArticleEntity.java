@@ -58,6 +58,13 @@ public class ArticleEntity extends PanacheEntityBase {
     public ApprovalLevel pendingLevel;
 
     /**
+     * Emergency brake: set when a publisher takes the article offline; only an {@code OFFLINE} article
+     * is locked. While set, the chain ends with the {@code PUBLISHER} level ({@link ApprovalChain#next}).
+     */
+    @Column(nullable = false)
+    public boolean locked;
+
+    /**
      * First publication.
      */
     @Column(name = "published_at")

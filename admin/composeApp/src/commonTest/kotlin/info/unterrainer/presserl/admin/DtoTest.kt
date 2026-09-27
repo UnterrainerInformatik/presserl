@@ -29,7 +29,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** The examples of the REST contract (design D3 / ai/primer/endpoints.md). */
 class DtoTest {
@@ -163,6 +165,33 @@ class DtoTest {
         )
 
         assertEquals("PUBLISHER", dto.pendingLevel)
+    }
+
+    @Test
+    fun articleWithoutLockIsUnlocked() {
+        assertFalse(json.decodeFromString<ArticleDto>(ARTICLE).locked)
+    }
+
+    @Test
+    fun lockedArticle() {
+        val dto = json.decodeFromString<ArticleDto>(
+            ARTICLE.replace("\"hasUnpublishedChanges\": true,", "\"hasUnpublishedChanges\": true, \"locked\": true,"),
+        )
+
+        assertTrue(dto.locked)
+    }
+
+    @Test
+    fun lockedSummary() {
+        val dto = json.decodeFromString<ArticleSummaryDto>(
+            """{ "id": 7, "status": "OFFLINE", "author": { "username": "chief", "displayName": "Chief" },
+                "section": { "id": 1, "name": "Sport", "slug": "sport", "color": "green" }, "headline": "Goal", "kicker": "",
+                "revision": 1, "liveRevision": 1, "hasUnpublishedChanges": false, "pendingLevel": null, "locked": true,
+                "updatedAt": "2026-09-27T10:00:00Z", "publishedAt": "2026-09-27T09:00:00Z", "allowedActions": ["UNLOCK"] }""",
+        )
+
+        assertTrue(dto.locked)
+        assertEquals(listOf("UNLOCK"), dto.allowedActions)
     }
 
     @Test

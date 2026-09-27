@@ -72,7 +72,7 @@ Consequences:
 ## Taking offline and the emergency brake
 
 - **Taking offline never needs approval** — author (own articles), section editors of the section, editors-in-chief, publishers. Withdrawing is the safe direction.
-- **Emergency brake:** an article taken offline by a publisher is **locked**; only a publisher can put it back online.
+- **Emergency brake:** an article taken offline by a publisher is **locked**; only a publisher can put it back online. While it is locked, the publisher level belongs to its chain — staffed, trusted or not — so lower approvals only move it up to the publisher. The lock ends when the article goes online, or when a publisher **unlocks** it; the article then stays offline and the ordinary chain applies again.
 - **Back online** otherwise follows the approval chain. A submission pending when the article is taken offline stays pending; approving it puts the article back online with its latest revision.
 - **Editing a published article** creates a new revision; the live revision stays until the new one passes the chain.
 - **The server decides.** Responses carry `allowedActions`; clients only render what the server lists and never re-implement the chain.

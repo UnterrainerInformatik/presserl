@@ -62,10 +62,11 @@ data class SectionRefDto(
 
 /**
  * `GET/POST/PUT /api/articles/{id}` and the article actions (publish, submit, approve, reject,
- * withdraw, offline). [section] is `null` only for an article the server has not filed under a
+ * withdraw, offline, unlock). [section] is `null` only for an article the server has not filed under a
  * section yet. Content fields are those of the latest revision ([revision]); [body] is format v1
  * (`{"version": 1, "blocks": [...]}`). [pendingLevel] is the approval level the article waits for
  * (`SECTION_EDITOR`, `EDITOR_IN_CHIEF`, `PUBLISHER`), `null` while no submission is pending.
+ * [locked] is the emergency-brake lock: a publisher took the article offline, only a publisher puts it back online.
  * Timestamps are ISO-8601 strings.
  */
 @Serializable
@@ -78,6 +79,7 @@ data class ArticleDto(
     val liveRevision: Int? = null,
     val hasUnpublishedChanges: Boolean,
     val pendingLevel: String? = null,
+    val locked: Boolean = false,
     val version: Long,
     val createdAt: String,
     val updatedAt: String,
@@ -103,6 +105,7 @@ data class ArticleSummaryDto(
     val liveRevision: Int? = null,
     val hasUnpublishedChanges: Boolean,
     val pendingLevel: String? = null,
+    val locked: Boolean = false,
     val updatedAt: String,
     val publishedAt: String? = null,
     val allowedActions: List<String>,

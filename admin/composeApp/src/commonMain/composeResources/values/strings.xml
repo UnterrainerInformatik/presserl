@@ -50,6 +50,9 @@
     <string name="redo">Wiederholen</string>
     <string name="publish">Veröffentlichen</string>
     <string name="take_offline">Offline nehmen</string>
+    <string name="unlock">Entsperren</string>
+    <string name="locked">Gesperrt</string>
+    <string name="locked_notice">Von der Herausgeberschaft gesperrt – nur Herausgeber:innen können den Artikel wieder online bringen.</string>
     <string name="submit">Einreichen</string>
     <string name="withdraw">Zurückziehen</string>
     <string name="approve">Freigeben</string>

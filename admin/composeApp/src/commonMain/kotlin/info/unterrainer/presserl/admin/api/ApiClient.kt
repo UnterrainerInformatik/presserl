@@ -80,6 +80,10 @@ class ApiClient(
     suspend fun takeArticleOffline(id: Long): ArticleDto =
         http.post("$baseUrl/api/articles/$id/offline") { bearerAuth(accessToken()) }.body()
 
+    /** Lifts the emergency-brake lock (publishers only); the article stays offline. */
+    suspend fun unlockArticle(id: Long): ArticleDto =
+        http.post("$baseUrl/api/articles/$id/unlock") { bearerAuth(accessToken()) }.body()
+
     /** Starts a submission; the article then waits for the lowest level of the author's chain. */
     suspend fun submitArticle(id: Long): ArticleDto =
         http.post("$baseUrl/api/articles/$id/submit") { bearerAuth(accessToken()) }.body()

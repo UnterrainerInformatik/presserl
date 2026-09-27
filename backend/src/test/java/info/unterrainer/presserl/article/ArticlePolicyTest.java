@@ -7,6 +7,7 @@ import static info.unterrainer.presserl.article.ArticleAction.PUBLISH;
 import static info.unterrainer.presserl.article.ArticleAction.REJECT;
 import static info.unterrainer.presserl.article.ArticleAction.SUBMIT;
 import static info.unterrainer.presserl.article.ArticleAction.TAKE_OFFLINE;
+import static info.unterrainer.presserl.article.ArticleAction.UNLOCK;
 import static info.unterrainer.presserl.article.ArticleAction.WITHDRAW;
 import static info.unterrainer.presserl.article.ArticlePolicy.Verdict.ALLOWED;
 import static info.unterrainer.presserl.article.ArticlePolicy.Verdict.CONFLICT;
@@ -68,6 +69,15 @@ class ArticlePolicyTest {
         article.status = status;
         article.liveRevision = live;
         article.sectionId = section;
+        return article;
+    }
+
+    /**
+     * An offline article by {@code author} in Sport with live revision 1, locked by the emergency brake.
+     */
+    private static ArticleEntity locked(Newsroom author) {
+        ArticleEntity article = article(author, ArticleStatus.OFFLINE, 1);
+        article.locked = true;
         return article;
     }
 
@@ -302,6 +312,41 @@ class ArticlePolicyTest {
         assertThat(allowed(SECTION_EDITOR, PUBLISHED)).containsExactly(TAKE_OFFLINE);
         assertThat(allowed(SECTION_EDITOR, article(PUBLISHER, ArticleStatus.PUBLISHED, 1, KULTUR))).isEmpty();
         assertThat(verdict(TAKE_OFFLINE, REPORTER, PUBLISHED)).isEqualTo(FORBIDDEN);
+    }
+
+    // --- UNLOCK and the emergency brake
+
+    @Test
+    void unlockOnlyByPublishersOnlyWhenLocked() {
+        assertThat(verdict(UNLOCK, PUBLISHER, locked(CHIEF))).isEqualTo(ALLOWED);
+        assertThat(verdict(UNLOCK, PUBLISHING_CHIEF, locked(CHIEF))).isEqualTo(ALLOWED);
+        assertThat(verdict(UNLOCK, PUBLISHER, article(CHIEF, ArticleStatus.OFFLINE, 1))).isEqualTo(CONFLICT);
+        assertThat(verdict(UNLOCK, CHIEF, locked(CHIEF))).isEqualTo(FORBIDDEN);
+        assertThat(verdict(UNLOCK, SECTION_EDITOR, locked(REPORTER))).isEqualTo(FORBIDDEN);
+        assertThat(verdict(UNLOCK, REPORTER, locked(REPORTER))).isEqualTo(FORBIDDEN);
+    }
+
+    @Test
+    void lockedArticleOfAnAuthorWithEmptyChainMustBeSubmitted() {
+        // no other account holds a level: unlocked the reporter publishes directly, locked they submit
+        Staffing nobodyElse = new Staffing(Map.of(), Set.of(), Set.of());
+        ArticleEntity offline = article(REPORTER, ArticleStatus.OFFLINE, 1);
+        assertThat(ArticlePolicy.verdict(PUBLISH, REPORTER, offline, 1, nobodyElse)).isEqualTo(ALLOWED);
+        assertThat(ArticlePolicy.verdict(PUBLISH, REPORTER, locked(REPORTER), 1, nobodyElse)).isEqualTo(FORBIDDEN);
+        assertThat(ArticlePolicy.verdict(SUBMIT, REPORTER, locked(REPORTER), 1, nobodyElse)).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    void publisherPublishesTheirOwnLockedArticle() {
+        assertThat(allowed(PUBLISHER, locked(PUBLISHER))).containsExactly(EDIT, PUBLISH, UNLOCK);
+    }
+
+    @Test
+    void allowedActionsOnALockedArticle() {
+        assertThat(allowed(PUBLISHER, locked(CHIEF))).containsExactly(UNLOCK);
+        assertThat(allowed(CHIEF, locked(CHIEF))).containsExactly(EDIT, SUBMIT);
+        assertThat(allowed(PUBLISHER, waiting(locked(CHIEF), ApprovalLevel.PUBLISHER)))
+                .containsExactly(APPROVE, REJECT, UNLOCK);
     }
 
     // --- allowedActions

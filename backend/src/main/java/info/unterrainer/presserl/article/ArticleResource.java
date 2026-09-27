@@ -139,6 +139,12 @@ public class ArticleResource {
         return writer().flatMap(newsroom -> dto(newsroom, service.takeOffline(newsroom, id)));
     }
 
+    @POST
+    @Path("/{id}/unlock")
+    public Uni<ArticleDto> unlock(@PathParam("id") long id) {
+        return writer().flatMap(newsroom -> dto(newsroom, service.unlock(newsroom, id)));
+    }
+
     @GET
     @Path("/{id}/reviews")
     public Uni<List<ReviewDto>> reviews(@PathParam("id") long id) {

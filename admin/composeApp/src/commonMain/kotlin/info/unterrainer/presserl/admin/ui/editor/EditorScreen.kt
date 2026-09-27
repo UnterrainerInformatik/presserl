@@ -82,6 +82,7 @@ import info.unterrainer.presserl.admin.resources.leave_title
 import info.unterrainer.presserl.admin.resources.list_item
 import info.unterrainer.presserl.admin.resources.load_current
 import info.unterrainer.presserl.admin.resources.loading
+import info.unterrainer.presserl.admin.resources.locked_notice
 import info.unterrainer.presserl.admin.resources.move_down
 import info.unterrainer.presserl.admin.resources.move_up
 import info.unterrainer.presserl.admin.resources.publish
@@ -105,6 +106,7 @@ import info.unterrainer.presserl.admin.resources.stay
 import info.unterrainer.presserl.admin.resources.submit
 import info.unterrainer.presserl.admin.resources.take_offline
 import info.unterrainer.presserl.admin.resources.undo
+import info.unterrainer.presserl.admin.resources.unlock
 import info.unterrainer.presserl.admin.resources.unpublished_changes
 import info.unterrainer.presserl.admin.resources.view_in_reader
 import info.unterrainer.presserl.admin.resources.withdraw
@@ -280,6 +282,9 @@ private fun Editor(
             }
         }
         errors.general.forEach { Banner(stringResource(Res.string.action_failed, it)) }
+        if (article.locked) {
+            Banner(stringResource(Res.string.locked_notice), color = MaterialTheme.colorScheme.errorContainer)
+        }
         val pendingLevel = article.pendingLevel
         if (pendingLevel != null) {
             Banner(waitingText(pendingLevel), color = MaterialTheme.colorScheme.secondaryContainer)
@@ -312,6 +317,7 @@ private fun Editor(
             onReject = { rejectNote = ""; rejectError = null },
             onWithdraw = { act(saveFirst = false) { api.withdrawArticle(article.id) } },
             onTakeOffline = { act(saveFirst = false) { api.takeArticleOffline(article.id) } },
+            onUnlock = { act(saveFirst = false) { api.unlockArticle(article.id) } },
             onDelete = { confirmDelete = true })
     }
 
@@ -385,6 +391,7 @@ private fun BottomBar(
     onReject: () -> Unit,
     onWithdraw: () -> Unit,
     onTakeOffline: () -> Unit,
+    onUnlock: () -> Unit,
     onDelete: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -402,6 +409,7 @@ private fun BottomBar(
                 }
             }
             if (actions.takeOffline) OutlinedButton(onClick = onTakeOffline, enabled = !busy) { Text(stringResource(Res.string.take_offline)) }
+            if (actions.unlock) OutlinedButton(onClick = onUnlock, enabled = !busy) { Text(stringResource(Res.string.unlock)) }
             if (actions.withdraw) OutlinedButton(onClick = onWithdraw, enabled = !busy) { Text(stringResource(Res.string.withdraw)) }
             if (actions.reject) OutlinedButton(onClick = onReject, enabled = !busy) { Text(stringResource(Res.string.reject)) }
             if (actions.approve) Button(onClick = onApprove, enabled = !busy) { Text(stringResource(Res.string.approve)) }

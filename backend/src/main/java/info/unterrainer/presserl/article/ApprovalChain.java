@@ -11,7 +11,7 @@ import info.unterrainer.presserl.section.Newsroom;
  * {@code PUBLISHER}, {@code EDITOR_IN_CHIEF} and {@code SECTION_EDITOR} of the article's section they
  * hold; empty means reporter (below every level). The chain above a level consists of the higher
  * levels that are staffed by someone other than the author ({@link Staffing}); unstaffed levels are
- * skipped.
+ * skipped, except {@code PUBLISHER} while the article is locked by the emergency brake.
  */
 public final class ApprovalChain {
 
@@ -37,12 +37,16 @@ public final class ApprovalChain {
     /**
      * The lowest staffed level strictly above {@code above} (above nothing when empty); empty when no
      * level remains, which means the article is published.
+     *
+     * @param locked whether the article is locked by the emergency brake: {@code PUBLISHER} then
+     *               qualifies whether it is staffed or not
      */
     public static Optional<ApprovalLevel> next(Optional<ApprovalLevel> above, long sectionId, String authorSub,
-            Staffing staffing) {
+            Staffing staffing, boolean locked) {
         return Arrays.stream(ApprovalLevel.values())
                 .filter(level -> above.map(a -> level.compareTo(a) > 0).orElse(true))
-                .filter(level -> staffing.staffed(level, sectionId, authorSub))
+                .filter(level -> locked && level == ApprovalLevel.PUBLISHER
+                        || staffing.staffed(level, sectionId, authorSub))
                 .findFirst();
     }
 

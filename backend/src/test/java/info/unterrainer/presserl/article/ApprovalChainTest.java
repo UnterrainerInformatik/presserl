@@ -38,7 +38,11 @@ class ApprovalChainTest {
     }
 
     private static Optional<ApprovalLevel> next(Optional<ApprovalLevel> above, long section, Staffing staffing) {
-        return ApprovalChain.next(above, section, AUTHOR, staffing);
+        return ApprovalChain.next(above, section, AUTHOR, staffing, false);
+    }
+
+    private static Optional<ApprovalLevel> nextLocked(Optional<ApprovalLevel> above, long section, Staffing staffing) {
+        return ApprovalChain.next(above, section, AUTHOR, staffing, true);
     }
 
     @Test
@@ -128,5 +132,24 @@ class ApprovalChainTest {
     void notNeededRefusesChainQuestions() {
         assertThatThrownBy(() -> next(Optional.empty(), SPORT, Staffing.NOT_NEEDED))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void lockKeepsAnUnstaffedPublisherLevel() {
+        Staffing authorIsTheOnlyPublisher = new Staffing(Map.of(), Set.of(), Set.of(AUTHOR));
+        assertThat(nextLocked(Optional.of(EDITOR_IN_CHIEF), SPORT, authorIsTheOnlyPublisher)).contains(PUBLISHER);
+        assertThat(nextLocked(Optional.empty(), SPORT, new Staffing(Map.of(), Set.of(), Set.of()))).contains(PUBLISHER);
+    }
+
+    @Test
+    void lockKeepsLowerLevelsAsTheyAre() {
+        assertThat(nextLocked(Optional.empty(), SPORT, FULL)).contains(SECTION_EDITOR);
+        assertThat(nextLocked(Optional.of(SECTION_EDITOR), SPORT, FULL)).contains(EDITOR_IN_CHIEF);
+        assertThat(nextLocked(Optional.of(EDITOR_IN_CHIEF), SPORT, FULL)).contains(PUBLISHER);
+    }
+
+    @Test
+    void lockedChainOfAPublisherIsEmpty() {
+        assertThat(nextLocked(Optional.of(PUBLISHER), SPORT, Staffing.NOT_NEEDED)).isEmpty();
     }
 }

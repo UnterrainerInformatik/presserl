@@ -223,6 +223,12 @@ class EditorModelTest {
     }
 
     @Test
+    fun lockedArticleOffersUnlockToThePublisher() {
+        val actions = actionsFor(listOf("UNLOCK"))
+        assertEquals(EditorActions(editable = false, publish = false, takeOffline = false, delete = false, unlock = true), actions)
+    }
+
+    @Test
     fun afterApprovalTheSectionEditorKeepsNoChainAction() {
         val actions = actionsFor(emptyList())
         assertFalse(actions.approve || actions.reject || actions.submit || actions.withdraw)

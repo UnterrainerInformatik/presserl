@@ -19,6 +19,7 @@ public record ArticleSummaryDto(
         Integer liveRevision,
         boolean hasUnpublishedChanges,
         ApprovalLevel pendingLevel,
+        boolean locked,
         Instant updatedAt,
         Instant publishedAt,
         List<ArticleAction> allowedActions) {
@@ -30,7 +31,7 @@ public record ArticleSummaryDto(
         ArticleEntity a = view.article();
         ArticleRevisionEntity r = view.revision();
         return new ArticleSummaryDto(a.id, a.status, AuthorDto.of(a), SectionRefDto.of(view.section()), r.headline, r.kicker, r.number, a.liveRevision,
-                ArticlePolicy.hasUnpublishedChanges(a, r.number), a.pendingLevel, a.updatedAt, a.publishedAt,
+                ArticlePolicy.hasUnpublishedChanges(a, r.number), a.pendingLevel, a.locked, a.updatedAt, a.publishedAt,
                 ArticlePolicy.allowedActions(newsroom, a, r.number, staffing));
     }
 }

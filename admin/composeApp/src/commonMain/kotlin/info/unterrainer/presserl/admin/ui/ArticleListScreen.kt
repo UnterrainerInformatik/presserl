@@ -30,6 +30,7 @@ import info.unterrainer.presserl.admin.api.ArticleSummaryDto
 import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.changed_at
 import info.unterrainer.presserl.admin.resources.loading
+import info.unterrainer.presserl.admin.resources.locked
 import info.unterrainer.presserl.admin.resources.new_article
 import info.unterrainer.presserl.admin.resources.no_articles
 import info.unterrainer.presserl.admin.resources.no_headline
@@ -99,6 +100,7 @@ private fun ArticleRow(article: ArticleSummaryDto, onClick: () -> Unit) {
             statusText(article.status),
             stringResource(Res.string.unpublished_changes).takeIf { article.hasUnpublishedChanges },
             article.pendingLevel?.let { waitingText(it) },
+            stringResource(Res.string.locked).takeIf { article.locked },
             article.author.displayName,
             stringResource(Res.string.changed_at, formatTimestamp(article.updatedAt)),
         )

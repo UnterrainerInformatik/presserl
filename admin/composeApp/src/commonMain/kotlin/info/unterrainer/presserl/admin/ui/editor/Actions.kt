@@ -10,6 +10,7 @@ data class EditorActions(
     val withdraw: Boolean = false,
     val approve: Boolean = false,
     val reject: Boolean = false,
+    val unlock: Boolean = false,
 )
 
 fun actionsFor(allowedActions: List<String>): EditorActions = EditorActions(
@@ -21,4 +22,5 @@ fun actionsFor(allowedActions: List<String>): EditorActions = EditorActions(
     withdraw = "WITHDRAW" in allowedActions,
     approve = "APPROVE" in allowedActions,
     reject = "REJECT" in allowedActions,
+    unlock = "UNLOCK" in allowedActions,
 )
