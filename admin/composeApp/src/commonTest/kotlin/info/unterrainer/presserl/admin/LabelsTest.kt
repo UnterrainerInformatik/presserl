@@ -3,6 +3,8 @@ package info.unterrainer.presserl.admin
 import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.color_pink
 import info.unterrainer.presserl.admin.resources.color_red
+import info.unterrainer.presserl.admin.resources.decision_approved
+import info.unterrainer.presserl.admin.resources.decision_rejected
 import info.unterrainer.presserl.admin.resources.role_editor_in_chief
 import info.unterrainer.presserl.admin.resources.role_publisher
 import info.unterrainer.presserl.admin.resources.role_reader
@@ -12,7 +14,9 @@ import info.unterrainer.presserl.admin.resources.status_draft
 import info.unterrainer.presserl.admin.resources.status_offline
 import info.unterrainer.presserl.admin.resources.status_published
 import info.unterrainer.presserl.admin.resources.status_submitted
+import info.unterrainer.presserl.admin.ui.approvalLevelLabel
 import info.unterrainer.presserl.admin.ui.colorLabel
+import info.unterrainer.presserl.admin.ui.decisionLabel
 import info.unterrainer.presserl.admin.ui.roleLabel
 import info.unterrainer.presserl.admin.ui.section.SECTION_COLORS
 import info.unterrainer.presserl.admin.ui.section.defaultSectionColor
@@ -53,6 +57,24 @@ class LabelsTest {
             listOf("SECTION_EDITOR", "REPORTER").map(::sectionRoleLabel),
         )
         assertNull(sectionRoleLabel("READER"))
+    }
+
+    @Test
+    fun everyApprovalLevelIsLabelledWithItsRole() {
+        assertEquals(
+            listOf(Res.string.role_section_editor, Res.string.role_editor_in_chief, Res.string.role_publisher),
+            listOf("SECTION_EDITOR", "EDITOR_IN_CHIEF", "PUBLISHER").map(::approvalLevelLabel),
+        )
+        assertNull(approvalLevelLabel("REPORTER"))
+    }
+
+    @Test
+    fun everyReviewDecisionHasALabel() {
+        assertEquals(
+            listOf(Res.string.decision_approved, Res.string.decision_rejected),
+            listOf("APPROVED", "REJECTED").map(::decisionLabel),
+        )
+        assertNull(decisionLabel("WITHDRAWN"))
     }
 
     @Test

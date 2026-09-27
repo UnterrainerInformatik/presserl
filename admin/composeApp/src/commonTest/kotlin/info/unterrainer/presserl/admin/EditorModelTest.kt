@@ -1,6 +1,8 @@
 package info.unterrainer.presserl.admin
 
 import info.unterrainer.presserl.admin.api.ArticleDto
+import info.unterrainer.presserl.admin.api.AuthorDto
+import info.unterrainer.presserl.admin.api.ReviewDto
 import info.unterrainer.presserl.admin.api.json
 import info.unterrainer.presserl.admin.article.Run
 import info.unterrainer.presserl.admin.ui.editor.BlockType
@@ -11,7 +13,11 @@ import info.unterrainer.presserl.admin.ui.editor.EditorIntent
 import info.unterrainer.presserl.admin.ui.editor.EditorModel
 import info.unterrainer.presserl.admin.ui.editor.HeaderField
 import info.unterrainer.presserl.admin.ui.editor.IdSource
+import info.unterrainer.presserl.admin.ui.editor.REJECT_NOTE_MAX
 import info.unterrainer.presserl.admin.ui.editor.actionsFor
+import info.unterrainer.presserl.admin.ui.editor.canConfirmReject
+import info.unterrainer.presserl.admin.ui.editor.limitNote
+import info.unterrainer.presserl.admin.ui.editor.rejectionToShow
 import info.unterrainer.presserl.admin.ui.editor.draftOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -193,5 +199,64 @@ class EditorModelTest {
         assertEquals(EditorActions(editable = true, publish = true, takeOffline = false, delete = true), actionsFor(listOf("EDIT", "PUBLISH", "DELETE")))
         assertEquals(EditorActions(editable = false, publish = false, takeOffline = true, delete = false), actionsFor(listOf("TAKE_OFFLINE")))
         assertEquals(EditorActions(editable = false, publish = false, takeOffline = false, delete = false), actionsFor(emptyList()))
+    }
+
+    @Test
+    fun reporterDraftOffersSubmitInsteadOfPublish() {
+        val actions = actionsFor(listOf("EDIT", "SUBMIT", "DELETE"))
+        assertEquals(EditorActions(editable = true, publish = false, takeOffline = false, delete = true, submit = true), actions)
+    }
+
+    @Test
+    fun waitingArticleOffersWithdrawToTheAuthor() {
+        val actions = actionsFor(listOf("WITHDRAW", "DELETE"))
+        assertEquals(EditorActions(editable = false, publish = false, takeOffline = false, delete = true, withdraw = true), actions)
+    }
+
+    @Test
+    fun waitingArticleOffersApproveAndRejectToTheApprover() {
+        val actions = actionsFor(listOf("APPROVE", "REJECT"))
+        assertEquals(
+            EditorActions(editable = false, publish = false, takeOffline = false, delete = false, approve = true, reject = true),
+            actions,
+        )
+    }
+
+    @Test
+    fun afterApprovalTheSectionEditorKeepsNoChainAction() {
+        val actions = actionsFor(emptyList())
+        assertFalse(actions.approve || actions.reject || actions.submit || actions.withdraw)
+    }
+
+    private fun review(decision: String, note: String? = null) =
+        ReviewDto(decision, "SECTION_EDITOR", 1, AuthorDto("nogroups", "No Groups"), note, "2026-09-27T10:00:00Z")
+
+    @Test
+    fun newestRejectionIsShownWhileNothingIsPending() {
+        val rejection = review("REJECTED", "Please add who scored.")
+        assertEquals(rejection, rejectionToShow(listOf(rejection, review("APPROVED")), pendingLevel = null))
+    }
+
+    @Test
+    fun noRejectionShownWhileWaitingOrAfterApprovalOrWithoutReviews() {
+        val rejection = review("REJECTED", "Please add who scored.")
+        assertEquals(null, rejectionToShow(listOf(rejection), pendingLevel = "SECTION_EDITOR"))
+        assertEquals(null, rejectionToShow(listOf(review("APPROVED"), rejection), pendingLevel = null))
+        assertEquals(null, rejectionToShow(emptyList(), pendingLevel = null))
+    }
+
+    @Test
+    fun rejectNeedsANote() {
+        assertFalse(canConfirmReject(""))
+        assertFalse(canConfirmReject("  \n "))
+        assertTrue(canConfirmReject("Please add who scored."))
+    }
+
+    @Test
+    fun noteIsCutAtTheLimitInCodePoints() {
+        assertEquals(REJECT_NOTE_MAX, limitNote("x".repeat(REJECT_NOTE_MAX + 5)).length)
+        assertEquals("a\nb", limitNote("a\nb"))
+        val emoji = "😀".repeat(REJECT_NOTE_MAX + 1)
+        assertEquals(2 * REJECT_NOTE_MAX, limitNote(emoji).length)
     }
 }

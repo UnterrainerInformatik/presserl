@@ -5,7 +5,11 @@ package info.unterrainer.presserl.article;
  */
 public enum ArticleAction {
     EDIT,
+    SUBMIT,
     PUBLISH,
+    WITHDRAW,
+    APPROVE,
+    REJECT,
     TAKE_OFFLINE,
     DELETE
 }

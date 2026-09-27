@@ -189,7 +189,7 @@ class ArticleResourceTest {
                 .body("section.slug", equalTo("sport"))
                 .body("section.color", notNullValue())
                 .body("author.username", equalTo("reader"))
-                .body("allowedActions", contains("EDIT", "DELETE"));
+                .body("allowedActions", contains("EDIT", "SUBMIT", "DELETE"));
     }
 
     @Test
@@ -763,7 +763,7 @@ class ArticleResourceTest {
     @Test
     void editorInChiefOnOwnDraft() {
         long id = create(chief, content("Chief"));
-        get(chief, id).body("allowedActions", contains("EDIT", "DELETE"));
+        get(chief, id).body("allowedActions", contains("EDIT", "SUBMIT", "DELETE"));
     }
 
     // --- listing and reading

@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import org.jboss.logging.Logger;
 import org.keycloak.admin.client.Keycloak;
@@ -74,6 +75,23 @@ public class AccountService {
                             EnumSet.noneOf(NewspaperRole.class)))))
                     .sorted(Comparator.comparing(AccountDto::username))
                     .toList();
+        });
+    }
+
+    /**
+     * The ids of the members of each role's group, locked accounts included; at most
+     * {@value #LIST_MAX} per role.
+     */
+    public Map<NewspaperRole, Set<String>> memberIds(Set<NewspaperRole> roles) {
+        return keycloakCall(() -> {
+            RealmResource realm = realm();
+            Map<NewspaperRole, String> groupIds = groupIds(realm);
+            Map<NewspaperRole, Set<String>> members = new EnumMap<>(NewspaperRole.class);
+            roles.forEach(role -> members.put(role, realm.groups().group(groupIds.get(role))
+                    .members(0, LIST_MAX, true).stream()
+                    .map(UserRepresentation::getId)
+                    .collect(Collectors.toUnmodifiableSet())));
+            return members;
         });
     }
 

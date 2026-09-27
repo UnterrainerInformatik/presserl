@@ -2,6 +2,7 @@ package info.unterrainer.presserl.admin
 
 import info.unterrainer.presserl.admin.api.AccountDto
 import info.unterrainer.presserl.admin.api.AccountListDto
+import info.unterrainer.presserl.admin.api.ArticleSummaryDto
 import info.unterrainer.presserl.admin.api.ApiErrorDto
 import info.unterrainer.presserl.admin.api.ArticleDto
 import info.unterrainer.presserl.admin.api.AuthorDto
@@ -13,6 +14,7 @@ import info.unterrainer.presserl.admin.api.MemberDto
 import info.unterrainer.presserl.admin.api.MemberListDto
 import info.unterrainer.presserl.admin.api.MySectionRoleDto
 import info.unterrainer.presserl.admin.api.NewspaperDto
+import info.unterrainer.presserl.admin.api.ReviewDto
 import info.unterrainer.presserl.admin.api.SectionDto
 import info.unterrainer.presserl.admin.api.SectionListDto
 import info.unterrainer.presserl.admin.api.SectionRefDto
@@ -147,6 +149,53 @@ class DtoTest {
         assertEquals(4, dto.body.getValue("blocks").jsonArray.size)
         assertEquals("subhead", dto.body.getValue("blocks").jsonArray[1].jsonObject.getValue("type").jsonPrimitive.content)
         assertEquals(listOf("EDIT", "PUBLISH", "TAKE_OFFLINE"), dto.allowedActions)
+    }
+
+    @Test
+    fun articleWithoutPendingLevel() {
+        assertNull(json.decodeFromString<ArticleDto>(ARTICLE).pendingLevel)
+    }
+
+    @Test
+    fun articleWaitingForApproval() {
+        val dto = json.decodeFromString<ArticleDto>(
+            ARTICLE.replace("\"hasUnpublishedChanges\": true,", "\"hasUnpublishedChanges\": true, \"pendingLevel\": \"PUBLISHER\","),
+        )
+
+        assertEquals("PUBLISHER", dto.pendingLevel)
+    }
+
+    @Test
+    fun summaryWaitingForApproval() {
+        val dto = json.decodeFromString<ArticleSummaryDto>(
+            """{ "id": 7, "status": "SUBMITTED", "author": { "username": "reader", "displayName": "Reader" },
+                "section": { "id": 1, "name": "Sport", "slug": "sport", "color": "green" }, "headline": "Goal", "kicker": "",
+                "revision": 1, "liveRevision": null, "hasUnpublishedChanges": false, "pendingLevel": "SECTION_EDITOR",
+                "updatedAt": "2026-09-27T10:00:00Z", "publishedAt": null, "allowedActions": ["APPROVE", "REJECT"] }""",
+        )
+
+        assertEquals("SECTION_EDITOR", dto.pendingLevel)
+        assertEquals(listOf("APPROVE", "REJECT"), dto.allowedActions)
+    }
+
+    @Test
+    fun reviews() {
+        val dto = json.decodeFromString<List<ReviewDto>>(
+            """[ { "decision": "REJECTED", "level": "EDITOR_IN_CHIEF", "revision": 2,
+                   "reviewer": { "username": "chief", "displayName": "Chief" },
+                   "note": "Too short", "createdAt": "2026-09-27T10:05:00Z" },
+                 { "decision": "APPROVED", "level": "SECTION_EDITOR", "revision": 2,
+                   "reviewer": { "username": "nogroups", "displayName": "No Groups" },
+                   "note": null, "createdAt": "2026-09-27T10:01:00Z" } ]""",
+        )
+
+        assertEquals(
+            listOf(
+                ReviewDto("REJECTED", "EDITOR_IN_CHIEF", 2, AuthorDto("chief", "Chief"), "Too short", "2026-09-27T10:05:00Z"),
+                ReviewDto("APPROVED", "SECTION_EDITOR", 2, AuthorDto("nogroups", "No Groups"), null, "2026-09-27T10:01:00Z"),
+            ),
+            dto,
+        )
     }
 
     @Test

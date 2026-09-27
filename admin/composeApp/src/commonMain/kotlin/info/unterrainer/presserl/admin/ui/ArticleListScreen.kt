@@ -98,6 +98,7 @@ private fun ArticleRow(article: ArticleSummaryDto, onClick: () -> Unit) {
             article.section?.name,
             statusText(article.status),
             stringResource(Res.string.unpublished_changes).takeIf { article.hasUnpublishedChanges },
+            article.pendingLevel?.let { waitingText(it) },
             article.author.displayName,
             stringResource(Res.string.changed_at, formatTimestamp(article.updatedAt)),
         )

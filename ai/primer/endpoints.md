@@ -114,8 +114,8 @@ section; section editors and reporters only in the sections where they hold a se
 **Visibility.** Publishers and editors-in-chief see every article. Every other writer sees the
 articles they authored and, in each section where they are `SECTION_EDITOR`, all articles of that
 section. Lists contain only visible articles; every `/api/articles/{id}…` endpoint (get,
-revisions, save, delete, publish, offline) answers an invisible article with `404`, exactly like
-an unknown id.
+revisions, reviews, save, delete, publish, offline, submit, approve, reject, withdraw) answers an
+invisible article with `404`, exactly like an unknown id.
 
 **Sections.** Every article belongs to one section (`section` in `ArticleDto` and
 `ArticleSummaryDto`). The section belongs to the article, not to a revision: moving an article
@@ -130,7 +130,7 @@ position the user may write in; when no section exists at all, the default secti
 ```json
 { "errors": [ { "field": "body.blocks[0].type", "message": "unknown block type 'html'" } ] }
 ```
-`field` is a path (`headline`, `version`, `status`, `sectionId`, `body.blocks[2].content[0].text`,
+`field` is a path (`headline`, `version`, `status`, `sectionId`, `note`, `body.blocks[2].content[0].text`,
 …) for validation errors and `null` for `403`/`404`/`409`, except a `403` for a section the user may
 not write in, which names `sectionId`. A `400` lists **every** violation found.
 
@@ -142,28 +142,53 @@ revision is created or changed (`updatedAt` and `version` still change). Publish
 latest revision the **live revision** (`liveRevision`); later saves do not touch it until the
 next publish. `hasUnpublishedChanges` = `liveRevision != null && revision != liveRevision`.
 
-**Versions.** `version` is the optimistic-lock counter. Every successful save, publish and
-take-offline increases it. `PUT` must send the version last received; a different stored version
+**Versions.** `version` is the optimistic-lock counter. Every successful save, publish,
+take-offline, submit, approve, reject and withdraw increases it. The chain actions carry no
+version: of two concurrent decisions on the same article the second gets `409`. `PUT` must send the version last received; a different stored version
 → `409` and nothing changes (reload, then save again).
 
+**Approval chain.** Levels, bottom to top: `SECTION_EDITOR` (of the article's section),
+`EDITOR_IN_CHIEF`, `PUBLISHER`. A user's **level** for an article is the highest of these they
+hold (`PUBLISHER` role, `EDITOR_IN_CHIEF` role, `SECTION_EDITOR` of that section); none = reporter.
+The author's **chain** = the levels above the author's level that are **staffed**, i.e. held by at
+least one account other than the author (locked accounts count); unstaffed levels are skipped.
+An author whose chain is empty publishes directly (`PUBLISH`); everyone else submits (`SUBMIT`) and
+the article waits for the lowest level of the chain (`pendingLevel`). Any user other than the
+author whose level is at least the pending level may approve or reject; an approval settles every
+level up to the approver's level, the article then waits for the next staffed level above it or,
+when none remains, goes live. While a submission is pending, content and section are frozen
+(`EDIT` not offered, `PUT` → `409`). The chain is computed per request from the current roles, so
+role changes act at once. Requests that need it (an author without `PUBLISHER` among the returned
+articles, every approve) read the role holders from Keycloak; when Keycloak is unavailable they
+answer `503` with the error body.
+
 **`allowedActions`.** Every article representation lists what the requesting user may do now, in
-the order `EDIT`, `PUBLISH`, `TAKE_OFFLINE`, `DELETE`. Render buttons only from this list: an
-action is accepted exactly when it is listed (apart from content validation and `409` on a stale
-version). Rules:
+the order `EDIT`, `SUBMIT`, `PUBLISH`, `WITHDRAW`, `APPROVE`, `REJECT`, `TAKE_OFFLINE`, `DELETE`.
+Render buttons only from this list: an action is accepted exactly when it is listed (apart from
+content validation, a missing headline or note, and `409` on concurrency). `SUBMIT` and `PUBLISH`
+are never listed together. Rules ("pending" = `pendingLevel != null`):
 
 | Action | Allowed when |
 |---|---|
-| `EDIT` | user is the author and may write in the article's section |
-| `PUBLISH` | user is the author, holds `PUBLISHER`, and status ≠ `PUBLISHED` or unpublished changes exist |
+| `EDIT` | user is the author and may write in the article's section; nothing pending |
+| `SUBMIT` | user is the author, may write in the article's section, their chain is not empty; nothing pending; status ≠ `PUBLISHED` or unpublished changes exist |
+| `PUBLISH` | as `SUBMIT`, but the author's chain is empty (today: the author holds `PUBLISHER`, or no other account staffs a level) |
+| `WITHDRAW` | user is the author; pending |
+| `APPROVE`, `REJECT` | user is not the author and their level ≥ `pendingLevel`; pending |
 | `TAKE_OFFLINE` | status = `PUBLISHED` and user is the author, an `EDITOR_IN_CHIEF`, a `PUBLISHER` or `SECTION_EDITOR` of the article's section |
-| `DELETE` | user is the author, may write in the article's section, and the article was never published (`liveRevision == null`) |
+| `DELETE` | user is the author, may write in the article's section, and the article was never published (`liveRevision == null`); also while pending |
 
-Endpoints check writer (`403`, empty body) → visibility (`404`) → role/ownership/section access
-(`403`) → state (`409`) → the target `sectionId` (`400`/`403`). An editor-in-chief, section editor
-or reporter cannot publish yet (needs approval, arrives in M3). An author who lost their section
-role keeps seeing the article, read-only, and may still take it offline.
+Endpoints check writer (`403`, empty body) → request body (`400`, reject only) → visibility (`404`)
+→ role/ownership/section access (`403`) → state (`409`) → headline (`400`, publish/submit) → the
+target `sectionId` (`400`/`403`). `APPROVE`/`REJECT` on an article with nothing pending: `409` for a
+user who holds any level for the article's section, `403` for others. An author who lost their
+section role keeps seeing the article, read-only, may still take it offline and withdraw a pending
+submission.
 
-**Status:** `DRAFT` | `PUBLISHED` | `OFFLINE` (`SUBMITTED` reserved for M3, never returned yet).
+**Status:** `DRAFT` | `SUBMITTED` | `PUBLISHED` | `OFFLINE`. `SUBMITTED` = never published and
+waiting for approval. A `PUBLISHED` or `OFFLINE` article keeps its status while changes (or its way
+back online) wait; the reader keeps showing its live revision. `pendingLevel`
+(`SECTION_EDITOR` | `EDITOR_IN_CHIEF` | `PUBLISHER` | `null`) says what it waits for.
 
 ## Content fields and body format v1
 
@@ -208,8 +233,8 @@ role keeps seeing the article, read-only, and may still take it offline.
 
 ## `ArticleDto`
 
-Returned by get, create, save, publish and take-offline. Content fields are those of the latest
-revision (`revision`).
+Returned by get, create, save, publish, take-offline, submit, approve, reject and withdraw.
+Content fields are those of the latest revision (`revision`).
 ```json
 {
   "id": 42,
@@ -219,6 +244,7 @@ revision (`revision`).
   "revision": 2,
   "liveRevision": 1,
   "hasUnpublishedChanges": true,
+  "pendingLevel": null,
   "version": 5,
   "createdAt": "2026-09-26T10:00:00Z",
   "updatedAt": "2026-09-26T10:05:00Z",
@@ -234,6 +260,7 @@ revision (`revision`).
 - `author`: username and display name as `GET /api/me` returned them when the article was created.
 - `section`: the article's section with its current name and palette colour.
 - `liveRevision`, `publishedAt` (first publication): `null` until the first publish.
+- `pendingLevel`: the approval level the article waits for, `null` while no submission is pending.
 - Timestamps: ISO-8601 UTC, millisecond precision.
 
 ## `GET /api/articles`
@@ -243,13 +270,14 @@ pagination yet.
 
 - **Auth:** writer
 - **Query:** `status` (optional, `DRAFT` | `SUBMITTED` | `PUBLISHED` | `OFFLINE`), `mine`
-  (optional, `true` → only articles the requesting user authored)
+  (optional, `true` → only articles the requesting user authored), `pending` (optional, `true` →
+  only articles with a pending submission); filters combine
 - **Response `200`:** array of `ArticleSummaryDto`
   ```json
   [ { "id": 42, "status": "DRAFT", "author": { "username": "papa", "displayName": "Papa" },
       "section": { "id": 1, "name": "Sport", "slug": "sport", "color": "green" },
       "headline": "Hello", "kicker": "", "revision": 1, "liveRevision": null,
-      "hasUnpublishedChanges": false, "updatedAt": "2026-09-26T10:05:00Z", "publishedAt": null,
+      "hasUnpublishedChanges": false, "pendingLevel": null, "updatedAt": "2026-09-26T10:05:00Z", "publishedAt": null,
       "allowedActions": ["EDIT", "PUBLISH", "DELETE"] } ]
   ```
 - **Errors:** `400` unknown `status` (field `status`).
@@ -285,7 +313,8 @@ to `sectionId` if given.
 - **Response `200`:** `ArticleDto` (new `version`, `revision` possibly incremented)
 - **Errors:** `400` validation (missing `version` names `version`; bad or unknown `sectionId`
   names `sectionId`), `403` not the author or no write access to the article's section, `403`
-  target section not writable (field `sectionId`), `404`, `409` stale `version`.
+  target section not writable (field `sectionId`), `404`, `409` stale `version` or a submission is
+  pending.
 - **Side effects:** latest revision overwritten, or new revision if the latest was published,
   or none if the content is unchanged; section changed if `sectionId` is given; `updatedAt` and
   `version` change.
@@ -296,16 +325,19 @@ to `sectionId` if given.
 - **Response `204`**
 - **Errors:** `403` not the author or no write access to the section, `404`, `409` the article was published at least once (take
   it offline instead).
-- **Side effects:** article and all revisions removed.
+- **Side effects:** article with all revisions and reviews removed (also while a submission is
+  pending).
 
 ## `POST /api/articles/{id}/publish`
 
-Makes the latest revision live. No request body.
+Makes the latest revision live without approval. No request body.
 
-- **Auth:** writer; `PUBLISH` (author holding `PUBLISHER`)
+- **Auth:** writer; `PUBLISH` (the author, while they may write in the section and their chain is
+  empty)
 - **Response `200`:** `ArticleDto` with `status` `PUBLISHED`, `liveRevision` = `revision`
-- **Errors:** `400` empty headline (field `headline`), `403`, `404`, `409` already `PUBLISHED`
-  without unpublished changes.
+- **Errors:** `400` empty headline (field `headline`), `403` not the author, no write access, or a
+  level applies (submit instead), `404`, `409` already `PUBLISHED` without unpublished changes, or
+  a submission is pending.
 - **Side effects:** latest revision marked published (if not yet), `liveRevision` set, status
   `PUBLISHED`, `publishedAt` set on first publication; `updatedAt` and `version` change. Works
   from `DRAFT` and `OFFLINE` (an `OFFLINE` article whose latest revision is already live goes
@@ -313,13 +345,84 @@ Makes the latest revision live. No request body.
 
 ## `POST /api/articles/{id}/offline`
 
-Takes a published article offline without approval. No request body.
+Takes a published article offline without approval. No request body. A pending submission stays
+pending; approving it later puts the article back online with its latest revision.
 
 - **Auth:** writer; `TAKE_OFFLINE` (author, any editor-in-chief, any publisher, section editors
   of the article's section)
 - **Response `200`:** `ArticleDto` with `status` `OFFLINE`; `liveRevision` is kept
 - **Errors:** `403`, `404`, `409` status is not `PUBLISHED`.
 - **Side effects:** status `OFFLINE`; `updatedAt` and `version` change.
+
+## `POST /api/articles/{id}/submit`
+
+Starts a submission. No request body.
+
+- **Auth:** writer; `SUBMIT` (the author, while they may write in the section and their chain is
+  not empty)
+- **Response `200`:** `ArticleDto` with `pendingLevel` = lowest level of the chain; `status`
+  `SUBMITTED` for a never-published article, otherwise unchanged (`PUBLISHED`/`OFFLINE`, live
+  revision kept)
+- **Errors:** `400` empty headline (field `headline`), `403` not the author, no write access, or
+  the chain is empty (publish instead), `404`, `409` already pending, or `PUBLISHED` without
+  unpublished changes.
+- **Side effects:** `pendingLevel` set, status possibly `SUBMITTED`; `updatedAt` and `version`
+  change. The latest revision is the one under review; it cannot change while pending.
+
+## `POST /api/articles/{id}/approve`
+
+Approves the pending submission up to the approver's level. No request body.
+
+- **Auth:** writer; `APPROVE` (not the author; level ≥ `pendingLevel`)
+- **Response `200`:** `ArticleDto` waiting for the next staffed level above the approver's level
+  (`pendingLevel`), or, when none remains, `PUBLISHED` with `pendingLevel` `null` and the latest
+  revision live
+- **Errors:** `403` the author or level too low, `404`, `409` nothing pending or a concurrent
+  decision.
+- **Side effects:** review `APPROVED` recorded with the level the article waited for; when
+  published: as for publish (latest revision marked published, `liveRevision`, status, first
+  `publishedAt`). `updatedAt` and `version` change.
+
+## `POST /api/articles/{id}/reject`
+
+Ends the pending submission with a note.
+
+- **Auth:** writer; `REJECT` (same users as approve)
+- **Body:** `{ "note": "Please add who scored." }` — exactly this field; stored trimmed, 1–1000
+  code points, `\n` allowed, no other control characters. Validated before anything else, so a
+  malformed body is `400` for everyone.
+- **Response `200`:** `ArticleDto` with `pendingLevel` `null`; `SUBMITTED` → `DRAFT`, a
+  `PUBLISHED`/`OFFLINE` article keeps its status and live revision
+- **Errors:** `400` note missing, not a string, blank, too long or with control characters (field
+  `note`), unknown fields (named), `403`, `404`, `409` nothing pending.
+- **Side effects:** review `REJECTED` recorded with the note; revisions unchanged; `updatedAt` and
+  `version` change.
+
+## `POST /api/articles/{id}/withdraw`
+
+The author ends their pending submission. No request body.
+
+- **Auth:** writer; `WITHDRAW` (the author, also after losing the section role)
+- **Response `200`:** `ArticleDto` with `pendingLevel` `null`; `SUBMITTED` → `DRAFT`, otherwise the
+  status is kept
+- **Errors:** `403` not the author, `404`, `409` nothing pending.
+- **Side effects:** no review recorded; `updatedAt` and `version` change.
+
+## `GET /api/articles/{id}/reviews`
+
+- **Auth:** writer; article visible
+- **Response `200`:** array of `ReviewDto`, newest first
+  ```json
+  [ { "decision": "REJECTED", "level": "EDITOR_IN_CHIEF", "revision": 2,
+      "reviewer": { "username": "chief", "displayName": "Chief" },
+      "note": "Too short", "createdAt": "2026-09-27T10:05:00Z" },
+    { "decision": "APPROVED", "level": "SECTION_EDITOR", "revision": 2,
+      "reviewer": { "username": "nogroups", "displayName": "No Groups" },
+      "note": null, "createdAt": "2026-09-27T10:01:00Z" } ]
+  ```
+  `level`: the level the article waited for; `revision`: the revision reviewed; `reviewer`: snapshot
+  at review time; `note`: set for rejections only. Withdrawals are not listed.
+- **Errors:** `404` unknown or invisible article.
 
 ## `GET /api/articles/{id}/revisions`
 

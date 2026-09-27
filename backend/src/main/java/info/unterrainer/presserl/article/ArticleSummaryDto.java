@@ -18,15 +18,19 @@ public record ArticleSummaryDto(
         int revision,
         Integer liveRevision,
         boolean hasUnpublishedChanges,
+        ApprovalLevel pendingLevel,
         Instant updatedAt,
         Instant publishedAt,
         List<ArticleAction> allowedActions) {
 
-    public static ArticleSummaryDto of(ArticleView view, Newsroom newsroom) {
+    /**
+     * @param staffing from {@link StaffingService#forArticles} for the listed articles
+     */
+    public static ArticleSummaryDto of(ArticleView view, Newsroom newsroom, Staffing staffing) {
         ArticleEntity a = view.article();
         ArticleRevisionEntity r = view.revision();
         return new ArticleSummaryDto(a.id, a.status, AuthorDto.of(a), SectionRefDto.of(view.section()), r.headline, r.kicker, r.number, a.liveRevision,
-                ArticlePolicy.hasUnpublishedChanges(a, r.number), a.updatedAt, a.publishedAt,
-                ArticlePolicy.allowedActions(newsroom, a, r.number));
+                ArticlePolicy.hasUnpublishedChanges(a, r.number), a.pendingLevel, a.updatedAt, a.publishedAt,
+                ArticlePolicy.allowedActions(newsroom, a, r.number, staffing));
     }
 }

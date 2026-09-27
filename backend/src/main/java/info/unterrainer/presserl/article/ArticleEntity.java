@@ -51,6 +51,13 @@ public class ArticleEntity extends PanacheEntityBase {
     public Integer liveRevision;
 
     /**
+     * The approval level the article waits for; {@code null} while no submission is pending.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "pending_level", columnDefinition = "text")
+    public ApprovalLevel pendingLevel;
+
+    /**
      * First publication.
      */
     @Column(name = "published_at")

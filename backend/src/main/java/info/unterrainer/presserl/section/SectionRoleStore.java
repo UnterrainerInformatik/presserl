@@ -4,9 +4,11 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import io.quarkus.hibernate.reactive.panache.Panache;
 import io.quarkus.hibernate.reactive.panache.common.WithSession;
@@ -76,6 +78,18 @@ public class SectionRoleStore {
     public Uni<List<Long>> sectionIds() {
         return Panache.getSession().flatMap(session -> session.createSelectionQuery(
                 "select s.id from SectionEntity s" + BY_POSITION, Long.class).getResultList());
+    }
+
+    /**
+     * The account ids of the section editors per section id; sections without one are missing.
+     */
+    @WithSession
+    public Uni<Map<Long, Set<String>>> sectionEditors() {
+        return SectionRoleEntity.<SectionRoleEntity>list("role", SectionRole.SECTION_EDITOR).map(rows -> {
+            Map<Long, Set<String>> editors = new HashMap<>();
+            rows.forEach(row -> editors.computeIfAbsent(row.sectionId, id -> new HashSet<>()).add(row.accountId));
+            return editors;
+        });
     }
 
     /**

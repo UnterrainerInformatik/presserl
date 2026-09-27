@@ -36,15 +36,19 @@ public class ArticleService {
     @Inject
     SectionService sections;
 
+    @Inject
+    StaffingService staffing;
+
     /**
      * Summaries of the articles visible to the user with their latest revision and section, newest
      * change first, in one query.
      *
-     * @param status only articles in this status, if not {@code null}
-     * @param mine   only articles authored by the user
+     * @param status  only articles in this status, if not {@code null}
+     * @param mine    only articles authored by the user
+     * @param pending only articles with a pending submission
      */
     @WithSession
-    public Uni<List<ArticleView>> list(Newsroom newsroom, ArticleStatus status, boolean mine) {
+    public Uni<List<ArticleView>> list(Newsroom newsroom, ArticleStatus status, boolean mine, boolean pending) {
         List<Long> editedSections = newsroom.sectionRoles().entrySet().stream()
                 .filter(entry -> entry.getValue() == SectionRole.SECTION_EDITOR)
                 .map(Map.Entry::getKey)
@@ -58,6 +62,9 @@ public class ArticleService {
         }
         if (mine) {
             hql.append(" and a.authorSub = :sub");
+        }
+        if (pending) {
+            hql.append(" and a.pendingLevel is not null");
         }
         if (restricted) {
             hql.append(editedSections.isEmpty() ? " and a.authorSub = :viewer"
@@ -133,7 +140,7 @@ public class ArticleService {
     @WithTransaction
     public Uni<ArticleView> save(Newsroom newsroom, long id, ArticleContent content, Long sectionId, long version) {
         return load(newsroom, id).flatMap(view -> {
-            require(ArticleAction.EDIT, newsroom, view);
+            require(ArticleAction.EDIT, newsroom, view, Staffing.NOT_NEEDED);
             ArticleEntity article = view.article();
             if (article.version != version) {
                 throw ArticleException.conflict("article was changed in the meantime (version " + article.version
@@ -169,50 +176,122 @@ public class ArticleService {
     }
 
     /**
-     * Deletes a never-published article with all its revisions.
+     * Deletes a never-published article with all its revisions and reviews, also while it waits for
+     * approval.
      */
     @WithTransaction
     public Uni<Void> delete(Newsroom newsroom, long id) {
         return load(newsroom, id).flatMap(view -> {
-            require(ArticleAction.DELETE, newsroom, view);
-            // revisions go with the article (ON DELETE CASCADE)
+            require(ArticleAction.DELETE, newsroom, view, Staffing.NOT_NEEDED);
+            // revisions and reviews go with the article (ON DELETE CASCADE)
             return view.article().delete();
         });
     }
 
     /**
-     * Makes the latest revision live; requires a headline.
+     * Makes the latest revision live when the author's chain is empty; requires a headline.
      */
     @WithTransaction
     public Uni<ArticleView> publish(Newsroom newsroom, long id) {
+        return load(newsroom, id).flatMap(view -> staffing.forArticles(newsroom, List.of(view.article()))
+                .flatMap(staffed -> {
+                    require(ArticleAction.PUBLISH, newsroom, view, staffed);
+                    requireHeadline(view, "publishing");
+                    goLive(view, now());
+                    return flushed(view);
+                }));
+    }
+
+    /**
+     * Starts a submission: the article waits for the lowest level of the author's chain. A
+     * never-published article becomes {@code SUBMITTED}; a published or offline one keeps its status
+     * and live revision. Requires a headline.
+     */
+    @WithTransaction
+    public Uni<ArticleView> submit(Newsroom newsroom, long id) {
+        return load(newsroom, id).flatMap(view -> staffing.forArticles(newsroom, List.of(view.article()))
+                .flatMap(staffed -> {
+                    require(ArticleAction.SUBMIT, newsroom, view, staffed);
+                    requireHeadline(view, "submitting");
+                    ArticleEntity article = view.article();
+                    article.pendingLevel = ApprovalChain.next(ApprovalChain.authorLevel(newsroom, article.sectionId),
+                            article.sectionId, article.authorSub, staffed).orElseThrow();
+                    if (article.liveRevision == null) {
+                        article.status = ArticleStatus.SUBMITTED;
+                    }
+                    article.updatedAt = now();
+                    return flushed(view);
+                }));
+    }
+
+    /**
+     * Approves the pending submission up to the approver's level: the article then waits for the
+     * next staffed level above it or, when none remains, goes live with its latest revision.
+     */
+    @WithTransaction
+    public Uni<ArticleView> approve(Newsroom newsroom, long id) {
         return load(newsroom, id).flatMap(view -> {
-            require(ArticleAction.PUBLISH, newsroom, view);
-            ArticleEntity article = view.article();
-            ArticleRevisionEntity latest = view.revision();
-            if (latest.headline.isEmpty()) {
-                throw ArticleException.invalid("headline", "is required for publishing");
-            }
+            require(ArticleAction.APPROVE, newsroom, view, Staffing.NOT_NEEDED);
+            return staffing.forApproval().flatMap(staffed -> {
+                ArticleEntity article = view.article();
+                Instant now = now();
+                ArticleReviewEntity review = review(newsroom, view, ReviewDecision.APPROVED, null, now);
+                article.pendingLevel = ApprovalChain.next(ApprovalChain.approverLevel(newsroom, article.sectionId),
+                        article.sectionId, article.authorSub, staffed).orElse(null);
+                if (article.pendingLevel == null) {
+                    goLive(view, now);
+                }
+                article.updatedAt = now;
+                return review.persist().flatMap(persisted -> flushed(view));
+            });
+        });
+    }
+
+    /**
+     * Ends the pending submission with a note: a {@code SUBMITTED} article returns to {@code DRAFT},
+     * a published or offline one keeps its status and live revision.
+     *
+     * @param note validated by {@link RejectRequestValidator}
+     */
+    @WithTransaction
+    public Uni<ArticleView> reject(Newsroom newsroom, long id, String note) {
+        return load(newsroom, id).flatMap(view -> {
+            require(ArticleAction.REJECT, newsroom, view, Staffing.NOT_NEEDED);
             Instant now = now();
-            if (latest.publishedAt == null) {
-                latest.publishedAt = now;
-            }
-            if (article.publishedAt == null) {
-                article.publishedAt = now;
-            }
-            article.liveRevision = latest.number;
-            article.status = ArticleStatus.PUBLISHED;
-            article.updatedAt = now;
+            ArticleReviewEntity review = review(newsroom, view, ReviewDecision.REJECTED, note, now);
+            endSubmission(view.article(), now);
+            return review.persist().flatMap(persisted -> flushed(view));
+        });
+    }
+
+    /**
+     * The author ends their pending submission, like a rejection but without a review entry.
+     */
+    @WithTransaction
+    public Uni<ArticleView> withdraw(Newsroom newsroom, long id) {
+        return load(newsroom, id).flatMap(view -> {
+            require(ArticleAction.WITHDRAW, newsroom, view, Staffing.NOT_NEEDED);
+            endSubmission(view.article(), now());
             return flushed(view);
         });
     }
 
     /**
-     * Takes a published article offline; it keeps its live revision.
+     * The article's reviews, newest first.
+     */
+    @WithSession
+    public Uni<List<ArticleReviewEntity>> reviews(Newsroom newsroom, long id) {
+        return find(newsroom, id).flatMap(article -> ArticleReviewEntity
+                .<ArticleReviewEntity>list("articleId = ?1 order by createdAt desc, id desc", id));
+    }
+
+    /**
+     * Takes a published article offline; it keeps its live revision and a pending submission.
      */
     @WithTransaction
     public Uni<ArticleView> takeOffline(Newsroom newsroom, long id) {
         return load(newsroom, id).flatMap(view -> {
-            require(ArticleAction.TAKE_OFFLINE, newsroom, view);
+            require(ArticleAction.TAKE_OFFLINE, newsroom, view, Staffing.NOT_NEEDED);
             view.article().status = ArticleStatus.OFFLINE;
             view.article().updatedAt = now();
             return flushed(view);
@@ -239,6 +318,54 @@ public class ArticleService {
     }
 
     public record Revisions(ArticleEntity article, List<ArticleRevisionEntity> revisions) {
+    }
+
+    /**
+     * Makes the latest revision live: status {@code PUBLISHED}, publication timestamps set on first
+     * publication, nothing pending.
+     */
+    private static void goLive(ArticleView view, Instant now) {
+        ArticleEntity article = view.article();
+        ArticleRevisionEntity latest = view.revision();
+        if (latest.publishedAt == null) {
+            latest.publishedAt = now;
+        }
+        if (article.publishedAt == null) {
+            article.publishedAt = now;
+        }
+        article.liveRevision = latest.number;
+        article.status = ArticleStatus.PUBLISHED;
+        article.pendingLevel = null;
+        article.updatedAt = now;
+    }
+
+    private static void endSubmission(ArticleEntity article, Instant now) {
+        article.pendingLevel = null;
+        if (article.status == ArticleStatus.SUBMITTED) {
+            article.status = ArticleStatus.DRAFT;
+        }
+        article.updatedAt = now;
+    }
+
+    private static ArticleReviewEntity review(Newsroom reviewer, ArticleView view, ReviewDecision decision, String note,
+            Instant now) {
+        ArticleReviewEntity review = new ArticleReviewEntity();
+        review.articleId = view.article().id;
+        review.revision = view.revision().number;
+        review.decision = decision;
+        review.level = view.article().pendingLevel;
+        review.reviewerSub = reviewer.user().sub();
+        review.reviewerUsername = reviewer.user().username();
+        review.reviewerDisplayName = reviewer.user().displayName();
+        review.note = note;
+        review.createdAt = now;
+        return review;
+    }
+
+    private static void requireHeadline(ArticleView view, String purpose) {
+        if (view.revision().headline.isEmpty()) {
+            throw ArticleException.invalid("headline", "is required for " + purpose);
+        }
     }
 
     /**
@@ -310,20 +437,29 @@ public class ArticleService {
         return Panache.flush().replaceWith(view);
     }
 
-    private static void require(ArticleAction action, Newsroom newsroom, ArticleView view) {
-        switch (ArticlePolicy.verdict(action, newsroom, view.article(), view.revision().number)) {
+    private static void require(ArticleAction action, Newsroom newsroom, ArticleView view, Staffing staffed) {
+        switch (ArticlePolicy.verdict(action, newsroom, view.article(), view.revision().number, staffed)) {
             case ALLOWED -> {
             }
             case FORBIDDEN -> throw ArticleException.forbidden(switch (action) {
                 case EDIT -> "only the author may edit this article, while they may write in its section";
                 case DELETE -> "only the author may delete this article, while they may write in its section";
-                case PUBLISH -> "only the author may publish this article, and only as a publisher";
+                case SUBMIT -> "only the author may submit this article, while they may write in its section and "
+                        + "an approval level applies; publish it instead";
+                case PUBLISH -> "only the author may publish this article, while they may write in its section and "
+                        + "no approval level applies; submit it instead";
+                case WITHDRAW -> "only the author may withdraw this submission";
+                case APPROVE -> "you may not approve this article at the level it waits for";
+                case REJECT -> "you may not reject this article at the level it waits for";
                 case TAKE_OFFLINE -> "you may not take this article offline";
             });
             case CONFLICT -> throw ArticleException.conflict(switch (action) {
-                case EDIT -> "this article cannot be edited in its current state";
+                case EDIT -> "this article waits for approval and cannot be edited; withdraw the submission first";
                 case DELETE -> "a published article cannot be deleted; take it offline instead";
-                case PUBLISH -> "this article is already published and has no unpublished changes";
+                case SUBMIT, PUBLISH -> view.article().pendingLevel != null
+                        ? "this article already waits for approval"
+                        : "this article is already published and has no unpublished changes";
+                case WITHDRAW, APPROVE, REJECT -> "this article does not wait for approval";
                 case TAKE_OFFLINE -> "only a published article can be taken offline";
             });
         }

@@ -80,6 +80,28 @@ class ApiClient(
     suspend fun takeArticleOffline(id: Long): ArticleDto =
         http.post("$baseUrl/api/articles/$id/offline") { bearerAuth(accessToken()) }.body()
 
+    /** Starts a submission; the article then waits for the lowest level of the author's chain. */
+    suspend fun submitArticle(id: Long): ArticleDto =
+        http.post("$baseUrl/api/articles/$id/submit") { bearerAuth(accessToken()) }.body()
+
+    suspend fun approveArticle(id: Long): ArticleDto =
+        http.post("$baseUrl/api/articles/$id/approve") { bearerAuth(accessToken()) }.body()
+
+    /** Ends the submission with [note] (`400` naming `note` when it is blank or too long). */
+    suspend fun rejectArticle(id: Long, note: String): ArticleDto =
+        http.post("$baseUrl/api/articles/$id/reject") {
+            bearerAuth(accessToken())
+            contentType(ContentType.Application.Json)
+            setBody(RejectNote(note))
+        }.body()
+
+    suspend fun withdrawArticle(id: Long): ArticleDto =
+        http.post("$baseUrl/api/articles/$id/withdraw") { bearerAuth(accessToken()) }.body()
+
+    /** Approvals and rejections of the article, newest first. */
+    suspend fun reviews(articleId: Long): List<ReviewDto> =
+        http.get("$baseUrl/api/articles/$articleId/reviews") { bearerAuth(accessToken()) }.body()
+
     suspend fun revisions(articleId: Long): List<RevisionSummaryDto> =
         http.get("$baseUrl/api/articles/$articleId/revisions") { bearerAuth(accessToken()) }.body()
 
@@ -169,6 +191,10 @@ class ApiClient(
         http.delete("$baseUrl/api/sections/$sectionId/members/$accountId") { bearerAuth(accessToken()) }
     }
 }
+
+/** Body of `POST /api/articles/{id}/reject`. */
+@Serializable
+private data class RejectNote(val note: String)
 
 /** Body of `PUT /api/sections/order`. */
 @Serializable

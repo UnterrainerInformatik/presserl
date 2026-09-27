@@ -4,33 +4,36 @@ skinparam shadowing false
 skinparam defaultFontName Sans-Serif
 
 start
-:A clicks **Publish**;
-:start at the level directly above\nA's highest role in S;
-while (level left?\n(section editor → editor-in-chief → publisher)) is (yes)
-  if (A holds this level's role?) then (yes)
-    :skip level;
-  elseif (someone of this level\ntrusts A?) then (yes)
-    :skip level;
-  elseif (section-editor level and\nS has no section editor?) then (yes)
-    :skip level\n(editor-in-chief takes over);
-  else (no)
-    :status **Submitted** (waiting for this level);
-    :one holder of the role\n(≠ A) decides;
+:A writes an article in S;
+:chain = levels above A's highest role in S\n(section editor → editor-in-chief → publisher)\nwithout skipped levels;
+note right
+  A level is **skipped** when
+  • no account other than A holds its role
+    (locked accounts count), or
+  • someone of that level trusts A (planned).
+end note
+if (chain empty?) then (yes)
+  :A clicks **Publish**;
+else (no)
+  :A clicks **Submit**;
+  repeat
+    :waits for the lowest level left\n(never published: status **Submitted**;\npublished/offline: status and live revision stay;\ncontent frozen);
+    :one person ≠ A holding this level's role\nor a higher one decides;
     if (decision) then (reject)
-      :**Draft** + note to A;
+      :submission ends, note to A\n(never published → **Draft**);
       stop
     else (approve)
+      :every level up to the\napprover's level is settled;
     endif
-  endif
-  :next level up;
-endwhile (no)
-:**Published**;
+  repeat while (a staffed level above\nthe approver's level left?) is (yes)
+endif
+:**Published** (latest revision live);
 stop
 
-note right
-  Solo first account holds all roles
-  → every level skipped → published at once.
-  Trust: per person, default off,
-  set by any holder of the approving level.
+note left
+  Solo: the first account holds all roles
+  → empty chain → published at once.
+  A may **withdraw** a submission at any time.
+  Levels are re-evaluated at every approval.
 end note
 @enduml

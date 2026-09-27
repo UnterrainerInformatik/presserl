@@ -50,6 +50,7 @@ import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.ui.material3.OutlinedRichTextEditor
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.ArticleDto
+import info.unterrainer.presserl.admin.api.ReviewDto
 import info.unterrainer.presserl.admin.api.SectionDto
 import info.unterrainer.presserl.admin.api.SectionRefDto
 import info.unterrainer.presserl.admin.article.Run
@@ -57,6 +58,7 @@ import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.action_failed
 import info.unterrainer.presserl.admin.resources.add_block
 import info.unterrainer.presserl.admin.resources.add_item
+import info.unterrainer.presserl.admin.resources.approve
 import info.unterrainer.presserl.admin.resources.block_list
 import info.unterrainer.presserl.admin.resources.block_paragraph
 import info.unterrainer.presserl.admin.resources.block_quote
@@ -85,8 +87,14 @@ import info.unterrainer.presserl.admin.resources.move_up
 import info.unterrainer.presserl.admin.resources.publish
 import info.unterrainer.presserl.admin.resources.read_only
 import info.unterrainer.presserl.admin.resources.redo
+import info.unterrainer.presserl.admin.resources.reject
+import info.unterrainer.presserl.admin.resources.reject_confirm
+import info.unterrainer.presserl.admin.resources.reject_hint
+import info.unterrainer.presserl.admin.resources.reject_title
+import info.unterrainer.presserl.admin.resources.rejected_by
 import info.unterrainer.presserl.admin.resources.remove_block
 import info.unterrainer.presserl.admin.resources.remove_item
+import info.unterrainer.presserl.admin.resources.reviews_heading
 import info.unterrainer.presserl.admin.resources.revisions
 import info.unterrainer.presserl.admin.resources.save_failed
 import info.unterrainer.presserl.admin.resources.save_invalid
@@ -94,18 +102,24 @@ import info.unterrainer.presserl.admin.resources.save_pending
 import info.unterrainer.presserl.admin.resources.save_saved
 import info.unterrainer.presserl.admin.resources.save_saving
 import info.unterrainer.presserl.admin.resources.stay
+import info.unterrainer.presserl.admin.resources.submit
 import info.unterrainer.presserl.admin.resources.take_offline
 import info.unterrainer.presserl.admin.resources.undo
 import info.unterrainer.presserl.admin.resources.unpublished_changes
 import info.unterrainer.presserl.admin.resources.view_in_reader
+import info.unterrainer.presserl.admin.resources.withdraw
 import info.unterrainer.presserl.admin.ui.ArticleView
+import info.unterrainer.presserl.admin.ui.approvalLevelText
 import info.unterrainer.presserl.admin.ui.BackButton
 import info.unterrainer.presserl.admin.ui.Banner
 import info.unterrainer.presserl.admin.ui.LoadFailed
 import info.unterrainer.presserl.admin.ui.attempt
+import info.unterrainer.presserl.admin.ui.decisionText
 import info.unterrainer.presserl.admin.ui.describe
+import info.unterrainer.presserl.admin.ui.formatTimestamp
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
 import info.unterrainer.presserl.admin.ui.statusText
+import info.unterrainer.presserl.admin.ui.waitingText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.StringResource
@@ -170,6 +184,12 @@ private fun Editor(
     var busy by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmLeave by remember { mutableStateOf<(() -> Unit)?>(null) }
+    // The reject dialog is open while rejectNote is not null
+    var rejectNote by remember { mutableStateOf<String?>(null) }
+    var rejectError by remember { mutableStateOf<String?>(null) }
+    var reviews by remember { mutableStateOf<List<ReviewDto>>(emptyList()) }
+    var reviewLoads by remember { mutableStateOf(0) }
+    LaunchedEffect(reviewLoads) { attempt({}) { api.reviews(loaded.id) }?.let { reviews = it } }
 
     if (actions.editable) {
         LaunchedEffect(model) {
@@ -193,11 +213,39 @@ private fun Editor(
                     val updated = action()
                     article = updated
                     autosaver.versionChanged(updated.version)
+                    reviewLoads++
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
                 actionErrors = fieldErrorsOf(e) ?: FieldErrors(general = listOf(describe(e)))
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    /** Rejects with the note; a refused note keeps the dialog open with the server's message. */
+    fun reject(note: String) {
+        busy = true
+        rejectError = null
+        scope.launch {
+            try {
+                val updated = api.rejectArticle(article.id, note)
+                article = updated
+                autosaver.versionChanged(updated.version)
+                reviewLoads++
+                rejectNote = null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                val noteError = noteErrorOf(e)
+                if (noteError != null) {
+                    rejectError = noteError
+                } else {
+                    rejectNote = null
+                    actionErrors = fieldErrorsOf(e) ?: FieldErrors(general = listOf(describe(e)))
+                }
             } finally {
                 busy = false
             }
@@ -232,7 +280,18 @@ private fun Editor(
             }
         }
         errors.general.forEach { Banner(stringResource(Res.string.action_failed, it)) }
-        if (!actions.editable) Banner(stringResource(Res.string.read_only), color = MaterialTheme.colorScheme.secondaryContainer)
+        val pendingLevel = article.pendingLevel
+        if (pendingLevel != null) {
+            Banner(waitingText(pendingLevel), color = MaterialTheme.colorScheme.secondaryContainer)
+        } else if (!actions.editable) {
+            Banner(stringResource(Res.string.read_only), color = MaterialTheme.colorScheme.secondaryContainer)
+        }
+        rejectionToShow(reviews, pendingLevel)?.let { rejection ->
+            Banner(
+                stringResource(Res.string.rejected_by, rejection.reviewer.displayName, rejection.note.orEmpty()),
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+            )
+        }
 
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (actions.editable) {
@@ -242,10 +301,16 @@ private fun Editor(
                 article.section?.let { SectionLabel(it.name, it.color) }
                 ArticleView(model.draft)
             }
+            if (reviews.isNotEmpty()) Reviews(reviews)
         }
 
         HorizontalDivider()
-        BottomBar(model, actions, saveState, busy, onPublish = { act(saveFirst = true) { api.publishArticle(article.id) } },
+        BottomBar(model, actions, saveState, busy,
+            onPublish = { act(saveFirst = true) { api.publishArticle(article.id) } },
+            onSubmit = { act(saveFirst = true) { api.submitArticle(article.id) } },
+            onApprove = { act(saveFirst = false) { api.approveArticle(article.id) } },
+            onReject = { rejectNote = ""; rejectError = null },
+            onWithdraw = { act(saveFirst = false) { api.withdrawArticle(article.id) } },
             onTakeOffline = { act(saveFirst = false) { api.takeArticleOffline(article.id) } },
             onDelete = { confirmDelete = true })
     }
@@ -272,6 +337,30 @@ private fun Editor(
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(Res.string.cancel)) } },
         )
     }
+    rejectNote?.let { note ->
+        AlertDialog(
+            onDismissRequest = { if (!busy) rejectNote = null },
+            title = { Text(stringResource(Res.string.reject_title)) },
+            text = {
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { rejectNote = limitNote(it); rejectError = null },
+                    label = { Text(stringResource(Res.string.reject_hint)) },
+                    isError = rejectError != null,
+                    supportingText = rejectError?.let { { Text(it) } },
+                    minLines = 3,
+                    maxLines = 8,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                Button(onClick = { reject(note) }, enabled = !busy && canConfirmReject(note)) {
+                    Text(stringResource(Res.string.reject_confirm))
+                }
+            },
+            dismissButton = { TextButton(onClick = { rejectNote = null }, enabled = !busy) { Text(stringResource(Res.string.cancel)) } },
+        )
+    }
     confirmLeave?.let { then ->
         AlertDialog(
             onDismissRequest = { confirmLeave = null },
@@ -291,6 +380,10 @@ private fun BottomBar(
     saveState: SaveState,
     busy: Boolean,
     onPublish: () -> Unit,
+    onSubmit: () -> Unit,
+    onApprove: () -> Unit,
+    onReject: () -> Unit,
+    onWithdraw: () -> Unit,
     onTakeOffline: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -309,7 +402,31 @@ private fun BottomBar(
                 }
             }
             if (actions.takeOffline) OutlinedButton(onClick = onTakeOffline, enabled = !busy) { Text(stringResource(Res.string.take_offline)) }
+            if (actions.withdraw) OutlinedButton(onClick = onWithdraw, enabled = !busy) { Text(stringResource(Res.string.withdraw)) }
+            if (actions.reject) OutlinedButton(onClick = onReject, enabled = !busy) { Text(stringResource(Res.string.reject)) }
+            if (actions.approve) Button(onClick = onApprove, enabled = !busy) { Text(stringResource(Res.string.approve)) }
+            if (actions.submit) Button(onClick = onSubmit, enabled = !busy && saveState != SaveState.Conflict) { Text(stringResource(Res.string.submit)) }
             if (actions.publish) Button(onClick = onPublish, enabled = !busy && saveState != SaveState.Conflict) { Text(stringResource(Res.string.publish)) }
+        }
+    }
+}
+
+/** The article's approvals and rejections, newest first, with their notes. */
+@Composable
+private fun Reviews(reviews: List<ReviewDto>) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        HorizontalDivider()
+        Text(stringResource(Res.string.reviews_heading), style = MaterialTheme.typography.titleSmall)
+        reviews.forEach { review ->
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    listOf(decisionText(review.decision), approvalLevelText(review.level), review.reviewer.displayName,
+                        formatTimestamp(review.createdAt)).joinToString(" · "),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (review.decision == "REJECTED") FontWeight.SemiBold else FontWeight.Normal,
+                )
+                review.note?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            }
         }
     }
 }

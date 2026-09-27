@@ -46,6 +46,7 @@ class ApiClientTest {
             val body = when {
                 path == "/api/me" -> """{ "username": "papa", "displayName": "Papa", "roles": ["PUBLISHER"] }"""
                 path == "/api/articles" && request.method == HttpMethod.Get -> "[$SUMMARY]"
+                path.endsWith("/reviews") -> "[$REVIEW]"
                 path.endsWith("/revisions") -> """[{ "number": 1, "headline": "H", "createdAt": "t", "updatedAt": "t", "live": false }]"""
                 path.contains("/revisions/") -> """{ "number": 1, "headline": "H", "createdAt": "t", "updatedAt": "t",
                     "live": true, "kicker": "", "subheadline": "", "lead": "", "body": { "version": 1, "blocks": [] } }"""
@@ -168,6 +169,35 @@ class ApiClientTest {
             requests.map { it.method to it.url },
         )
         requests.forEach { assertEquals("Bearer token-123", it.authorization) }
+    }
+
+    @Test
+    fun chainActions() = runTest {
+        api.submitArticle(42)
+        api.approveArticle(42)
+        api.rejectArticle(42, "Please add who scored.\nThanks")
+        api.withdrawArticle(42)
+        assertEquals(
+            listOf(
+                HttpMethod.Post to "https://news.example.org/api/articles/42/submit",
+                HttpMethod.Post to "https://news.example.org/api/articles/42/approve",
+                HttpMethod.Post to "https://news.example.org/api/articles/42/reject",
+                HttpMethod.Post to "https://news.example.org/api/articles/42/withdraw",
+            ),
+            requests.map { it.method to it.url },
+        )
+        assertEquals(Json.parseToJsonElement("""{"note": "Please add who scored.\nThanks"}"""), requests[2].body)
+        listOf(0, 1, 3).forEach { assertNull(requests[it].body) }
+        requests.forEach { assertEquals("Bearer token-123", it.authorization) }
+    }
+
+    @Test
+    fun reviews() = runTest {
+        val review = api.reviews(42).single()
+        assertEquals("REJECTED", review.decision)
+        assertEquals("Too short", review.note)
+        assertEquals("chief", review.reviewer.username)
+        assertEquals(Recorded(HttpMethod.Get, "https://news.example.org/api/articles/42/reviews", "Bearer token-123", null), requests.single())
     }
 
     @Test
@@ -369,6 +399,8 @@ class ApiClientTest {
             "role": "REPORTER" }"""
         const val ACCOUNT = """{ "id": "9a1e", "username": "lena", "firstName": "Lena", "lastName": "",
             "roles": ["EDITOR_IN_CHIEF"], "enabled": true, "allowedActions": ["RESET_PASSWORD", "LOCK"] }"""
+        const val REVIEW = """{ "decision": "REJECTED", "level": "EDITOR_IN_CHIEF", "revision": 2,
+            "reviewer": { "username": "chief", "displayName": "Chief" }, "note": "Too short", "createdAt": "2026-09-27T10:05:00Z" }"""
         const val SUMMARY = """{ "id": 42, "status": "DRAFT", "author": { "username": "papa", "displayName": "Papa" },
             "section": { "id": 1, "name": "Sport", "slug": "sport", "color": "green" },
             "headline": "H", "kicker": "", "revision": 1, "liveRevision": null, "hasUnpublishedChanges": false,

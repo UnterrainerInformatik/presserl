@@ -10,6 +10,8 @@ import info.unterrainer.presserl.admin.resources.color_purple
 import info.unterrainer.presserl.admin.resources.color_red
 import info.unterrainer.presserl.admin.resources.color_teal
 import info.unterrainer.presserl.admin.resources.color_yellow
+import info.unterrainer.presserl.admin.resources.decision_approved
+import info.unterrainer.presserl.admin.resources.decision_rejected
 import info.unterrainer.presserl.admin.resources.role_editor_in_chief
 import info.unterrainer.presserl.admin.resources.role_publisher
 import info.unterrainer.presserl.admin.resources.role_reader
@@ -19,6 +21,7 @@ import info.unterrainer.presserl.admin.resources.status_draft
 import info.unterrainer.presserl.admin.resources.status_offline
 import info.unterrainer.presserl.admin.resources.status_published
 import info.unterrainer.presserl.admin.resources.status_submitted
+import info.unterrainer.presserl.admin.resources.waiting_for_approval
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -34,6 +37,21 @@ fun roleLabel(role: String): StringResource? = when (role) {
 fun sectionRoleLabel(role: String): StringResource? = when (role) {
     "SECTION_EDITOR" -> Res.string.role_section_editor
     "REPORTER" -> Res.string.role_reporter
+    else -> null
+}
+
+/** Label of an approval level (`pendingLevel`, review level): the role that holds it; `null` for an unknown level. */
+fun approvalLevelLabel(level: String): StringResource? = when (level) {
+    "SECTION_EDITOR" -> Res.string.role_section_editor
+    "EDITOR_IN_CHIEF" -> Res.string.role_editor_in_chief
+    "PUBLISHER" -> Res.string.role_publisher
+    else -> null
+}
+
+/** Label of a review decision; `null` for an unknown decision. */
+fun decisionLabel(decision: String): StringResource? = when (decision) {
+    "APPROVED" -> Res.string.decision_approved
+    "REJECTED" -> Res.string.decision_rejected
     else -> null
 }
 
@@ -68,6 +86,16 @@ fun statusText(status: String): String = statusLabel(status)?.let { stringResour
 
 @Composable
 fun sectionRoleText(role: String): String = sectionRoleLabel(role)?.let { stringResource(it) } ?: role
+
+@Composable
+fun approvalLevelText(level: String): String = approvalLevelLabel(level)?.let { stringResource(it) } ?: level
+
+/** "Waits for approval by …" for an article with a pending level. */
+@Composable
+fun waitingText(level: String): String = stringResource(Res.string.waiting_for_approval, approvalLevelText(level))
+
+@Composable
+fun decisionText(decision: String): String = decisionLabel(decision)?.let { stringResource(it) } ?: decision
 
 @Composable
 fun colorText(color: String): String = colorLabel(color)?.let { stringResource(it) } ?: color

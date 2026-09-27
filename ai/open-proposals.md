@@ -6,11 +6,14 @@ change — never tick it off.
 Milestones from `docs/vision.md`; details in `docs/`.
 
 ## M3 — Approval chain
-Chain section editor → editor-in-chief → publisher with skip rules (own role, trust, section
-without section editor), trust switches per person and level, `SUBMITTED` with pending
-level, review queue, review notes, emergency-brake lock (only publishers release).
-`allowedActions` already exists on every article response (`ArticlePolicy`, `articles-core`);
-M3 only extends its rules (approve/reject, submit for editors-in-chief and reporters, lock).
+The chain itself (submit/approve/reject/withdraw, skip rules, reviews) is `approval-chain-core`.
+Still open:
+- **Trust switches** per person and level (a holder of an approving level trusts a person below;
+  applies to the whole level) — one more skip predicate in `ApprovalChain.next`, storage, endpoints,
+  admin UI.
+- **Review queue** — "waiting for me" view in the admin app (on top of `pending=true`), counts.
+- **Emergency-brake lock** — an article taken offline by a publisher is locked; only publishers
+  release it (new action, `allowedActions` rule).
 
 ## M4 — Look
 Reader theme built on `--presserl-*` design tokens per `docs/design-guidelines.md`,

@@ -47,10 +47,17 @@ public class ArticleResource {
     @Inject
     ArticleService service;
 
+    @Inject
+    StaffingService staffing;
+
     @GET
-    public Uni<List<ArticleSummaryDto>> list(@QueryParam("status") String status, @QueryParam("mine") boolean mine) {
-        return writer().flatMap(newsroom -> service.list(newsroom, status(status), mine)
-                .map(views -> views.stream().map(view -> ArticleSummaryDto.of(view, newsroom)).toList()));
+    public Uni<List<ArticleSummaryDto>> list(@QueryParam("status") String status, @QueryParam("mine") boolean mine,
+            @QueryParam("pending") boolean pending) {
+        return writer().flatMap(newsroom -> service.list(newsroom, status(status), mine, pending)
+                .flatMap(views -> staffing.forArticles(newsroom, views.stream().map(ArticleView::article).toList())
+                        .map(staffed -> views.stream()
+                                .map(view -> ArticleSummaryDto.of(view, newsroom, staffed))
+                                .toList())));
     }
 
     @POST
@@ -58,17 +65,18 @@ public class ArticleResource {
     public Uni<RestResponse<ArticleDto>> create(JsonNode json) {
         return writer().flatMap(newsroom -> {
             ArticleContentValidator.Request request = ArticleContentValidator.validate(json, false);
-            return service.create(newsroom, request.content(), request.sectionId()).map(view -> RestResponse.ResponseBuilder
-                    .<ArticleDto>created(URI.create("/api/articles/" + view.article().id))
-                    .entity(ArticleDto.of(view, newsroom))
-                    .build());
+            return dto(newsroom, service.create(newsroom, request.content(), request.sectionId()))
+                    .map(dto -> RestResponse.ResponseBuilder
+                            .<ArticleDto>created(URI.create("/api/articles/" + dto.id()))
+                            .entity(dto)
+                            .build());
         });
     }
 
     @GET
     @Path("/{id}")
     public Uni<ArticleDto> get(@PathParam("id") long id) {
-        return writer().flatMap(newsroom -> service.get(newsroom, id).map(view -> ArticleDto.of(view, newsroom)));
+        return writer().flatMap(newsroom -> dto(newsroom, service.get(newsroom, id)));
     }
 
     @PUT
@@ -77,8 +85,7 @@ public class ArticleResource {
     public Uni<ArticleDto> save(@PathParam("id") long id, JsonNode json) {
         return writer().flatMap(newsroom -> {
             ArticleContentValidator.Request request = ArticleContentValidator.validate(json, true);
-            return service.save(newsroom, id, request.content(), request.sectionId(), request.version())
-                    .map(view -> ArticleDto.of(view, newsroom));
+            return dto(newsroom, service.save(newsroom, id, request.content(), request.sectionId(), request.version()));
         });
     }
 
@@ -91,14 +98,52 @@ public class ArticleResource {
     @POST
     @Path("/{id}/publish")
     public Uni<ArticleDto> publish(@PathParam("id") long id) {
-        return writer().flatMap(newsroom -> service.publish(newsroom, id).map(view -> ArticleDto.of(view, newsroom)));
+        return writer().flatMap(newsroom -> dto(newsroom, service.publish(newsroom, id)));
+    }
+
+    @POST
+    @Path("/{id}/submit")
+    public Uni<ArticleDto> submit(@PathParam("id") long id) {
+        return writer().flatMap(newsroom -> dto(newsroom, service.submit(newsroom, id)));
+    }
+
+    @POST
+    @Path("/{id}/approve")
+    public Uni<ArticleDto> approve(@PathParam("id") long id) {
+        return writer().flatMap(newsroom -> dto(newsroom, service.approve(newsroom, id)));
+    }
+
+    /**
+     * The body ({@code {"note": "..."}}) is validated before the policy, so a malformed body is
+     * {@code 400} for everyone.
+     */
+    @POST
+    @Path("/{id}/reject")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Uni<ArticleDto> reject(@PathParam("id") long id, JsonNode json) {
+        return writer().flatMap(newsroom -> {
+            String note = RejectRequestValidator.validate(json);
+            return dto(newsroom, service.reject(newsroom, id, note));
+        });
+    }
+
+    @POST
+    @Path("/{id}/withdraw")
+    public Uni<ArticleDto> withdraw(@PathParam("id") long id) {
+        return writer().flatMap(newsroom -> dto(newsroom, service.withdraw(newsroom, id)));
     }
 
     @POST
     @Path("/{id}/offline")
     public Uni<ArticleDto> takeOffline(@PathParam("id") long id) {
-        return writer().flatMap(newsroom -> service.takeOffline(newsroom, id)
-                .map(view -> ArticleDto.of(view, newsroom)));
+        return writer().flatMap(newsroom -> dto(newsroom, service.takeOffline(newsroom, id)));
+    }
+
+    @GET
+    @Path("/{id}/reviews")
+    public Uni<List<ReviewDto>> reviews(@PathParam("id") long id) {
+        return writer().flatMap(newsroom -> service.reviews(newsroom, id)
+                .map(reviews -> reviews.stream().map(ReviewDto::of).toList()));
     }
 
     @GET
@@ -113,6 +158,14 @@ public class ArticleResource {
     @Path("/{id}/revisions/{number}")
     public Uni<RevisionDto> revision(@PathParam("id") long id, @PathParam("number") int number) {
         return writer().flatMap(newsroom -> service.revision(newsroom, id, number).map(RevisionDto::of));
+    }
+
+    /**
+     * Maps the article with the staffing its {@code allowedActions} need.
+     */
+    private Uni<ArticleDto> dto(Newsroom newsroom, Uni<ArticleView> view) {
+        return view.flatMap(v -> staffing.forArticles(newsroom, List.of(v.article()))
+                .map(staffed -> ArticleDto.of(v, newsroom, staffed)));
     }
 
     /**

@@ -406,7 +406,7 @@ Content-Type: application/json
         client.assert(response.status === 201, "status " + response.status);
         client.assert(response.body.author.username === "reader", "author");
         client.assert(response.body.section.id === client.global.get("gardenId"), "section");
-        client.assert(JSON.stringify(response.body.allowedActions) === '["EDIT","DELETE"]',
+        client.assert(JSON.stringify(response.body.allowedActions) === '["EDIT","SUBMIT","DELETE"]',
             "allowedActions " + JSON.stringify(response.body.allowedActions));
     });
     client.global.set("reporterDraftId", response.body.id);
@@ -456,6 +456,210 @@ Authorization: Bearer {{nogroupsToken}}
         client.assert(response.body.allowedActions.length === 0, JSON.stringify(response.body.allowedActions));
     });
 %}
+
+### Chain: reporter writes an article to submit
+POST {{baseUrl}}/api/articles
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{ "sectionId": {{gardenId}}, "headline": "Harvest festival" }
+
+> {%
+    client.global.set("chainId", response.body.id);
+    client.global.set("chainVersion", response.body.version);
+%}
+
+### Chain: reporter may not publish (a level applies)
+POST {{baseUrl}}/api/articles/{{chainId}}/publish
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("403", () => client.assert(response.status === 403, "status " + response.status));
+%}
+
+### Chain: reporter submits, it waits for the section editor
+POST {{baseUrl}}/api/articles/{{chainId}}/submit
+Authorization: Bearer {{readerToken}}
+
+> {%
+    const before = client.global.get("chainVersion");
+    client.test("200 SUBMITTED waiting for SECTION_EDITOR", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.status === "SUBMITTED", "status " + response.body.status);
+        client.assert(response.body.pendingLevel === "SECTION_EDITOR", "pendingLevel " + response.body.pendingLevel);
+        client.assert(response.body.version > before, "version " + response.body.version);
+        client.assert(JSON.stringify(response.body.allowedActions) === '["WITHDRAW","DELETE"]',
+            "allowedActions " + JSON.stringify(response.body.allowedActions));
+    });
+    client.global.set("chainVersion", response.body.version);
+%}
+
+### Chain: content is frozen while waiting
+PUT {{baseUrl}}/api/articles/{{chainId}}
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{ "version": {{chainVersion}}, "sectionId": {{gardenId}}, "headline": "Changed" }
+
+> {%
+    client.test("409", () => client.assert(response.status === 409, "status " + response.status));
+%}
+
+### Chain: waiting articles of the section editor's section
+GET {{baseUrl}}/api/articles?pending=true
+Authorization: Bearer {{nogroupsToken}}
+
+> {%
+    client.test("200 with the waiting article and its actions", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const entry = response.body.find(a => a.id === client.global.get("chainId"));
+        client.assert(entry !== undefined, JSON.stringify(response.body.map(a => a.id)));
+        client.assert(entry.pendingLevel === "SECTION_EDITOR", "pendingLevel " + entry.pendingLevel);
+        client.assert(JSON.stringify(entry.allowedActions) === '["APPROVE","REJECT"]', JSON.stringify(entry.allowedActions));
+        client.assert(response.body.every(a => a.pendingLevel !== null), "only pending articles");
+    });
+%}
+
+### Chain: section editor approves, it waits for the editor-in-chief
+POST {{baseUrl}}/api/articles/{{chainId}}/approve
+Authorization: Bearer {{nogroupsToken}}
+
+> {%
+    client.test("200 waiting for EDITOR_IN_CHIEF", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.pendingLevel === "EDITOR_IN_CHIEF", "pendingLevel " + response.body.pendingLevel);
+        client.assert(response.body.allowedActions.length === 0, JSON.stringify(response.body.allowedActions));
+    });
+%}
+
+### Chain: section editor cannot approve the editor-in-chief's level
+POST {{baseUrl}}/api/articles/{{chainId}}/approve
+Authorization: Bearer {{nogroupsToken}}
+
+> {%
+    client.test("403", () => client.assert(response.status === 403, "status " + response.status));
+%}
+
+### Chain: a rejection needs a note
+POST {{baseUrl}}/api/articles/{{chainId}}/reject
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "note": "   " }
+
+> {%
+    client.test("400 naming note", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "note", JSON.stringify(response.body));
+    });
+%}
+
+### Chain: editor-in-chief rejects with a note, the article is a draft again
+POST {{baseUrl}}/api/articles/{{chainId}}/reject
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "note": "Too short. Please add who won the pumpkin contest." }
+
+> {%
+    client.test("200 DRAFT, nothing pending", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.status === "DRAFT", "status " + response.body.status);
+        client.assert(response.body.pendingLevel === null, "pendingLevel " + response.body.pendingLevel);
+    });
+%}
+
+### Chain: the author reads the reviews, newest first
+GET {{baseUrl}}/api/articles/{{chainId}}/reviews
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("200 rejection by chief, then approval by nogroups", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(JSON.stringify(response.body.map(r => r.decision)) === '["REJECTED","APPROVED"]', JSON.stringify(response.body));
+        client.assert(response.body[0].reviewer.username === "chief" && response.body[0].level === "EDITOR_IN_CHIEF", "rejection");
+        client.assert(response.body[0].note.startsWith("Too short"), "note " + response.body[0].note);
+        client.assert(response.body[1].reviewer.username === "nogroups" && response.body[1].note === null, "approval");
+    });
+%}
+
+### Chain: reporter submits again
+POST {{baseUrl}}/api/articles/{{chainId}}/submit
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("200 waiting for SECTION_EDITOR", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.pendingLevel === "SECTION_EDITOR", "pendingLevel " + response.body.pendingLevel);
+    });
+%}
+
+### Chain: only the author withdraws
+POST {{baseUrl}}/api/articles/{{chainId}}/withdraw
+Authorization: Bearer {{nogroupsToken}}
+
+> {%
+    client.test("403", () => client.assert(response.status === 403, "status " + response.status));
+%}
+
+### Chain: reporter withdraws
+POST {{baseUrl}}/api/articles/{{chainId}}/withdraw
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("200 DRAFT", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.status === "DRAFT" && response.body.pendingLevel === null, JSON.stringify(response.body.status));
+    });
+%}
+
+### Chain: nothing left to withdraw
+POST {{baseUrl}}/api/articles/{{chainId}}/withdraw
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("409", () => client.assert(response.status === 409, "status " + response.status));
+%}
+
+### Chain: reporter submits a third time
+POST {{baseUrl}}/api/articles/{{chainId}}/submit
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200, "status " + response.status));
+%}
+
+### Chain: the publisher approves every level at once, the article goes live
+POST {{baseUrl}}/api/articles/{{chainId}}/approve
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200 PUBLISHED", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.status === "PUBLISHED", "status " + response.body.status);
+        client.assert(response.body.pendingLevel === null, "pendingLevel " + response.body.pendingLevel);
+        client.assert(response.body.liveRevision === 1 && response.body.publishedAt !== null, "live");
+    });
+%}
+
+### Chain: nothing left to approve
+POST {{baseUrl}}/api/articles/{{chainId}}/approve
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("409", () => client.assert(response.status === 409, "status " + response.status));
+%}
+
+### Chain: the article is in the reader
+GET {{baseUrl}}/articles/{{chainId}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200, "status " + response.status));
+%}
+
+### Chain clean up: take it offline
+POST {{baseUrl}}/api/articles/{{chainId}}/offline
+Authorization: Bearer {{accessToken}}
 
 ### Clean up: reporter deletes the draft
 DELETE {{baseUrl}}/api/articles/{{reporterDraftId}}

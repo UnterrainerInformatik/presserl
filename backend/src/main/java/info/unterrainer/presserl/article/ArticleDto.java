@@ -18,6 +18,7 @@ public record ArticleDto(
         int revision,
         Integer liveRevision,
         boolean hasUnpublishedChanges,
+        ApprovalLevel pendingLevel,
         long version,
         Instant createdAt,
         Instant updatedAt,
@@ -29,11 +30,14 @@ public record ArticleDto(
         JsonNode body,
         List<ArticleAction> allowedActions) {
 
-    public static ArticleDto of(ArticleView view, Newsroom newsroom) {
+    /**
+     * @param staffing from {@link StaffingService#forArticles} for this article
+     */
+    public static ArticleDto of(ArticleView view, Newsroom newsroom, Staffing staffing) {
         ArticleEntity a = view.article();
         ArticleRevisionEntity r = view.revision();
         return new ArticleDto(a.id, a.status, AuthorDto.of(a), SectionRefDto.of(view.section()), r.number, a.liveRevision,
-                ArticlePolicy.hasUnpublishedChanges(a, r.number), a.version, a.createdAt, a.updatedAt, a.publishedAt,
-                r.kicker, r.headline, r.subheadline, r.lead, r.body, ArticlePolicy.allowedActions(newsroom, a, r.number));
+                ArticlePolicy.hasUnpublishedChanges(a, r.number), a.pendingLevel, a.version, a.createdAt, a.updatedAt, a.publishedAt,
+                r.kicker, r.headline, r.subheadline, r.lead, r.body, ArticlePolicy.allowedActions(newsroom, a, r.number, staffing));
     }
 }

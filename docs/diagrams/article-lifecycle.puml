@@ -6,26 +6,28 @@ hide empty description
 
 [*] --> Draft : new article
 
-Draft --> Published : publish\n[no approval level remains]
-Draft --> Submitted : publish\n[an approval level applies]
-Submitted --> Submitted : approve\n[next level applies]
-Submitted --> Published : approve\n[last level]
+Draft --> Published : publish\n[approval chain empty]
+Draft --> Submitted : submit\n[an approval level applies]
+Submitted --> Submitted : approve\n[a higher level remains]
+Submitted --> Published : approve\n[no level remains]
 Submitted --> Draft : reject with note
 Submitted --> Draft : withdraw (author)
+Draft --> [*] : delete (author)
+Submitted --> [*] : delete (author)
 
-Published --> Offline : take offline\n(author, section editor,\neditor-in-chief)
+Published --> Offline : take offline\n(author, section editor,\neditor-in-chief, publisher)
 Published --> Locked : emergency brake\n(publisher)
-Offline --> Published : back online\n[approval chain]
-Offline --> Submitted : back online\n[approval chain]
+Offline --> Published : publish [chain empty]\nor approve [no level remains]
 Locked --> Offline : release\n(publisher only)
-Offline --> Draft : revise
-Offline --> [*] : delete
 
-Submitted : waits for one level:
+Submitted : never published, waits for one level:
 Submitted : section editor → editor-in-chief → publisher
-Published : Edits create a new revision;
-Published : the live revision stays until
-Published : the new one passes the chain.
+Submitted : content frozen while waiting
+Published : Edits create a new revision; submitting
+Published : them keeps the status and the live revision
+Published : until the chain approves (pending level).
+Offline : Back online is submitted like changes;
+Offline : the status stays Offline while it waits.
 Locked : offline, only a publisher
 Locked : can release it
 
