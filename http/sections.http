@@ -410,3 +410,102 @@ Authorization: Bearer {{accessToken}}
 > {%
     client.test("204", () => client.assert(response.status === 204, "status " + response.status));
 %}
+
+### Create a throw-away section
+POST {{baseUrl}}/api/sections
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "name": "Wegwerf {{suffix}}" }
+
+> {%
+    client.test("201", () => client.assert(response.status === 201, "status " + response.status));
+    client.global.set("throwAwayId", response.body.id);
+%}
+
+### A reader may not delete a section
+DELETE {{baseUrl}}/api/sections/{{throwAwayId}}
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("403", () => client.assert(response.status === 403, "status " + response.status));
+%}
+
+### Editor-in-chief deletes the empty section
+DELETE {{baseUrl}}/api/sections/{{throwAwayId}}
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("204", () => client.assert(response.status === 204, "status " + response.status));
+%}
+
+### The section is gone and positions are compacted
+GET {{baseUrl}}/api/sections
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("not listed, positions 0, 1, 2, …", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(!response.body.sections.some(s => s.id === client.global.get("throwAwayId")), "still listed");
+        client.assert(response.body.sections.every((s, i) => s.position === i), JSON.stringify(response.body.sections.map(s => s.position)));
+    });
+%}
+
+### Deleting an unknown section
+DELETE {{baseUrl}}/api/sections/999999999
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### Create a section that will hold an article
+POST {{baseUrl}}/api/sections
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "name": "Voll {{suffix}}" }
+
+> {%
+    client.global.set("fullId", response.body.id);
+%}
+
+### An article in that section
+POST {{baseUrl}}/api/articles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "sectionId": {{fullId}}, "headline": "Hält das Ressort fest" }
+
+> {%
+    client.test("201", () => client.assert(response.status === 201, "status " + response.status));
+    client.global.set("fullArticleId", response.body.id);
+%}
+
+### A section with articles is not deleted
+DELETE {{baseUrl}}/api/sections/{{fullId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("409 with the article count", () => {
+        client.assert(response.status === 409, "status " + response.status);
+        client.assert(response.body.errors[0].field === null, JSON.stringify(response.body));
+        client.assert(response.body.errors[0].message.includes("1 article(s)"), JSON.stringify(response.body));
+    });
+%}
+
+### Clean up: delete the article …
+DELETE {{baseUrl}}/api/articles/{{fullArticleId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("204", () => client.assert(response.status === 204, "status " + response.status));
+%}
+
+### … then the section can go
+DELETE {{baseUrl}}/api/sections/{{fullId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("204", () => client.assert(response.status === 204, "status " + response.status));
+%}

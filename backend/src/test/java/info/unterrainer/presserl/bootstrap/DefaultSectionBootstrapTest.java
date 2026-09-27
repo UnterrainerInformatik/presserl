@@ -38,36 +38,19 @@ class DefaultSectionBootstrapTest {
     }
 
     @Test
-    void filesSectionlessArticlesUnderANewDefaultSection() throws Throwable {
-        execute("INSERT INTO section (name, slug, color, position, created_at) VALUES ('Sport', 'sport', 'red', 0, now())");
-        insertArticle();
-        insertArticle();
-
-        assertThat(bootstrap.run()).isEqualTo(2);
-
-        assertThat(strings("SELECT name FROM section ORDER BY position")).containsExactly("Sport", "General");
-        assertThat(strings("SELECT s.name FROM article a LEFT JOIN section s ON s.id = a.section_id"))
-                .containsExactly("General", "General");
-    }
-
-    @Test
     void createsTheDefaultSectionWhenNoSectionExists() throws Throwable {
-        assertThat(bootstrap.run()).isZero();
+        assertThat(bootstrap.run()).isTrue();
         assertThat(strings("SELECT name FROM section")).containsExactly("General");
     }
 
     @Test
-    void doesNothingWhenSectionsExistAndEveryArticleHasOne() throws Throwable {
+    void createsNothingWhenSectionsExist() throws Throwable {
         execute("INSERT INTO section (name, slug, color, position, created_at) VALUES ('Sport', 'sport', 'red', 0, now())");
+        execute("INSERT INTO section (name, slug, color, position, created_at) VALUES ('Kultur', 'kultur', 'blue', 1, now())");
 
-        assertThat(bootstrap.run()).isEqualTo(-1);
+        assertThat(bootstrap.run()).isFalse();
 
-        assertThat(strings("SELECT name FROM section")).containsExactly("Sport");
-    }
-
-    private void insertArticle() {
-        execute("INSERT INTO article (status, author_sub, author_username, author_display_name, created_at, updated_at) "
-                + "VALUES ('DRAFT', 'sub-old', 'old', 'Old', now(), now())");
+        assertThat(strings("SELECT name FROM section ORDER BY position")).containsExactly("Sport", "Kultur");
     }
 
     private void execute(String sql) {

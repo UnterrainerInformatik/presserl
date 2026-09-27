@@ -9,13 +9,16 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.hibernate.JDBCException;
 import org.hibernate.reactive.mutiny.Mutiny;
+import org.jboss.logging.Logger;
 
 import info.unterrainer.presserl.text.Slugs;
 import io.quarkus.hibernate.reactive.panache.Panache;
 import io.quarkus.hibernate.reactive.panache.common.WithSession;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Uni;
+import io.vertx.pgclient.PgException;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.NotFoundException;
@@ -32,6 +35,8 @@ public class SectionService {
     static final String SLUG_FALLBACK = "section";
     static final String NAME_INDEX = "section_name_lower_idx";
 
+    private static final Logger LOG = Logger.getLogger(SectionService.class);
+    private static final String FOREIGN_KEY_VIOLATION = "23503";
     private static final String BY_POSITION = "order by position, id";
 
     @Inject
@@ -126,6 +131,40 @@ public class SectionService {
         });
     }
 
+    /**
+     * Deletes an empty section together with its section roles and sets the positions of the
+     * remaining sections to {@code 0, 1, 2, …} in their previous order. An article filed into the
+     * section concurrently is caught by the foreign key and answered like a non-empty section.
+     *
+     * @param by the acting user's name, for the log
+     * @throws NotFoundException when there is no section {@code id}
+     * @throws SectionException  {@code 409} while articles belong to the section; nothing is
+     *                           changed then
+     */
+    @WithTransaction
+    public Uni<Void> delete(long id, String by) {
+        return find(id)
+                .call(section -> Panache.getSession().flatMap(session -> session.createSelectionQuery(
+                        "select count(a) from ArticleEntity a where a.sectionId = :id", Long.class)
+                        .setParameter("id", id)
+                        .getSingleResult())
+                        .invoke(articles -> {
+                            if (articles > 0) {
+                                throw notEmpty(articles + " article(s)");
+                            }
+                        }))
+                .call(section -> section.delete())
+                .call(section -> SectionEntity.<SectionEntity>list("id <> ?1 " + BY_POSITION, id).invoke(rest -> {
+                    for (int position = 0; position < rest.size(); position++) {
+                        rest.get(position).position = position;
+                    }
+                }))
+                .call(Panache::flush)
+                .onFailure(SectionService::isForeignKeyViolation).transform(e -> notEmpty("articles"))
+                .invoke(section -> LOG.infof("Section '%s' (id %d) deleted by '%s'", section.name, section.id, by))
+                .replaceWithVoid();
+    }
+
     private static Uni<SectionEntity> find(long id) {
         return SectionEntity.<SectionEntity>findById(id)
                 .onItem().ifNull().failWith(NotFoundException::new);
@@ -173,6 +212,21 @@ public class SectionService {
             }
             return null;
         });
+    }
+
+    private static SectionException notEmpty(String articles) {
+        return SectionException.conflict(null, "section still contains " + articles
+                + "; move them to another section first");
+    }
+
+    private static boolean isForeignKeyViolation(Throwable e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof PgException pg && FOREIGN_KEY_VIOLATION.equals(pg.getSqlState())
+                    || cause instanceof JDBCException jdbc && FOREIGN_KEY_VIOLATION.equals(jdbc.getSQLState())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static SectionException nameTaken() {

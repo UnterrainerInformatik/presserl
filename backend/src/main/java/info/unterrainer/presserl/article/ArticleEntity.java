@@ -39,10 +39,9 @@ public class ArticleEntity extends PanacheEntityBase {
     public String authorDisplayName;
 
     /**
-     * The section the article belongs to; set on every create and never cleared (the column is
-     * nullable only for rows from before sections, filed by the default-section bootstrap).
+     * The section the article belongs to; set on every create and never cleared.
      */
-    @Column(name = "section_id")
+    @Column(name = "section_id", nullable = false)
     public Long sectionId;
 
     /**

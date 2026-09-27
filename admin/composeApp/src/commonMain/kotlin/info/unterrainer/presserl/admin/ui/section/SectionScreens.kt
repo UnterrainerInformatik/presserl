@@ -50,6 +50,9 @@ import info.unterrainer.presserl.admin.resources.add
 import info.unterrainer.presserl.admin.resources.add_member
 import info.unterrainer.presserl.admin.resources.cancel
 import info.unterrainer.presserl.admin.resources.choose_account
+import info.unterrainer.presserl.admin.resources.delete
+import info.unterrainer.presserl.admin.resources.delete_section_text
+import info.unterrainer.presserl.admin.resources.delete_section_title
 import info.unterrainer.presserl.admin.resources.edit
 import info.unterrainer.presserl.admin.resources.edit_section
 import info.unterrainer.presserl.admin.resources.field_color
@@ -65,6 +68,7 @@ import info.unterrainer.presserl.admin.resources.remove_member_text
 import info.unterrainer.presserl.admin.resources.remove_member_title
 import info.unterrainer.presserl.admin.resources.save
 import info.unterrainer.presserl.admin.resources.section_members
+import info.unterrainer.presserl.admin.resources.section_not_empty
 import info.unterrainer.presserl.admin.ui.BackButton
 import info.unterrainer.presserl.admin.ui.Banner
 import info.unterrainer.presserl.admin.ui.LoadFailed
@@ -75,8 +79,8 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * The sections by position. With `canManage` it offers "New section", "Edit" and moving; a section
- * whose `assignableRoles` is not empty opens its members.
+ * The sections by position. With `canManage` it offers "New section", "Edit", "Delete" (after an
+ * in-app confirmation) and moving; a section whose `assignableRoles` is not empty opens its members.
  */
 @Composable
 fun SectionListScreen(
@@ -90,7 +94,9 @@ fun SectionListScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var moveError by remember { mutableStateOf<String?>(null) }
     var loads by remember { mutableStateOf(0) }
-    var moving by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf<SectionDto?>(null) }
+    var deleted by remember { mutableStateOf<Pair<SectionDto, SectionDeleteResult>?>(null) }
 
     LaunchedEffect(loads) {
         error = null
@@ -101,12 +107,24 @@ fun SectionListScreen(
         val sections = list?.sections ?: return
         val ids = sections.map { it.id }.toMutableList()
         ids.add(index + delta, ids.removeAt(index))
-        moving = true
+        busy = true
         moveError = null
+        deleted = null
         scope.launch {
             val reordered = attempt({ moveError = it }) { api.reorderSections(ids) }
-            moving = false
+            busy = false
             if (reordered != null) list = reordered else loads++
+        }
+    }
+
+    fun delete(section: SectionDto) {
+        busy = true
+        moveError = null
+        deleted = null
+        scope.launch {
+            deleted = section to deleteSection { api.deleteSection(section.id) }
+            busy = false
+            loads++
         }
     }
 
@@ -120,6 +138,13 @@ fun SectionListScreen(
             }
         }
         moveError?.let { Banner(it) }
+        deleted?.let { (section, result) ->
+            when (result) {
+                SectionDeleteResult.Deleted -> {}
+                SectionDeleteResult.NotEmpty -> Banner(stringResource(Res.string.section_not_empty, section.name))
+                is SectionDeleteResult.Failed -> Banner(result.message)
+            }
+        }
         when {
             error != null -> LoadFailed(error!!, onReload = { loads++ })
             current == null -> Text(stringResource(Res.string.loading))
@@ -131,15 +156,31 @@ fun SectionListScreen(
                         canManage = current.canManage,
                         first = index == 0,
                         last = index == current.sections.lastIndex,
-                        enabled = !moving,
+                        enabled = !busy,
                         onOpen = { onOpen(section) }.takeIf { section.assignableRoles.isNotEmpty() },
                         onEdit = { onEdit(section) },
+                        onDelete = { confirmDelete = section },
                         onMove = { delta -> move(index, delta) },
                     )
                     HorizontalDivider()
                 }
             }
         }
+    }
+
+    confirmDelete?.let { section ->
+        AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text(stringResource(Res.string.delete_section_title)) },
+            text = { Text(stringResource(Res.string.delete_section_text, section.name)) },
+            confirmButton = {
+                Button(onClick = {
+                    confirmDelete = null
+                    delete(section)
+                }) { Text(stringResource(Res.string.delete)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text(stringResource(Res.string.cancel)) } },
+        )
     }
 }
 
@@ -152,6 +193,7 @@ private fun SectionRow(
     enabled: Boolean,
     onOpen: (() -> Unit)?,
     onEdit: () -> Unit,
+    onDelete: () -> Unit,
     onMove: (delta: Int) -> Unit,
 ) {
     Row(
@@ -172,6 +214,7 @@ private fun SectionRow(
             TextButton(onClick = { onMove(-1) }, enabled = enabled && !first) { Text("↑ " + stringResource(Res.string.move_up)) }
             TextButton(onClick = { onMove(1) }, enabled = enabled && !last) { Text("↓ " + stringResource(Res.string.move_down)) }
             OutlinedButton(onClick = onEdit) { Text(stringResource(Res.string.edit)) }
+            OutlinedButton(onClick = onDelete, enabled = enabled) { Text(stringResource(Res.string.delete)) }
         }
     }
 }

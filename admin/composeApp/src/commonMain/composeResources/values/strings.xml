@@ -109,6 +109,9 @@
     <string name="edit_section">Ressort bearbeiten</string>
     <string name="edit">Bearbeiten</string>
     <string name="no_sections">Hier gibt es noch keine Ressorts.</string>
+    <string name="delete_section_title">Ressort löschen?</string>
+    <string name="delete_section_text">Das Ressort %1$s wird mit allen Rollen darin endgültig gelöscht.</string>
+    <string name="section_not_empty">Das Ressort %1$s enthält noch Artikel. Verschiebe sie zuerst in ein anderes Ressort.</string>
     <string name="field_section_name">Name</string>
     <string name="field_color">Farbe</string>
     <string name="save">Speichern</string>

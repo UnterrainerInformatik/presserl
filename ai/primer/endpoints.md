@@ -95,7 +95,7 @@ The logged-in user as seen by the backend.
     | Action | Listed when the user holds | Stands for |
     |---|---|---|
     | `WRITE_ARTICLES` | `PUBLISHER`, `EDITOR_IN_CHIEF`, or a section role in any section | the article endpoints |
-    | `MANAGE_SECTIONS` | `PUBLISHER` or `EDITOR_IN_CHIEF` | creating, changing and reordering sections |
+    | `MANAGE_SECTIONS` | `PUBLISHER` or `EDITOR_IN_CHIEF` | creating, changing, reordering and deleting sections |
     | `ASSIGN_SECTION_ROLES` | `PUBLISHER`, `EDITOR_IN_CHIEF`, or `SECTION_EDITOR` in any section | section members of at least one section |
     | `ADMINISTER_ACCOUNTS` | `PUBLISHER`, `EDITOR_IN_CHIEF`, or `SECTION_EDITOR` in any section | listing and creating accounts |
 - **Errors:** `401` (empty body) without a valid token.
@@ -121,8 +121,8 @@ an unknown id.
 `ArticleSummaryDto`). The section belongs to the article, not to a revision: moving an article
 (`sectionId` on `PUT`) creates no revision and applies to the published article too. **Default
 section:** the section named by the setting `section.default` (ignoring case, code default
-`General`). At startup the server creates it when no section exists or articles without a section
-exist, and files those articles under it. `POST` without `sectionId` files the article under the
+`General`). At startup the server creates it when no section exists at all; the database rejects
+articles without a section. `POST` without `sectionId` files the article under the
 default section when it exists and the user may write there, otherwise under the first section by
 position the user may write in; when no section exists at all, the default section is created.
 
@@ -565,7 +565,7 @@ error body (`{"errors": [{"field": …, "message": …}]}`), a `400` lists every
 | Endpoint | Who |
 |---|---|
 | `GET /api/sections` | every authenticated user |
-| `POST`, `PUT /api/sections/{id}`, `PUT /api/sections/order` | `PUBLISHER`, `EDITOR_IN_CHIEF` |
+| `POST`, `PUT`/`DELETE /api/sections/{id}`, `PUT /api/sections/order` | `PUBLISHER`, `EDITOR_IN_CHIEF` |
 | `GET /api/sections/{id}/members`, `PUT`/`DELETE …/members/{accountId}` | whoever may assign section roles in that section |
 
 **Delegation of section roles** (the server decides, `assignableRoles` reports it):
@@ -604,7 +604,7 @@ All sections ordered by `position` (ties by `id`).
     "sections": [ { "id": 1, "name": "Sport", "slug": "sport", "color": "green", "position": 0,
                     "assignableRoles": ["SECTION_EDITOR", "REPORTER"], "canWrite": true } ] }
   ```
-  `canManage`: whether the user may create, change and reorder sections (`PUBLISHER`,
+  `canManage`: whether the user may create, change, reorder and delete sections (`PUBLISHER`,
   `EDITOR_IN_CHIEF`).
 - **Errors:** none specific.
 - **Side effects:** none.
@@ -646,6 +646,21 @@ Sets the positions `0, 1, 2, …` in the given order.
 - **Errors:** `400` field `ids` when an id is missing, unknown or repeated (nothing changed),
   `403`.
 - **Side effects:** all positions rewritten in one transaction.
+
+## `DELETE /api/sections/{id}`
+
+Deletes an empty section together with every section role held in it.
+
+- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`
+- **Response `204`**, empty body.
+- **Errors:** `403`, `404` unknown section, `409` while at least one article (any status) belongs
+  to the section — field `null`, e.g. `"section still contains 3 article(s); move them to another
+  section first"`; nothing is changed. Move the articles first (`PUT /api/articles/{id}` with
+  `sectionId`).
+- **Side effects:** section and its section roles deleted; the remaining sections' positions set
+  to `0, 1, 2, …` in their previous order; logged at INFO with the section and the acting user.
+  Deleting the only section is allowed; the next `POST /api/articles` (or restart) recreates the
+  default section.
 
 ## `GET /api/sections/{id}/members`
 

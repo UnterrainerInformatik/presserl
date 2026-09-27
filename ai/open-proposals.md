@@ -5,14 +5,6 @@ change — never tick it off.
 
 Milestones from `docs/vision.md`; details in `docs/`.
 
-## M2 — Accounts & sections
-Account creation (`accounts-create`), sections with section roles
-(`sections-and-section-roles`), articles in sections (`articles-in-sections`), password reset
-with lock/unlock (`accounts-reset-and-lock`) and editing the roles of existing accounts
-(`accounts-edit-roles`) are done. Remaining: deleting sections (what happens to their articles);
-`article.section_id NOT NULL` (correction migration) once all installations ran the
-default-section bootstrap.
-
 ## M3 — Approval chain
 Chain section editor → editor-in-chief → publisher with skip rules (own role, trust, section
 without section editor), trust switches per person and level, `SUBMITTED` with pending

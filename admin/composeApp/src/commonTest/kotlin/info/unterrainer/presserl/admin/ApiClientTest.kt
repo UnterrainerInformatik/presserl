@@ -301,6 +301,15 @@ class ApiClientTest {
     }
 
     @Test
+    fun deleteSection() = runTest {
+        api.deleteSection(7)
+        assertEquals(
+            listOf(Recorded(HttpMethod.Delete, "https://news.example.org/api/sections/7", "Bearer token-123", null)),
+            requests,
+        )
+    }
+
+    @Test
     fun updateAndReorderSections() = runTest {
         api.updateSection(1, SectionRequest("Sportnews", "blue"))
         api.reorderSections(listOf(2, 1))

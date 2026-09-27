@@ -9,6 +9,10 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasItems;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Handler;
@@ -333,6 +337,89 @@ class SectionResourceTest {
         as(reader).body("{\"ids\": [%d]}".formatted(sport)).put("/api/sections/order").then().statusCode(403);
     }
 
+    // --- delete -----------------------------------------------------------------------------
+
+    @Test
+    void editorInChiefDeletesAnEmptySectionAndPositionsAreCompacted() {
+        create(publisher, "Sport");
+        long kultur = create(publisher, "Kultur");
+        create(publisher, "Wetter");
+
+        as(chief).delete("/api/sections/" + kultur).then().statusCode(204).body(emptyOrNullString());
+
+        as(publisher).get("/api/sections").then().statusCode(200)
+                .body("sections.name", contains("Sport", "Wetter"))
+                .body("sections.position", contains(0, 1));
+    }
+
+    @Test
+    void sectionWithADraftIsNotDeleted() {
+        long sport = create(publisher, "Sport");
+        long draft = as(publisher).body("{\"sectionId\": %d}".formatted(sport)).post("/api/articles").then()
+                .statusCode(201).extract().jsonPath().getLong("id");
+
+        as(publisher).delete("/api/sections/" + sport).then().statusCode(409)
+                .body("errors.field", contains((Object) null))
+                .body("errors[0].message", equalTo(
+                        "section still contains 1 article(s); move them to another section first"));
+
+        as(publisher).get("/api/sections").then().body("sections.name", contains("Sport"));
+        as(publisher).get("/api/articles/" + draft).then().statusCode(200)
+                .body("status", equalTo("DRAFT"))
+                .body("section.id", equalTo((int) sport));
+    }
+
+    @Test
+    void sectionRolesGoWithTheSection() {
+        long kultur = create(publisher, "Kultur");
+        assign(publisher, kultur, "reader", "REPORTER").statusCode(200);
+
+        as(publisher).delete("/api/sections/" + kultur).then().statusCode(204);
+
+        assertThat(sectionRoleCount(accountId("reader"))).isZero();
+    }
+
+    @Test
+    void sectionEditorAndReaderMayNotDelete() {
+        long sport = create(publisher, "Sport");
+        assign(publisher, sport, "nogroups", "SECTION_EDITOR").statusCode(200);
+
+        as(nogroups).delete("/api/sections/" + sport).then().statusCode(403).body(emptyOrNullString());
+        as(reader).delete("/api/sections/" + sport).then().statusCode(403).body(emptyOrNullString());
+
+        as(publisher).get("/api/sections").then().body("sections.name", contains("Sport"));
+    }
+
+    @Test
+    void deleteOfUnknownSection() {
+        as(publisher).delete("/api/sections/999999").then().statusCode(404).body(emptyOrNullString());
+    }
+
+    @Test
+    void theOnlySectionMayBeDeleted() {
+        long sport = create(publisher, "Sport");
+
+        as(publisher).delete("/api/sections/" + sport).then().statusCode(204);
+
+        as(publisher).get("/api/sections").then().body("sections", empty());
+    }
+
+    @Test
+    void deletionIsLoggedWithTheActor() {
+        List<String> messages = new ArrayList<>();
+        Handler handler = collecting(messages);
+        long wetter = create(publisher, "Wetter");
+        java.util.logging.Logger logger = java.util.logging.Logger.getLogger(SectionService.class.getName());
+        logger.addHandler(handler);
+        try {
+            as(chief).delete("/api/sections/" + wetter).then().statusCode(204);
+        } finally {
+            logger.removeHandler(handler);
+        }
+
+        assertThat(messages).anySatisfy(message -> assertThat(message).contains("'Wetter'", "deleted", "'chief'"));
+    }
+
     // --- members ----------------------------------------------------------------------------
 
     @Test
@@ -452,20 +539,7 @@ class SectionResourceTest {
     @Test
     void membershipChangesAreLoggedWithTheActor() {
         List<String> messages = new ArrayList<>();
-        Handler handler = new Handler() {
-            @Override
-            public void publish(LogRecord record) {
-                messages.add(record instanceof ExtLogRecord ext ? ext.getFormattedMessage() : record.getMessage());
-            }
-
-            @Override
-            public void flush() {
-            }
-
-            @Override
-            public void close() {
-            }
-        };
+        Handler handler = collecting(messages);
         long sport = create(publisher, "Sport");
         java.util.logging.Logger logger = java.util.logging.Logger.getLogger(SectionMembers.class.getName());
         logger.addHandler(handler);
@@ -490,5 +564,36 @@ class SectionResourceTest {
         as(reader).get("/api/sections").then().body("sections.assignableRoles", everyItem(empty()));
         JsonPath json = as(publisher).get("/api/sections").then().extract().jsonPath();
         assertThat(json.getList("sections.slug", String.class)).containsExactly("sport", "kultur");
+    }
+
+    private static Handler collecting(List<String> messages) {
+        return new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                messages.add(record instanceof ExtLogRecord ext ? ext.getFormattedMessage() : record.getMessage());
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+    }
+
+    private int sectionRoleCount(String accountId) {
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(
+                        "SELECT count(*) FROM section_role WHERE account_id = ?")) {
+            statement.setString(1, accountId);
+            try (ResultSet result = statement.executeQuery()) {
+                result.next();
+                return result.getInt(1);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

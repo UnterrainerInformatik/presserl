@@ -109,6 +109,9 @@
     <string name="edit_section">Edit section</string>
     <string name="edit">Edit</string>
     <string name="no_sections">There are no sections yet.</string>
+    <string name="delete_section_title">Delete section?</string>
+    <string name="delete_section_text">The section %1$s will be deleted for good, together with all roles in it.</string>
+    <string name="section_not_empty">The section %1$s still contains articles. Move them to another section first.</string>
     <string name="field_section_name">Name</string>
     <string name="field_color">Colour</string>
     <string name="save">Save</string>

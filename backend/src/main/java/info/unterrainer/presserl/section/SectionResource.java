@@ -24,9 +24,9 @@ import jakarta.ws.rs.core.MediaType;
 
 /**
  * Section endpoints. Every authenticated user may list sections; publishers and editors-in-chief
- * create, change and reorder them; members are managed by whoever may assign section roles in the
- * section ({@link SectionDelegation}). Refused access is answered with {@code 403} and an empty
- * body.
+ * create, change, reorder and delete them; members are managed by whoever may assign section roles
+ * in the section ({@link SectionDelegation}). Refused access is answered with {@code 403} and an
+ * empty body.
  */
 @Path("/api/sections")
 @Authenticated
@@ -74,6 +74,12 @@ public class SectionResource {
     public Uni<SectionListDto> reorder(JsonNode json) {
         return manager().flatMap(newsroom -> service.reorder(SectionRequestValidator.order(json))
                 .map(sections -> SectionListDto.of(sections, newsroom)));
+    }
+
+    @DELETE
+    @Path("/{id}")
+    public Uni<Void> delete(@PathParam("id") long id) {
+        return manager().flatMap(newsroom -> service.delete(id, newsroom.user().username()));
     }
 
     @GET

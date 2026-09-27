@@ -149,6 +149,11 @@ class ApiClient(
             setBody(SectionOrder(ids))
         }.body()
 
+    /** Deletes an empty section with its roles; `409` while articles belong to it. */
+    suspend fun deleteSection(id: Long) {
+        http.delete("$baseUrl/api/sections/$id") { bearerAuth(accessToken()) }
+    }
+
     suspend fun members(sectionId: Long): MemberListDto =
         http.get("$baseUrl/api/sections/$sectionId/members") { bearerAuth(accessToken()) }.body()
 

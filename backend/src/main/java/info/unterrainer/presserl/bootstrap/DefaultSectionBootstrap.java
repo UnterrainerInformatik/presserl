@@ -2,7 +2,6 @@ package info.unterrainer.presserl.bootstrap;
 
 import org.jboss.logging.Logger;
 
-import info.unterrainer.presserl.article.ArticleEntity;
 import info.unterrainer.presserl.newspaper.NewspaperConfig;
 import info.unterrainer.presserl.section.SectionEntity;
 import info.unterrainer.presserl.section.SectionService;
@@ -15,9 +14,9 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
 /**
- * Makes sure every article has a section: at startup (after Flyway) it ensures the default section
- * ({@code section.default}) when no section exists at all or articles without a section exist, and
- * files those articles under it. A failure fails startup; without a database nothing works anyway.
+ * Creates the default section ({@code section.default}) at startup (after Flyway) when no section
+ * exists at all. Articles always have a section (the database enforces it). A failure fails
+ * startup; without a database nothing works anyway.
  */
 @Singleton
 public class DefaultSectionBootstrap {
@@ -37,22 +36,19 @@ public class DefaultSectionBootstrap {
     /**
      * Runs the bootstrap on a Vert.x context and waits for it.
      *
-     * @return the number of articles filed under the default section; {@code -1} when nothing had
-     *         to be done
+     * @return {@code true} when the default section was created (or found by name after a race),
+     *         {@code false} when sections existed and nothing was done
      */
-    public int run() throws Throwable {
+    public boolean run() throws Throwable {
         return VertxContextSupport.subscribeAndAwait(this::ensure);
     }
 
-    private Uni<Integer> ensure() {
+    private Uni<Boolean> ensure() {
         String name = config.section().defaultName();
-        return Panache.withSession(() -> SectionEntity.count()
-                .flatMap(sectionCount -> ArticleEntity.count("sectionId is null")
-                        .map(unfiled -> sectionCount == 0 || unfiled > 0)))
-                .flatMap(needed -> !needed ? Uni.createFrom().item(-1)
-                        : sections.ensureSection(name).flatMap(section -> Panache.withTransaction(
-                                () -> ArticleEntity.update("sectionId = ?1 where sectionId is null", section.id)))
-                                .invoke(filed -> LOG.infof("Default section '%s' ensured; %d article(s) filed under it",
-                                        name, filed)));
+        return Panache.withSession(() -> SectionEntity.count())
+                .flatMap(sectionCount -> sectionCount > 0 ? Uni.createFrom().item(false)
+                        : sections.ensureSection(name)
+                                .invoke(section -> LOG.infof("Default section '%s' created", section.name))
+                                .replaceWith(true));
     }
 }
