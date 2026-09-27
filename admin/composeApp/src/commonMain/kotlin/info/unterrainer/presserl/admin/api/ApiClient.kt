@@ -104,6 +104,14 @@ class ApiClient(
             setBody(request)
         }.body()
 
+    /** Replaces the account's newspaper and section roles with the complete [request]; answers the account as listed. */
+    suspend fun editRoles(accountId: String, request: EditRolesRequest): AccountDto =
+        http.put("$baseUrl/api/accounts/$accountId/roles") {
+            bearerAuth(accessToken())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
     /** Sets a new generated password and ends the account's sessions; the response carries the password once. */
     suspend fun resetPassword(accountId: String): CreatedAccountDto =
         http.post("$baseUrl/api/accounts/$accountId/password-reset") { bearerAuth(accessToken()) }.body()

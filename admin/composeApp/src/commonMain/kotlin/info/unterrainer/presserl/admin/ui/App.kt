@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import info.unterrainer.presserl.admin.api.ApiClient
+import info.unterrainer.presserl.admin.api.AccountDto
 import info.unterrainer.presserl.admin.api.CreatedAccountDto
 import info.unterrainer.presserl.admin.api.MeDto
 import info.unterrainer.presserl.admin.api.NewspaperDto
@@ -46,6 +47,7 @@ import info.unterrainer.presserl.admin.resources.something_went_wrong
 import info.unterrainer.presserl.admin.resources.try_again
 import info.unterrainer.presserl.admin.ui.account.AccountListScreen
 import info.unterrainer.presserl.admin.ui.account.AccountSlipScreen
+import info.unterrainer.presserl.admin.ui.account.EditRolesScreen
 import info.unterrainer.presserl.admin.ui.account.NewAccountScreen
 import info.unterrainer.presserl.admin.ui.account.SlipPrinter
 import info.unterrainer.presserl.admin.ui.account.canAdministerAccounts
@@ -78,6 +80,7 @@ sealed interface Route {
     data class SectionMembers(val section: SectionDto) : Route
     data object Accounts : Route
     data class NewAccount(val assignableRoles: List<String>, val sections: List<SectionDto>) : Route
+    data class EditRoles(val account: AccountDto, val assignableRoles: List<String>, val sections: List<SectionDto>) : Route
     /** Holds the generated password; leaving the slip drops it. */
     data class AccountSlip(val created: CreatedAccountDto) : Route
 }
@@ -184,6 +187,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                     Route.Accounts -> AccountListScreen(
                         api,
                         onNew = { roles, sections -> push(Route.NewAccount(roles, sections)) },
+                        onEditRoles = { account, roles, sections -> push(Route.EditRoles(account, roles, sections)) },
                         onReset = { push(Route.AccountSlip(it)) },
                     )
                     is Route.NewAccount -> key(route) {
@@ -193,6 +197,16 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                             route.sections,
                             onBack = back,
                             onCreated = { stack = stack.dropLast(1) + Route.AccountSlip(it) },
+                        )
+                    }
+                    is Route.EditRoles -> key(route) {
+                        EditRolesScreen(
+                            api,
+                            route.account,
+                            route.assignableRoles,
+                            route.sections,
+                            onBack = back,
+                            onSaved = { stack = listOf(Route.Accounts) },
                         )
                     }
                     is Route.AccountSlip -> AccountSlipScreen(

@@ -73,6 +73,7 @@
     <string name="nav_accounts">Konten</string>
     <string name="new_account">Neues Konto</string>
     <string name="account_locked">gesperrt</string>
+    <string name="action_edit_roles">Rollen bearbeiten</string>
     <string name="action_reset_password">Passwort zurücksetzen</string>
     <string name="action_lock">Sperren</string>
     <string name="action_unlock">Entsperren</string>
@@ -101,6 +102,8 @@
     <string name="role_reporter">Redakteur</string>
     <string name="section_role_none">keine</string>
     <string name="field_section_roles">Rollen in Ressorts</string>
+    <string name="edit_roles_title">Rollen von „%1$s“</string>
+    <string name="roles_read_only_hint">Ausgegraute Rollen kannst du nicht ändern; sie bleiben erhalten.</string>
     <string name="new_section">Neues Ressort</string>
     <string name="edit_section">Ressort bearbeiten</string>
     <string name="edit">Bearbeiten</string>

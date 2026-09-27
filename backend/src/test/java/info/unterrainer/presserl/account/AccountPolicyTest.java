@@ -1,5 +1,6 @@
 package info.unterrainer.presserl.account;
 
+import static info.unterrainer.presserl.account.AccountAction.EDIT_ROLES;
 import static info.unterrainer.presserl.account.AccountAction.LOCK;
 import static info.unterrainer.presserl.account.AccountAction.RESET_PASSWORD;
 import static info.unterrainer.presserl.account.AccountAction.UNLOCK;
@@ -76,17 +77,19 @@ class AccountPolicyTest {
     }
 
     @Test
-    void publisherResetsAndLocksEveryOtherAccount() {
+    void publisherEditsResetsAndLocksEveryOtherAccount() {
         for (AccountDto target : List.of(OTHER_CHIEF, PLAIN_READER, ROLELESS, SPORT_REPORTER, SPORT_SECTION_EDITOR)) {
-            assertThat(AccountPolicy.allowedActions(PUBLISHER, target)).containsExactly(RESET_PASSWORD, LOCK);
+            assertThat(AccountPolicy.allowedActions(PUBLISHER, target))
+                    .containsExactly(EDIT_ROLES, RESET_PASSWORD, LOCK);
         }
     }
 
     @Test
     void lockForEnabledUnlockForDisabled() {
-        assertThat(AccountPolicy.allowedActions(PUBLISHER, PLAIN_READER)).containsExactly(RESET_PASSWORD, LOCK);
+        assertThat(AccountPolicy.allowedActions(PUBLISHER, PLAIN_READER))
+                .containsExactly(EDIT_ROLES, RESET_PASSWORD, LOCK);
         assertThat(AccountPolicy.allowedActions(PUBLISHER, PLAIN_READER.withEnabled(false)))
-                .containsExactly(RESET_PASSWORD, UNLOCK);
+                .containsExactly(EDIT_ROLES, RESET_PASSWORD, UNLOCK);
     }
 
     @Test
@@ -99,20 +102,22 @@ class AccountPolicyTest {
     }
 
     @Test
-    void editorInChiefResetsBelowOwnRankButNeverLocks() {
+    void editorInChiefEditsAndResetsBelowOwnRankButNeverLocks() {
         for (AccountDto target : List.of(PLAIN_READER, ROLELESS, SPORT_REPORTER, SPORT_SECTION_EDITOR)) {
-            assertThat(AccountPolicy.allowedActions(CHIEF, target)).containsExactly(RESET_PASSWORD);
-            assertThat(AccountPolicy.allowedActions(CHIEF, target.withEnabled(false))).containsExactly(RESET_PASSWORD);
+            assertThat(AccountPolicy.allowedActions(CHIEF, target)).containsExactly(EDIT_ROLES, RESET_PASSWORD);
+            assertThat(AccountPolicy.allowedActions(CHIEF, target.withEnabled(false)))
+                    .containsExactly(EDIT_ROLES, RESET_PASSWORD);
         }
         assertThat(AccountPolicy.allowedActions(CHIEF, OTHER_CHIEF)).isEmpty();
         assertThat(AccountPolicy.allowedActions(CHIEF, CHIEF_REPORTING_IN_SPORT)).isEmpty();
     }
 
     @Test
-    void sectionEditorResetsReportersOfOwnSectionsOnly() {
-        assertThat(AccountPolicy.allowedActions(SECTION_EDITOR, SPORT_REPORTER)).containsExactly(RESET_PASSWORD);
+    void sectionEditorEditsAndResetsReportersOfOwnSectionsOnly() {
+        assertThat(AccountPolicy.allowedActions(SECTION_EDITOR, SPORT_REPORTER))
+                .containsExactly(EDIT_ROLES, RESET_PASSWORD);
         assertThat(AccountPolicy.allowedActions(SECTION_EDITOR, SPORT_REPORTER.withEnabled(false)))
-                .containsExactly(RESET_PASSWORD);
+                .containsExactly(EDIT_ROLES, RESET_PASSWORD);
     }
 
     @Test
@@ -142,5 +147,40 @@ class AccountPolicyTest {
                 assertThat(AccountPolicy.allowedActions(requester, target.withEnabled(false))).isEmpty();
             }
         }
+    }
+
+    @Test
+    void editRolesFollowsThePasswordResetRule() {
+        List<Newsroom> requesters = List.of(PUBLISHER, CHIEF, SECTION_EDITOR, REPORTER, READER, NOBODY);
+        List<AccountDto> targets = List.of(OTHER_PUBLISHER, OTHER_CHIEF, PLAIN_READER, ROLELESS, SPORT_REPORTER,
+                SPORT_AND_KULTUR_REPORTER, KULTUR_REPORTER, SPORT_SECTION_EDITOR, CHIEF_REPORTING_IN_SPORT);
+        for (Newsroom requester : requesters) {
+            for (AccountDto target : targets) {
+                assertThat(AccountPolicy.permitted(EDIT_ROLES, requester, target))
+                        .as("%s on %s", requester.user().sub(), target.id())
+                        .isEqualTo(AccountPolicy.permitted(RESET_PASSWORD, requester, target));
+            }
+        }
+    }
+
+    @Test
+    void editRolesOnLockedAccounts() {
+        assertThat(AccountPolicy.permitted(EDIT_ROLES, PUBLISHER, PLAIN_READER.withEnabled(false))).isTrue();
+        assertThat(AccountPolicy.permitted(EDIT_ROLES, CHIEF, PLAIN_READER.withEnabled(false))).isTrue();
+        assertThat(AccountPolicy.permitted(EDIT_ROLES, SECTION_EDITOR, SPORT_REPORTER.withEnabled(false))).isTrue();
+    }
+
+    @Test
+    void editRolesNeverOnOwnOrPublisherAccount() {
+        for (Newsroom requester : List.of(PUBLISHER, CHIEF, SECTION_EDITOR)) {
+            assertThat(AccountPolicy.permitted(EDIT_ROLES, requester, self(requester))).isFalse();
+            assertThat(AccountPolicy.permitted(EDIT_ROLES, requester, OTHER_PUBLISHER)).isFalse();
+        }
+    }
+
+    @Test
+    void editRolesComesFirst() {
+        assertThat(AccountAction.values()).containsExactly(EDIT_ROLES, RESET_PASSWORD, LOCK, UNLOCK);
+        assertThat(AccountPolicy.allowedActions(CHIEF, PLAIN_READER)).containsExactly(EDIT_ROLES, RESET_PASSWORD);
     }
 }

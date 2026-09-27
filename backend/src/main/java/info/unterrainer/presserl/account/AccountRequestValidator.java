@@ -17,12 +17,13 @@ import info.unterrainer.presserl.section.SectionRole;
 import info.unterrainer.presserl.section.SectionRoleDto;
 
 /**
- * Reads a {@code POST /api/accounts} body strictly and reports all violations together: names
- * (trimmed, at most {@value #NAME_MAX} characters, no control characters, first name required),
- * username (lower-case words joined by {@code -}, {@value UsernameDeriver#MIN_LENGTH} to
- * {@value UsernameDeriver#MAX_LENGTH} characters, not a service-account name), roles (known roles;
- * duplicates collapsed), section roles (a list of {@code sectionId} and a known {@code role}, each
- * section once), at least one role of either kind and no unknown fields.
+ * Reads a {@code POST /api/accounts} or {@code PUT /api/accounts/{id}/roles} body strictly and
+ * reports all violations together: names (trimmed, at most {@value #NAME_MAX} characters, no
+ * control characters, first name required), username (lower-case words joined by {@code -},
+ * {@value UsernameDeriver#MIN_LENGTH} to {@value UsernameDeriver#MAX_LENGTH} characters, not a
+ * service-account name), roles (known roles; duplicates collapsed), section roles (a list of
+ * {@code sectionId} and a known {@code role}, each section once), at least one role of either kind
+ * and no unknown fields.
  */
 public final class AccountRequestValidator {
 
@@ -30,30 +31,67 @@ public final class AccountRequestValidator {
     static final Pattern USERNAME = Pattern.compile("^[a-z0-9]+(-[a-z0-9]+)*$");
     static final String SERVICE_ACCOUNT_PREFIX = "service-account-";
     private static final Set<String> FIELDS = Set.of("firstName", "lastName", "username", "roles", "sectionRoles");
+    private static final Set<String> ROLE_FIELDS = Set.of("roles", "sectionRoles");
     private static final Set<String> SECTION_ROLE_FIELDS = Set.of("sectionId", "role");
 
     private AccountRequestValidator() {
     }
 
     /**
+     * A {@code POST /api/accounts} body; {@code sectionRoles} may be absent.
+     *
      * @throws AccountException with status {@code 400} listing every violation
      */
     public static CreateAccountRequest validate(JsonNode json) {
+        List<FieldError> errors = unknownFields(json, FIELDS);
+        String firstName = name(json, "firstName", true, errors);
+        String lastName = name(json, "lastName", false, errors);
+        String username = username(json, errors);
+        List<NewspaperRole> roles = roles(json, errors);
+        List<SectionRoleDto> sectionRoles = sectionRoles(json, false, errors);
+        failOnViolations(roles, sectionRoles, errors);
+        return new CreateAccountRequest(firstName, lastName, username, roles, sectionRoles);
+    }
+
+    /**
+     * A {@code PUT /api/accounts/{id}/roles} body; both fields are required, so a client forgetting
+     * {@code sectionRoles} cannot remove every section role by accident.
+     *
+     * @throws AccountException with status {@code 400} listing every violation
+     */
+    public static EditRolesRequest validateRoles(JsonNode json) {
+        List<FieldError> errors = unknownFields(json, ROLE_FIELDS);
+        List<NewspaperRole> roles = roles(json, errors);
+        List<SectionRoleDto> sectionRoles = sectionRoles(json, true, errors);
+        failOnViolations(roles, sectionRoles, errors);
+        return new EditRolesRequest(roles, sectionRoles);
+    }
+
+    /**
+     * An error per field not in {@code allowed}.
+     *
+     * @throws AccountException {@code 400} when {@code json} is not an object
+     */
+    private static List<FieldError> unknownFields(JsonNode json, Set<String> allowed) {
         if (json == null || !json.isObject()) {
             throw AccountException.invalid(null, "request body must be a JSON object");
         }
         List<FieldError> errors = new ArrayList<>();
         for (Iterator<String> names = json.fieldNames(); names.hasNext();) {
             String name = names.next();
-            if (!FIELDS.contains(name)) {
+            if (!allowed.contains(name)) {
                 errors.add(new FieldError(name, "unknown field"));
             }
         }
-        String firstName = name(json, "firstName", true, errors);
-        String lastName = name(json, "lastName", false, errors);
-        String username = username(json, errors);
-        List<NewspaperRole> roles = roles(json, errors);
-        List<SectionRoleDto> sectionRoles = sectionRoles(json, errors);
+        return errors;
+    }
+
+    /**
+     * Adds the "at least one role" violation when both role fields are valid but empty, then throws
+     * when there is any violation.
+     */
+    private static void failOnViolations(List<NewspaperRole> roles, List<SectionRoleDto> sectionRoles,
+            List<FieldError> errors) {
         boolean rolesValid = errors.stream()
                 .noneMatch(e -> "roles".equals(e.field()) || "sectionRoles".equals(e.field()));
         if (rolesValid && roles.isEmpty() && sectionRoles.isEmpty()) {
@@ -62,7 +100,6 @@ public final class AccountRequestValidator {
         if (!errors.isEmpty()) {
             throw AccountException.invalid(errors);
         }
-        return new CreateAccountRequest(firstName, lastName, username, roles, sectionRoles);
     }
 
     private static String name(JsonNode json, String field, boolean required, List<FieldError> errors) {
@@ -138,11 +175,14 @@ public final class AccountRequestValidator {
     }
 
     /**
-     * The section roles, empty when absent.
+     * The section roles; empty when absent and not {@code required}.
      */
-    private static List<SectionRoleDto> sectionRoles(JsonNode json, List<FieldError> errors) {
+    private static List<SectionRoleDto> sectionRoles(JsonNode json, boolean required, List<FieldError> errors) {
         JsonNode node = json.get("sectionRoles");
         if (node == null || node.isNull()) {
+            if (required) {
+                errors.add(new FieldError("sectionRoles", "is required"));
+            }
             return List.of();
         }
         if (!node.isArray()) {

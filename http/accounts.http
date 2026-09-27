@@ -218,9 +218,9 @@ GET {{baseUrl}}/api/accounts
 Authorization: Bearer {{accessToken}}
 
 > {%
-    client.test("reset and lock offered, nothing on the own account", () => {
+    client.test("role edit, reset and lock offered, nothing on the own account", () => {
         const created = response.body.accounts.find(a => a.id === client.global.get("newAccountId"));
-        client.assert(JSON.stringify(created.allowedActions) === '["RESET_PASSWORD","LOCK"]', JSON.stringify(created));
+        client.assert(JSON.stringify(created.allowedActions) === '["EDIT_ROLES","RESET_PASSWORD","LOCK"]', JSON.stringify(created));
         const own = response.body.accounts.find(a => a.username === "publisher");
         client.assert(own && JSON.stringify(own.allowedActions) === '[]', JSON.stringify(own));
     });
@@ -270,7 +270,7 @@ Authorization: Bearer {{accessToken}}
     client.test("200, disabled, unlock offered", () => {
         client.assert(response.status === 200, "status " + response.status);
         client.assert(response.body.enabled === false, JSON.stringify(response.body));
-        client.assert(JSON.stringify(response.body.allowedActions) === '["RESET_PASSWORD","UNLOCK"]', JSON.stringify(response.body));
+        client.assert(JSON.stringify(response.body.allowedActions) === '["EDIT_ROLES","RESET_PASSWORD","UNLOCK"]', JSON.stringify(response.body));
     });
 %}
 
@@ -303,7 +303,7 @@ Authorization: Bearer {{accessToken}}
     client.test("200, enabled, lock offered", () => {
         client.assert(response.status === 200, "status " + response.status);
         client.assert(response.body.enabled === true, JSON.stringify(response.body));
-        client.assert(JSON.stringify(response.body.allowedActions) === '["RESET_PASSWORD","LOCK"]', JSON.stringify(response.body));
+        client.assert(JSON.stringify(response.body.allowedActions) === '["EDIT_ROLES","RESET_PASSWORD","LOCK"]', JSON.stringify(response.body));
     });
 %}
 
@@ -324,4 +324,78 @@ Authorization: Bearer {{accessToken}}
 
 > {%
     client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### The editor-in-chief may not edit the roles of an editor-in-chief
+PUT {{baseUrl}}/api/accounts/{{newAccountId}}/roles
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "roles": ["READER"], "sectionRoles": [] }
+
+> {%
+    client.test("403 with an error body", () => {
+        client.assert(response.status === 403, "status " + response.status);
+        client.assert(response.body.errors[0].field === null, JSON.stringify(response.body));
+    });
+%}
+
+### The publisher makes the new account a reader
+PUT {{baseUrl}}/api/accounts/{{newAccountId}}/roles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "roles": ["READER"], "sectionRoles": [] }
+
+> {%
+    client.test("200 with the new roles", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.id === client.global.get("newAccountId"), JSON.stringify(response.body));
+        client.assert(JSON.stringify(response.body.roles) === '["READER"]', JSON.stringify(response.body));
+        client.assert(JSON.stringify(response.body.sectionRoles) === '[]', JSON.stringify(response.body));
+        client.assert(JSON.stringify(response.body.allowedActions) === '["EDIT_ROLES","RESET_PASSWORD","LOCK"]',
+            JSON.stringify(response.body));
+    });
+%}
+
+### Saving the same roles again changes nothing
+PUT {{baseUrl}}/api/accounts/{{newAccountId}}/roles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "roles": ["READER"], "sectionRoles": [] }
+
+> {%
+    client.test("200, roles unchanged", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(JSON.stringify(response.body.roles) === '["READER"]', JSON.stringify(response.body));
+    });
+%}
+
+### No role left
+PUT {{baseUrl}}/api/accounts/{{newAccountId}}/roles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "roles": [], "sectionRoles": [] }
+
+> {%
+    client.test("400 at roles", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(JSON.stringify(response.body.errors.map(e => e.field)) === '["roles"]', JSON.stringify(response.body));
+    });
+%}
+
+### Section roles are required
+PUT {{baseUrl}}/api/accounts/{{newAccountId}}/roles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "roles": ["READER"] }
+
+> {%
+    client.test("400 at sectionRoles", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(JSON.stringify(response.body.errors.map(e => e.field)) === '["sectionRoles"]', JSON.stringify(response.body));
+    });
 %}

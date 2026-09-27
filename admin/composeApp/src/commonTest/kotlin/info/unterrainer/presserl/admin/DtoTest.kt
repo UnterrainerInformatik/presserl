@@ -18,6 +18,8 @@ import info.unterrainer.presserl.admin.api.SectionListDto
 import info.unterrainer.presserl.admin.api.SectionRefDto
 import info.unterrainer.presserl.admin.api.SectionRoleDto
 import info.unterrainer.presserl.admin.api.json
+import info.unterrainer.presserl.admin.ui.account.AccountAction
+import info.unterrainer.presserl.admin.ui.account.actions
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
@@ -159,7 +161,7 @@ class DtoTest {
                   "roles": ["EDITOR_IN_CHIEF"], "enabled": true },
                 { "id": "77aa", "username": "nogroups", "firstName": "No", "lastName": "Groups",
                   "roles": [], "sectionRoles": [{ "sectionId": 1, "role": "REPORTER" }], "enabled": false,
-                  "allowedActions": ["RESET_PASSWORD", "UNLOCK"] }
+                  "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "UNLOCK"] }
               ]
             }
             """,
@@ -171,7 +173,8 @@ class DtoTest {
         assertEquals(listOf(SectionRoleDto(1, "REPORTER")), dto.accounts[1].sectionRoles)
         assertEquals(false, dto.accounts[1].enabled)
         assertEquals(emptyList(), dto.accounts[0].allowedActions)
-        assertEquals(listOf("RESET_PASSWORD", "UNLOCK"), dto.accounts[1].allowedActions)
+        assertEquals(listOf("EDIT_ROLES", "RESET_PASSWORD", "UNLOCK"), dto.accounts[1].allowedActions)
+        assertEquals(listOf(AccountAction.EDIT_ROLES, AccountAction.RESET_PASSWORD, AccountAction.UNLOCK), dto.accounts[1].actions())
     }
 
     @Test

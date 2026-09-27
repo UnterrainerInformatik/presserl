@@ -4,6 +4,7 @@ import info.unterrainer.presserl.admin.api.AccountDto
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.ArticleContent
 import info.unterrainer.presserl.admin.api.CreateAccountRequest
+import info.unterrainer.presserl.admin.api.EditRolesRequest
 import info.unterrainer.presserl.admin.api.SectionRequest
 import info.unterrainer.presserl.admin.api.SectionRoleDto
 import io.ktor.client.HttpClient
@@ -54,7 +55,7 @@ class ApiClientTest {
                     "accounts": [$ACCOUNT] }"""
                 path == "/api/accounts" || path.endsWith("/password-reset") ->
                     """{ "account": $ACCOUNT, "password": "tiger-wolke-apfel-leiter" }"""
-                path.endsWith("/lock") || path.endsWith("/unlock") -> ACCOUNT
+                path.endsWith("/lock") || path.endsWith("/unlock") || path.endsWith("/roles") -> ACCOUNT
                 path == "/api/sections" && request.method == HttpMethod.Get || path == "/api/sections/order" ->
                     """{ "canManage": true, "sections": [$SECTION] }"""
                 path.endsWith("/members") -> """{ "assignableRoles": ["SECTION_EDITOR", "REPORTER"], "members": [$MEMBER] }"""
@@ -214,6 +215,23 @@ class ApiClientTest {
                 Recorded(HttpMethod.Post, "https://news.example.org/api/accounts/9a1e/unlock", "Bearer token-123", null),
             ),
             requests,
+        )
+    }
+
+    @Test
+    fun editRolesPutsBothListsAndReturnsTheAccount() = runTest {
+        assertEquals("lena", api.editRoles("9a1e", EditRolesRequest(listOf("EDITOR_IN_CHIEF"), emptyList())).username)
+        assertEquals(
+            Recorded(
+                HttpMethod.Put,
+                "https://news.example.org/api/accounts/9a1e/roles",
+                "Bearer token-123",
+                buildJsonObject {
+                    putJsonArray("roles") { add(JsonPrimitive("EDITOR_IN_CHIEF")) }
+                    putJsonArray("sectionRoles") {}
+                },
+            ),
+            requests.single(),
         )
     }
 

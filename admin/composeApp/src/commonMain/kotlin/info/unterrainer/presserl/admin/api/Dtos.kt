@@ -154,7 +154,7 @@ data class FieldErrorDto(
 /**
  * Entry of `GET /api/accounts`; [roles] are newspaper roles in the order publisher, editor-in-chief, reader,
  * [sectionRoles] are ordered by section position, [allowedActions] what the user may do with it now
- * (`RESET_PASSWORD`, `LOCK`, `UNLOCK`).
+ * (`EDIT_ROLES`, `RESET_PASSWORD`, `LOCK`, `UNLOCK`).
  */
 @Serializable
 data class AccountDto(
@@ -194,6 +194,13 @@ data class CreateAccountRequest(
     val username: String,
     val roles: List<String>,
     val sectionRoles: List<SectionRoleDto> = emptyList(),
+)
+
+/** Request body of `PUT /api/accounts/{id}/roles`: the complete roles; both lists are always sent. */
+@Serializable
+data class EditRolesRequest(
+    val roles: List<String>,
+    val sectionRoles: List<SectionRoleDto>,
 )
 
 /** Response of `POST /api/accounts`; [password] exists only in this response. */

@@ -73,6 +73,7 @@
     <string name="nav_accounts">Accounts</string>
     <string name="new_account">New account</string>
     <string name="account_locked">locked</string>
+    <string name="action_edit_roles">Edit roles</string>
     <string name="action_reset_password">Reset password</string>
     <string name="action_lock">Lock</string>
     <string name="action_unlock">Unlock</string>
@@ -101,6 +102,8 @@
     <string name="role_reporter">Reporter</string>
     <string name="section_role_none">none</string>
     <string name="field_section_roles">Roles in sections</string>
+    <string name="edit_roles_title">Roles of “%1$s”</string>
+    <string name="roles_read_only_hint">You cannot change greyed-out roles; they are kept.</string>
     <string name="new_section">New section</string>
     <string name="edit_section">Edit section</string>
     <string name="edit">Edit</string>

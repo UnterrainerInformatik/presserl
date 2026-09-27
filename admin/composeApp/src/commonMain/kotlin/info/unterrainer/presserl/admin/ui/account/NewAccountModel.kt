@@ -4,8 +4,6 @@ import info.unterrainer.presserl.admin.api.CreateAccountRequest
 import info.unterrainer.presserl.admin.api.CreatedAccountDto
 import info.unterrainer.presserl.admin.api.SectionDto
 import info.unterrainer.presserl.admin.api.SectionRoleDto
-import info.unterrainer.presserl.admin.ui.apiErrorsOf
-import info.unterrainer.presserl.admin.ui.describe
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -16,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/** Form fields of the account forms, named like the server's error fields. */
 enum class AccountField(val wire: String) {
     FIRST_NAME("firstName"),
     LAST_NAME("lastName"),
@@ -119,7 +118,7 @@ class NewAccountModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
-                val (fields, general) = refusal(e)
+                val (fields, general) = accountRefusal(e)
                 _state.update { it.copy(creating = false, errors = fields, general = general) }
             }
         }
@@ -149,17 +148,5 @@ class NewAccountModel(
                 }
             }
         }
-    }
-
-    /** Field errors of a refused request; anything not about a form field becomes the general message. */
-    private suspend fun refusal(e: Throwable): Pair<Map<AccountField, String>, String?> {
-        val errors = apiErrorsOf(e) ?: return emptyMap<AccountField, String>() to describe(e)
-        val fields = mutableMapOf<AccountField, String>()
-        val general = mutableListOf<String>()
-        errors.forEach { error ->
-            val field = AccountField.entries.firstOrNull { it.wire == error.field }
-            if (field != null) fields.getOrPut(field) { error.message } else general += error.message
-        }
-        return fields to general.joinToString(" ").ifEmpty { null }
     }
 }

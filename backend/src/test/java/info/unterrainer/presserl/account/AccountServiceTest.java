@@ -34,8 +34,8 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.Status;
 
 /**
- * {@link AccountService} and {@link AccountCreation} against a stubbed Keycloak realm: compensation
- * and error mapping.
+ * {@link AccountService}, {@link AccountCreation} and {@link AccountRoleEdit} against a stubbed
+ * Keycloak realm: compensation and error mapping.
  */
 class AccountServiceTest {
 
@@ -86,6 +86,84 @@ class AccountServiceTest {
         assertThatThrownBy(() -> creation.create(new Newsroom(PUBLISHER, Map.of()), max).await().indefinitely())
                 .hasMessageContaining("database down");
         assertThat(deleted).containsExactly("id-2");
+    }
+
+    @Test
+    void failedSectionRoleReplaceRestoresTheGroups() {
+        List<String> calls = new ArrayList<>();
+        AccountRoleEdit edit = new AccountRoleEdit();
+        edit.accounts = service(users(null, groupRecorder(calls, null)));
+        edit.keycloakCalls = new KeycloakCalls() {
+            @Override
+            public <T> Uni<T> call(Supplier<T> blocking) {
+                return Uni.createFrom().item(blocking);
+            }
+        };
+        edit.sectionRoles = new SectionRoleStore() {
+            @Override
+            public Uni<List<Long>> sectionIds() {
+                return Uni.createFrom().item(List.of(7L));
+            }
+
+            @Override
+            public Uni<Void> replace(String accountId, List<SectionRoleDto> requested, String assignedBy) {
+                return Uni.createFrom().failure(new IllegalStateException("database down"));
+            }
+        };
+        AccountDto reader = new AccountDto("id-6", "reader", "Reader", "", List.of(NewspaperRole.READER), List.of(),
+                true, List.of());
+        EditRolesRequest request = new EditRolesRequest(List.of(NewspaperRole.EDITOR_IN_CHIEF),
+                List.of(new SectionRoleDto(7L, SectionRole.REPORTER)));
+
+        assertThatThrownBy(() -> edit.edit(new Newsroom(PUBLISHER, Map.of()), reader, request).await().indefinitely())
+                .isInstanceOfSatisfying(AccountException.class,
+                        e -> assertThat(e.status()).isEqualTo(Status.SERVICE_UNAVAILABLE));
+        assertThat(calls).containsExactly("join group-editor-in-chief", "leave group-reader",
+                "join group-reader", "leave group-editor-in-chief");
+    }
+
+    @Test
+    void changeGroupsJoinsAndLeaves() {
+        List<String> calls = new ArrayList<>();
+        AccountService service = service(users(null, groupRecorder(calls, null)));
+
+        service.changeGroups("id-3", List.of(NewspaperRole.EDITOR_IN_CHIEF), List.of(NewspaperRole.READER));
+
+        assertThat(calls).containsExactly("join group-editor-in-chief", "leave group-reader");
+    }
+
+    @Test
+    void failedGroupStepRevertsTheStepsDone() {
+        List<String> calls = new ArrayList<>();
+        AccountService service = service(users(null, groupRecorder(calls, "leave group-reader")));
+
+        assertThatThrownBy(() -> service.changeGroups("id-4",
+                List.of(NewspaperRole.PUBLISHER, NewspaperRole.EDITOR_IN_CHIEF), List.of(NewspaperRole.READER)))
+                .isInstanceOfSatisfying(AccountException.class,
+                        e -> assertThat(e.status()).isEqualTo(Status.SERVICE_UNAVAILABLE));
+        assertThat(calls).containsExactly("join group-publisher", "join group-editor-in-chief", "leave group-reader",
+                "leave group-editor-in-chief", "leave group-publisher");
+    }
+
+    @Test
+    void failedRevertStillRethrowsTheOriginalFailure() {
+        List<String> calls = new ArrayList<>();
+        UserResource user = stub(UserResource.class, Map.of(
+                "joinGroup", args -> {
+                    calls.add("join " + args[0]);
+                    return null;
+                },
+                "leaveGroup", args -> {
+                    calls.add("leave " + args[0]);
+                    throw new WebApplicationException(Status.INTERNAL_SERVER_ERROR);
+                }));
+        AccountService service = service(users(null, user));
+
+        assertThatThrownBy(() -> service.changeGroups("id-5", List.of(NewspaperRole.EDITOR_IN_CHIEF),
+                List.of(NewspaperRole.READER))).isInstanceOfSatisfying(AccountException.class,
+                        e -> assertThat(e.status()).isEqualTo(Status.SERVICE_UNAVAILABLE));
+        assertThat(calls).containsExactly("join group-editor-in-chief", "leave group-reader",
+                "leave group-editor-in-chief");
     }
 
     @Test
@@ -178,6 +256,22 @@ class AccountServiceTest {
                     return Response.noContent().build();
                 }));
         return stub(RealmResource.class, Map.of("groups", args -> groups, "users", args -> users));
+    }
+
+    /**
+     * A user recording {@code join <group id>} and {@code leave <group id>}; the call equal to
+     * {@code failing} is recorded and then fails.
+     */
+    private static UserResource groupRecorder(List<String> calls, String failing) {
+        Function<String, Function<Object[], Object>> record = verb -> args -> {
+            String call = verb + " " + args[0];
+            calls.add(call);
+            if (call.equals(failing)) {
+                throw new WebApplicationException(Status.INTERNAL_SERVER_ERROR);
+            }
+            return null;
+        };
+        return stub(UserResource.class, Map.of("joinGroup", record.apply("join"), "leaveGroup", record.apply("leave")));
     }
 
     private static AccountService service(RealmResource realm) {

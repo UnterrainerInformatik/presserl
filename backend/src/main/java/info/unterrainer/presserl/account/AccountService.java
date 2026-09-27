@@ -181,6 +181,46 @@ public class AccountService {
     }
 
     /**
+     * Joins the groups of {@code added} and leaves those of {@code removed}. All or nothing: when a
+     * step fails, the steps already done are reverted (a failing revert is logged as an error) and
+     * the failure is rethrown.
+     *
+     * @throws AccountException {@code 503} when Keycloak is unavailable
+     */
+    public void changeGroups(String id, List<NewspaperRole> added, List<NewspaperRole> removed) {
+        keycloakCall(() -> {
+            RealmResource realm = realm();
+            Map<NewspaperRole, String> groupIds = groupIds(realm);
+            UserResource user = realm.users().get(id);
+            List<Runnable> undo = new ArrayList<>();
+            try {
+                for (NewspaperRole role : added) {
+                    user.joinGroup(groupIds.get(role));
+                    undo.addFirst(() -> user.leaveGroup(groupIds.get(role)));
+                }
+                for (NewspaperRole role : removed) {
+                    user.leaveGroup(groupIds.get(role));
+                    undo.addFirst(() -> user.joinGroup(groupIds.get(role)));
+                }
+            } catch (RuntimeException e) {
+                revert(id, undo, added, removed);
+                throw e;
+            }
+            return null;
+        });
+    }
+
+    private static void revert(String id, List<Runnable> undo, List<NewspaperRole> added,
+            List<NewspaperRole> removed) {
+        try {
+            undo.forEach(Runnable::run);
+        } catch (RuntimeException e) {
+            LOG.errorf(e, "Changing the groups of account %s (join %s, leave %s) failed and could not be reverted; "
+                    + "check its groups in the Keycloak admin console", id, added, removed);
+        }
+    }
+
+    /**
      * Deletes an account whose creation could not be completed; failures are logged, not thrown.
      */
     public void deleteIncomplete(String id, String username) {

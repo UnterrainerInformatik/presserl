@@ -111,6 +111,34 @@ public class SectionRoleStore {
     }
 
     /**
+     * Makes {@code requested} the account's section roles in one transaction: rows of sections not
+     * requested are deleted, rows with another role are updated ({@code assignedBy} and
+     * {@code assignedAt} refreshed), missing rows are inserted; unchanged rows stay untouched.
+     */
+    @WithTransaction
+    public Uni<Void> replace(String accountId, List<SectionRoleDto> requested, String assignedBy) {
+        Map<Long, SectionRole> wanted = new HashMap<>();
+        requested.forEach(role -> wanted.put(role.sectionId(), role.role()));
+        return SectionRoleEntity.<SectionRoleEntity>list("accountId", accountId).flatMap(rows -> {
+            Instant now = now();
+            Uni<Void> deletions = Uni.createFrom().voidItem();
+            for (SectionRoleEntity row : rows) {
+                SectionRole next = wanted.remove(row.sectionId);
+                if (next == null) {
+                    deletions = deletions.flatMap(done -> row.delete());
+                } else if (next != row.role) {
+                    row.role = next;
+                    row.assignedBy = assignedBy;
+                    row.assignedAt = now;
+                }
+            }
+            List<SectionRoleEntity> inserts = requested.stream().filter(role -> wanted.containsKey(role.sectionId()))
+                    .map(role -> row(role.sectionId(), accountId, role.role(), assignedBy, now)).toList();
+            return inserts.isEmpty() ? deletions : deletions.flatMap(done -> SectionRoleEntity.persist(inserts));
+        });
+    }
+
+    /**
      * Gives the account {@code role} in the section, replacing its current one.
      */
     @WithTransaction

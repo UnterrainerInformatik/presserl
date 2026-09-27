@@ -428,7 +428,7 @@ class AccountResourceTest {
 
         for (String username : List.of("chief", "reader", "nogroups")) {
             assertThat(json.getList("accounts.find { it.username == '%s' }.allowedActions".formatted(username),
-                    String.class)).containsExactly("RESET_PASSWORD", "LOCK");
+                    String.class)).containsExactly("EDIT_ROLES", "RESET_PASSWORD", "LOCK");
         }
         assertThat(json.getList("accounts.find { it.username == 'publisher' }.allowedActions")).isEmpty();
     }
@@ -439,7 +439,7 @@ class AccountResourceTest {
         as(publisher).post("/api/accounts/%s/lock".formatted(id)).then().statusCode(200);
 
         as(publisher).get("/api/accounts").then()
-                .body("accounts.find { it.username == 'locky' }.allowedActions", contains("RESET_PASSWORD", "UNLOCK"));
+                .body("accounts.find { it.username == 'locky' }.allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "UNLOCK"));
     }
 
     @Test
@@ -447,9 +447,9 @@ class AccountResourceTest {
         JsonPath json = as(chief).get("/api/accounts").then().statusCode(200).extract().jsonPath();
 
         assertThat(json.getList("accounts.find { it.username == 'reader' }.allowedActions", String.class))
-                .containsExactly("RESET_PASSWORD");
+                .containsExactly("EDIT_ROLES", "RESET_PASSWORD");
         assertThat(json.getList("accounts.find { it.username == 'nogroups' }.allowedActions", String.class))
-                .containsExactly("RESET_PASSWORD");
+                .containsExactly("EDIT_ROLES", "RESET_PASSWORD");
         assertThat(json.getList("accounts.find { it.username == 'chief' }.allowedActions")).isEmpty();
         assertThat(json.getList("accounts.find { it.username == 'publisher' }.allowedActions")).isEmpty();
     }
@@ -457,7 +457,7 @@ class AccountResourceTest {
     @Test
     void createdAccountCarriesAllowedActionsOfCreator() {
         post(publisher, "fresh", "[\"READER\"]", "Fresh").then().statusCode(201)
-                .body("account.allowedActions", contains("RESET_PASSWORD", "LOCK"));
+                .body("account.allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "LOCK"));
     }
 
     // --- password reset ---------------------------------------------------------------------
@@ -471,7 +471,7 @@ class AccountResourceTest {
         String password = as(publisher).post("/api/accounts/%s/password-reset".formatted(id)).then().statusCode(200)
                 .body("account.username", equalTo("resetme"))
                 .body("account.enabled", equalTo(true))
-                .body("account.allowedActions", contains("RESET_PASSWORD", "LOCK"))
+                .body("account.allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "LOCK"))
                 .body("password", matchesPattern(PASSWORD))
                 .extract().path("password");
 
@@ -512,7 +512,7 @@ class AccountResourceTest {
     @Test
     void editorInChiefResetsReader() {
         as(chief).post("/api/accounts/%s/password-reset".formatted(createReader("kid"))).then().statusCode(200)
-                .body("account.allowedActions", contains("RESET_PASSWORD"));
+                .body("account.allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD"));
     }
 
     @Test
@@ -571,6 +571,7 @@ class AccountResourceTest {
                     .body("errors.size()", equalTo(1));
             as(publisher).post("/api/accounts/%s/lock".formatted(id)).then().statusCode(404);
             as(publisher).post("/api/accounts/%s/unlock".formatted(id)).then().statusCode(404);
+            putRoles(publisher, id, "{\"roles\": [\"READER\"], \"sectionRoles\": []}").then().statusCode(404);
         }
     }
 
@@ -585,14 +586,14 @@ class AccountResourceTest {
         as(publisher).post("/api/accounts/%s/lock".formatted(id)).then().statusCode(200)
                 .body("username", equalTo("locked"))
                 .body("enabled", equalTo(false))
-                .body("allowedActions", contains("RESET_PASSWORD", "UNLOCK"));
+                .body("allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "UNLOCK"));
         assertThat(realm.users().get(id).toRepresentation().isEnabled()).isFalse();
         TestSupport.passwordGrant(TestSupport.HTTP_CLIENT, "locked", password).then().statusCode(400);
         refresh(refreshToken).then().statusCode(400);
 
         as(publisher).post("/api/accounts/%s/unlock".formatted(id)).then().statusCode(200)
                 .body("enabled", equalTo(true))
-                .body("allowedActions", contains("RESET_PASSWORD", "LOCK"));
+                .body("allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "LOCK"));
         TestSupport.passwordGrant(TestSupport.HTTP_CLIENT, "locked", password).then().statusCode(200);
     }
 
@@ -629,6 +630,218 @@ class AccountResourceTest {
     void readerMayNotLock() {
         as(TestSupport.token("reader", "reader")).post("/api/accounts/%s/lock".formatted(idOf("nogroups")))
                 .then().statusCode(403).body(emptyOrNullString());
+    }
+
+    // --- role edit --------------------------------------------------------------------------
+
+    private static io.restassured.response.Response putRoles(String token, String id, String body) {
+        return as(token).body(body).put("/api/accounts/%s/roles".formatted(id));
+    }
+
+    private List<String> groupsOf(String id) {
+        return realm.users().get(id).groups().stream().map(GroupRepresentation::getName).toList();
+    }
+
+    private JsonPath listedAs(String token, String username) {
+        return new JsonPath(as(token).get("/api/accounts").then().statusCode(200).extract().asString())
+                .setRootPath("accounts.find { it.username == '%s' }".formatted(username));
+    }
+
+    @Test
+    void publisherMakesReaderEditorInChief() {
+        String password = createReaderWithPassword("promoted");
+        String id = idOf("promoted");
+
+        putRoles(publisher, id, """
+                {"roles": ["EDITOR_IN_CHIEF", "READER"], "sectionRoles": []}""").then().statusCode(200)
+                .body("id", equalTo(id))
+                .body("username", equalTo("promoted"))
+                .body("roles", contains("EDITOR_IN_CHIEF", "READER"))
+                .body("sectionRoles", empty())
+                .body("enabled", equalTo(true))
+                .body("allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "LOCK"));
+
+        assertThat(groupsOf(id)).containsExactlyInAnyOrder("editor-in-chief", "reader");
+        as(TestSupport.token("promoted", password)).get("/api/me").then().statusCode(200)
+                .body("roles", contains("EDITOR_IN_CHIEF", "READER"));
+    }
+
+    @Test
+    void publisherMovesReporterToAnotherSection() {
+        long sport = section("Sport");
+        long kultur = section("Kultur");
+        String id = createReader("mover");
+        sectionRole(sport, "mover", "REPORTER");
+
+        putRoles(publisher, id, """
+                {"roles": ["READER"], "sectionRoles": [{"sectionId": %d, "role": "REPORTER"}]}""".formatted(kultur))
+                .then().statusCode(200)
+                .body("roles", contains("READER"))
+                .body("sectionRoles.sectionId", contains((int) kultur))
+                .body("sectionRoles.role", contains("REPORTER"));
+
+        JsonPath listed = listedAs(publisher, "mover");
+        assertThat(listed.getList("sectionRoles.sectionId", Long.class)).containsExactly(kultur);
+        assertThat(groupsOf(id)).containsExactly("reader");
+    }
+
+    @Test
+    void roleEditIsLoggedOnlyWhenSomethingChanged() {
+        List<String> messages = new ArrayList<>();
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                messages.add(record instanceof ExtLogRecord ext ? ext.getFormattedMessage() : record.getMessage());
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        String id = createReader("same");
+        java.util.logging.Logger logger = java.util.logging.Logger.getLogger(AccountRoleEdit.class.getName());
+        logger.addHandler(handler);
+        try {
+            putRoles(publisher, id, """
+                    {"roles": ["READER"], "sectionRoles": []}""").then().statusCode(200)
+                    .body("roles", contains("READER"));
+            assertThat(messages).isEmpty();
+
+            putRoles(publisher, id, """
+                    {"roles": ["EDITOR_IN_CHIEF"], "sectionRoles": []}""").then().statusCode(200);
+            putRoles(publisher, id, """
+                    {"roles": ["EDITOR_IN_CHIEF"], "sectionRoles": []}""").then().statusCode(200);
+        } finally {
+            logger.removeHandler(handler);
+        }
+
+        assertThat(messages).containsExactly(
+                "Roles of account 'same' changed by 'publisher': roles [READER] -> [EDITOR_IN_CHIEF], "
+                        + "section roles [] -> []");
+    }
+
+    @Test
+    void noRoleLeftIsRejected() {
+        String id = createReader("keeper");
+
+        putRoles(publisher, id, """
+                {"roles": [], "sectionRoles": []}""").then().statusCode(400).body("errors.field", contains("roles"));
+
+        assertThat(groupsOf(id)).containsExactly("reader");
+    }
+
+    @Test
+    void missingSectionRolesAreRejected() {
+        String id = createReader("forgetful");
+
+        putRoles(publisher, id, """
+                {"roles": ["EDITOR_IN_CHIEF"]}""").then().statusCode(400)
+                .body("errors.field", contains("sectionRoles"));
+
+        assertThat(groupsOf(id)).containsExactly("reader");
+    }
+
+    @Test
+    void unknownSectionLeavesAccountUnchanged() {
+        String id = createReader("lost");
+
+        putRoles(publisher, id, """
+                {"roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [{"sectionId": 999999, "role": "REPORTER"}]}""")
+                .then().statusCode(400).body("errors.field", contains("sectionRoles"));
+
+        assertThat(groupsOf(id)).containsExactly("reader");
+    }
+
+    @Test
+    void nobodyEditsOwnRoles() {
+        putRoles(publisher, idOf("publisher"), """
+                {"roles": ["PUBLISHER", "READER"], "sectionRoles": []}""").then().statusCode(403)
+                .body("errors.message", hasItems(matchesPattern(".*edit the roles of.*")));
+        putRoles(chief, idOf("chief"), """
+                {"roles": ["EDITOR_IN_CHIEF", "READER"], "sectionRoles": []}""").then().statusCode(403);
+    }
+
+    @Test
+    void editorInChiefMayNotEditEditorInChief() {
+        createWithPassword("chief4", "[\"EDITOR_IN_CHIEF\"]");
+        String id = idOf("chief4");
+
+        putRoles(chief, id, """
+                {"roles": ["READER"], "sectionRoles": []}""").then().statusCode(403);
+
+        assertThat(groupsOf(id)).containsExactly("editor-in-chief");
+    }
+
+    @Test
+    void editorInChiefMayNotMakePublisher() {
+        String id = createReader("climber");
+
+        putRoles(chief, id, """
+                {"roles": ["PUBLISHER", "READER"], "sectionRoles": []}""").then().statusCode(403)
+                .body("errors.field", contains("roles"));
+
+        assertThat(groupsOf(id)).containsExactly("reader");
+    }
+
+    @Test
+    void sectionEditorMayNotEditPlainReader() {
+        sectionRole(section("Sport"), "nogroups", "SECTION_EDITOR");
+
+        putRoles(TestSupport.token("nogroups", "nogroups"), idOf("reader"), """
+                {"roles": ["READER"], "sectionRoles": []}""").then().statusCode(403);
+    }
+
+    @Test
+    void sectionEditorPromotesOwnReporterKeepingReader() {
+        long sport = section("Sport");
+        sectionRole(sport, "nogroups", "SECTION_EDITOR");
+        String id = createReader("sporty");
+        sectionRole(sport, "sporty", "REPORTER");
+
+        putRoles(TestSupport.token("nogroups", "nogroups"), id, """
+                {"roles": ["READER"], "sectionRoles": [{"sectionId": %d, "role": "SECTION_EDITOR"}]}""".formatted(sport))
+                .then().statusCode(200)
+                .body("roles", contains("READER"))
+                .body("sectionRoles.role", contains("SECTION_EDITOR"))
+                .body("allowedActions", empty());
+
+        assertThat(groupsOf(id)).containsExactly("reader");
+    }
+
+    @Test
+    void sectionEditorMayNotRemoveReader() {
+        long sport = section("Sport");
+        sectionRole(sport, "nogroups", "SECTION_EDITOR");
+        String id = createReader("stays");
+        sectionRole(sport, "stays", "REPORTER");
+
+        putRoles(TestSupport.token("nogroups", "nogroups"), id, """
+                {"roles": [], "sectionRoles": [{"sectionId": %d, "role": "REPORTER"}]}""".formatted(sport))
+                .then().statusCode(403).body("errors.field", contains("roles"));
+
+        assertThat(groupsOf(id)).containsExactly("reader");
+    }
+
+    @Test
+    void sectionEditorMayNotAssignOutsideOwnSection() {
+        long sport = section("Sport");
+        long kultur = section("Kultur");
+        sectionRole(sport, "nogroups", "SECTION_EDITOR");
+        String id = createReader("fenced");
+        sectionRole(sport, "fenced", "REPORTER");
+
+        putRoles(TestSupport.token("nogroups", "nogroups"), id, """
+                {"roles": ["READER"], "sectionRoles": [{"sectionId": %d, "role": "REPORTER"},
+                                                       {"sectionId": %d, "role": "REPORTER"}]}"""
+                .formatted(sport, kultur))
+                .then().statusCode(403).body("errors.field", contains("sectionRoles"));
+
+        assertThat(listedAs(publisher, "fenced").getList("sectionRoles.sectionId", Long.class))
+                .containsExactly(sport);
     }
 
     private String idOf(String username) {

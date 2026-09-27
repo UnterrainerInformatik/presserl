@@ -159,7 +159,7 @@ POST   /api/accounts                      create account (roles and section role
 POST   /api/accounts/{id}/password-reset  anyone above the person, never a publisher, never oneself → new pass-phrase for the slip (implemented)
 POST   /api/accounts/{id}/lock            publisher; never a publisher, never oneself (implemented)
 POST   /api/accounts/{id}/unlock          publisher; never a publisher, never oneself (implemented)
-PUT    /api/accounts/{id}/roles           roles at or below mine, within my scope
+PUT    /api/accounts/{id}/roles           anyone above the person, never oneself; changed roles at or below mine, within my scope (implemented)
 PUT    /api/accounts/{id}/trust           set/clear trust for my level
 POST   /api/media                         reporter+ (size/type limit)
 GET    /api/me                            my roles and section roles (implemented); later scopes and allowed actions

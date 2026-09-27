@@ -21,6 +21,7 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -49,6 +50,9 @@ public class AccountResource {
 
     @Inject
     AccountCreation creation;
+
+    @Inject
+    AccountRoleEdit roleEdit;
 
     @Inject
     KeycloakCalls keycloakCalls;
@@ -94,6 +98,19 @@ public class AccountResource {
                         .<CreatedAccountDto>created(URI.create("/api/accounts/" + created.account().id()))
                         .entity(created)
                         .build());
+    }
+
+    /**
+     * Replaces the account's newspaper and section roles; no session is ended, so removed newspaper
+     * roles take effect with the person's next token refresh.
+     */
+    @PUT
+    @Path("/{id}/roles")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Uni<AccountDto> editRoles(@PathParam("id") String id, JsonNode json) {
+        return target(id, AccountAction.EDIT_ROLES, "edit the roles of").flatMap(target -> roleEdit
+                .edit(target.requester(), target.account(), AccountRequestValidator.validateRoles(json))
+                .map(edited -> edited.withAllowedActionsFor(target.requester())));
     }
 
     /**

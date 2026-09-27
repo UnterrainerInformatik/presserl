@@ -11,8 +11,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** Actions on an account, named like the server's `allowedActions`. */
-enum class AccountAction { RESET_PASSWORD, LOCK, UNLOCK }
+/** Actions on an account, named like the server's `allowedActions`; [EDIT_ROLES] opens a form instead of a confirmation. */
+enum class AccountAction { EDIT_ROLES, RESET_PASSWORD, LOCK, UNLOCK }
 
 /** The actions the server offers for this account, in its order; unknown names are skipped. */
 fun AccountDto.actions(): List<AccountAction> =
@@ -48,7 +48,7 @@ class AccountListModel(
     val state: StateFlow<AccountListState> = _state.asStateFlow()
 
     fun request(account: AccountDto, action: AccountAction) {
-        if (_state.value.busy) return
+        if (_state.value.busy || action == AccountAction.EDIT_ROLES) return
         _state.update { it.copy(pending = PendingAction(account, action), error = null) }
     }
 
@@ -70,6 +70,7 @@ class AccountListModel(
                     }
                     AccountAction.LOCK -> replace(lock(id))
                     AccountAction.UNLOCK -> replace(unlock(id))
+                    AccountAction.EDIT_ROLES -> error("EDIT_ROLES is never confirmed")
                 }
             } catch (e: CancellationException) {
                 throw e

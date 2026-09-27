@@ -35,6 +35,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +49,7 @@ import info.unterrainer.presserl.admin.api.SectionDto
 import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.account_action_failed
 import info.unterrainer.presserl.admin.resources.account_locked
+import info.unterrainer.presserl.admin.resources.action_edit_roles
 import info.unterrainer.presserl.admin.resources.action_lock
 import info.unterrainer.presserl.admin.resources.action_reset_password
 import info.unterrainer.presserl.admin.resources.action_unlock
@@ -60,6 +62,7 @@ import info.unterrainer.presserl.admin.resources.confirm_unlock_text
 import info.unterrainer.presserl.admin.resources.confirm_unlock_title
 import info.unterrainer.presserl.admin.resources.create_account
 import info.unterrainer.presserl.admin.resources.done
+import info.unterrainer.presserl.admin.resources.edit_roles_title
 import info.unterrainer.presserl.admin.resources.field_first_name
 import info.unterrainer.presserl.admin.resources.field_last_name
 import info.unterrainer.presserl.admin.resources.field_roles
@@ -69,6 +72,8 @@ import info.unterrainer.presserl.admin.resources.loading
 import info.unterrainer.presserl.admin.resources.new_account
 import info.unterrainer.presserl.admin.resources.no_roles
 import info.unterrainer.presserl.admin.resources.print
+import info.unterrainer.presserl.admin.resources.roles_read_only_hint
+import info.unterrainer.presserl.admin.resources.save
 import info.unterrainer.presserl.admin.resources.section_role_none
 import info.unterrainer.presserl.admin.resources.slip_address
 import info.unterrainer.presserl.admin.resources.slip_heading
@@ -92,13 +97,14 @@ import org.jetbrains.compose.resources.stringResource
 fun canAdministerAccounts(me: MeDto): Boolean =
     "PUBLISHER" in me.roles || "EDITOR_IN_CHIEF" in me.roles || me.sectionRoles.any { it.role == "SECTION_EDITOR" }
 
-/** The accounts, and the sections to name section roles and to offer them in "New account". */
+/** The accounts, and the sections to name section roles and to offer them in "New account" and "Edit roles". */
 private data class AccountsView(val accounts: AccountListDto, val sections: List<SectionDto>)
 
 @Composable
 fun AccountListScreen(
     api: ApiClient,
     onNew: (assignableRoles: List<String>, sections: List<SectionDto>) -> Unit,
+    onEditRoles: (account: AccountDto, assignableRoles: List<String>, sections: List<SectionDto>) -> Unit,
     onReset: (CreatedAccountDto) -> Unit,
 ) {
     var view by remember { mutableStateOf<AccountsView?>(null) }
@@ -122,13 +128,15 @@ fun AccountListScreen(
         when {
             error != null -> LoadFailed(error!!, onReload = { loads++ })
             current == null -> Text(stringResource(Res.string.loading))
-            else -> key(current) { AccountList(api, current, onReset) }
+            else -> key(current) {
+                AccountList(api, current, onEditRoles = { onEditRoles(it, current.accounts.assignableRoles, current.sections) }, onReset)
+            }
         }
     }
 }
 
 @Composable
-private fun AccountList(api: ApiClient, view: AccountsView, onReset: (CreatedAccountDto) -> Unit) {
+private fun AccountList(api: ApiClient, view: AccountsView, onEditRoles: (AccountDto) -> Unit, onReset: (CreatedAccountDto) -> Unit) {
     val scope = rememberCoroutineScope()
     val model = remember { AccountListModel(scope, view.accounts.accounts, api::resetPassword, api::lock, api::unlock) }
     val state by model.state.collectAsState()
@@ -145,7 +153,9 @@ private fun AccountList(api: ApiClient, view: AccountsView, onReset: (CreatedAcc
         state.error?.let { Banner(stringResource(Res.string.account_action_failed, it)) }
         LazyColumn {
             items(state.accounts, key = { it.id }) { account ->
-                AccountRow(account, sectionNames, enabled = !state.busy, onAction = { model.request(account, it) })
+                AccountRow(account, sectionNames, enabled = !state.busy, onAction = {
+                    if (it == AccountAction.EDIT_ROLES) onEditRoles(account) else model.request(account, it)
+                })
                 HorizontalDivider()
             }
         }
@@ -161,6 +171,7 @@ private fun ConfirmAction(pending: PendingAction, onConfirm: () -> Unit, onCance
         AccountAction.RESET_PASSWORD -> Res.string.confirm_reset_title to Res.string.confirm_reset_text
         AccountAction.LOCK -> Res.string.confirm_lock_title to Res.string.confirm_lock_text
         AccountAction.UNLOCK -> Res.string.confirm_unlock_title to Res.string.confirm_unlock_text
+        AccountAction.EDIT_ROLES -> return
     }
     AlertDialog(
         onDismissRequest = onCancel,
@@ -174,6 +185,7 @@ private fun ConfirmAction(pending: PendingAction, onConfirm: () -> Unit, onCance
 @Composable
 private fun actionText(action: AccountAction): String = stringResource(
     when (action) {
+        AccountAction.EDIT_ROLES -> Res.string.action_edit_roles
         AccountAction.RESET_PASSWORD -> Res.string.action_reset_password
         AccountAction.LOCK -> Res.string.action_lock
         AccountAction.UNLOCK -> Res.string.action_unlock
@@ -251,9 +263,67 @@ fun NewAccountScreen(
     }
 }
 
-/** A section with the choice "none" or one of its assignable roles. */
+/**
+ * "Edit roles" (design D6): the account's roles preset, those the user may not change shown read-only. "Save" sends
+ * the complete roles and calls [onSaved]; [onBack] ("Cancel") sends nothing.
+ */
 @Composable
-private fun SectionRoleRow(section: SectionDto, selected: String?, onChoose: (String?) -> Unit) {
+fun EditRolesScreen(
+    api: ApiClient,
+    account: AccountDto,
+    assignableRoles: List<String>,
+    sections: List<SectionDto>,
+    onBack: () -> Unit,
+    onSaved: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val model = remember(account, assignableRoles, sections) { EditRolesModel(scope, account, assignableRoles, sections, api::editRoles) }
+    val state by model.state.collectAsState()
+    val readOnly = model.roleChoices.any { !it.editable } || model.sectionChoices.any { !it.editable }
+
+    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        BackButton(onBack)
+        Text(stringResource(Res.string.edit_roles_title, account.username), style = MaterialTheme.typography.headlineSmall)
+        state.general?.let { Banner(it) }
+        if (model.roleChoices.isNotEmpty()) Text(stringResource(Res.string.field_roles), style = MaterialTheme.typography.titleSmall)
+        model.roleChoices.forEach { choice ->
+            val selected = choice.role in state.roles
+            Row(
+                Modifier.heightIn(min = 44.dp).toggleable(
+                    value = selected,
+                    enabled = choice.editable && !state.saving,
+                    role = Role.Checkbox,
+                    onValueChange = { model.role(choice.role, it) },
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = selected, onCheckedChange = null, enabled = choice.editable)
+                Text(
+                    roleText(choice.role),
+                    Modifier.padding(start = 8.dp),
+                    color = if (choice.editable) Color.Unspecified else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            }
+        }
+        state.errors[AccountField.ROLES]?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        if (model.sectionChoices.isNotEmpty()) Text(stringResource(Res.string.field_section_roles), style = MaterialTheme.typography.titleSmall)
+        model.sectionChoices.forEach { choice ->
+            SectionRoleRow(choice.section, state.sectionRoles[choice.section.id], editable = choice.editable) {
+                model.sectionRole(choice.section.id, it)
+            }
+        }
+        state.errors[AccountField.SECTION_ROLES]?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        if (readOnly) Text(stringResource(Res.string.roles_read_only_hint), style = MaterialTheme.typography.bodySmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(enabled = state.canSave, onClick = { model.submit { onSaved() } }) { Text(stringResource(Res.string.save)) }
+            OutlinedButton(onClick = onBack) { Text(stringResource(Res.string.cancel)) }
+        }
+    }
+}
+
+/** A section with the choice "none" or one of its assignable roles; when not [editable], only the [selected] role. */
+@Composable
+private fun SectionRoleRow(section: SectionDto, selected: String?, editable: Boolean = true, onChoose: (String?) -> Unit) {
     FlowRow(
         Modifier.fillMaxWidth().heightIn(min = 44.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -263,6 +333,10 @@ private fun SectionRoleRow(section: SectionDto, selected: String?, onChoose: (St
         Row(Modifier.padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ColorMarker(section.color)
             Text(section.name, style = MaterialTheme.typography.bodyLarge)
+        }
+        if (!editable) {
+            Text(selected?.let { sectionRoleText(it) } ?: stringResource(Res.string.section_role_none), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+            return@FlowRow
         }
         (listOf<String?>(null) + section.assignableRoles).forEach { role ->
             val label = role?.let { sectionRoleText(it) } ?: stringResource(Res.string.section_role_none)

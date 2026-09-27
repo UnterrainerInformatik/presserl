@@ -12,7 +12,7 @@ import info.unterrainer.presserl.section.SectionRoleDto;
  * Decides which actions a user may perform on an account. Nobody acts on their own account or on
  * a publisher's.
  * <table>
- * <tr><td>RESET_PASSWORD</td><td>user ranks above the account: publisher; editor-in-chief for
+ * <tr><td>EDIT_ROLES, RESET_PASSWORD</td><td>user ranks above the account: publisher; editor-in-chief for
  * accounts not holding EDITOR_IN_CHIEF; section editor for accounts holding no newspaper role but
  * READER and at least one section role, each of them REPORTER in one of the user's sections</td></tr>
  * <tr><td>LOCK</td><td>user holds PUBLISHER and the account is enabled</td></tr>
@@ -46,7 +46,7 @@ public final class AccountPolicy {
         }
         boolean publisher = requester.user().has(NewspaperRole.PUBLISHER);
         return switch (action) {
-            case RESET_PASSWORD -> publisher || ranksAboveAsEditorInChief(requester, target)
+            case EDIT_ROLES, RESET_PASSWORD -> publisher || ranksAboveAsEditorInChief(requester, target)
                     || ranksAboveAsSectionEditor(requester, target);
             case LOCK, UNLOCK -> publisher;
         };
