@@ -6,11 +6,11 @@ change — never tick it off.
 Milestones from `docs/vision.md`; details in `docs/`.
 
 ## M2 — Accounts & sections
-Account creation (`accounts-create`) and sections with section roles
-(`sections-and-section-roles`) are done; articles in sections are proposed
-(`articles-in-sections`). Remaining: deleting sections (what happens to their articles);
-changing the newspaper roles of existing accounts; password reset (new pass-phrase and slip),
-lock/unlock; extend `GET /api/me` additively (scopes, allowed actions); `article.section_id NOT
+Account creation (`accounts-create`), sections with section roles
+(`sections-and-section-roles`), articles in sections (`articles-in-sections`) and password
+reset with lock/unlock (`accounts-reset-and-lock`) are done. Remaining: deleting sections (what
+happens to their articles); changing the newspaper roles of existing accounts; extend
+`GET /api/me` additively (scopes, allowed actions); `article.section_id NOT
 NULL` (correction migration) once all installations ran the default-section bootstrap.
 
 ## M3 — Approval chain

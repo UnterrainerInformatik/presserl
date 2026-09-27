@@ -10,7 +10,9 @@ import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.matchesPattern;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.logging.Handler;
 import java.util.logging.LogRecord;
@@ -418,6 +420,246 @@ class AccountResourceTest {
                 .body(emptyOrNullString());
     }
 
+    // --- allowed actions --------------------------------------------------------------------
+
+    @Test
+    void allowedActionsOfPublisher() {
+        JsonPath json = as(publisher).get("/api/accounts").then().statusCode(200).extract().jsonPath();
+
+        for (String username : List.of("chief", "reader", "nogroups")) {
+            assertThat(json.getList("accounts.find { it.username == '%s' }.allowedActions".formatted(username),
+                    String.class)).containsExactly("RESET_PASSWORD", "LOCK");
+        }
+        assertThat(json.getList("accounts.find { it.username == 'publisher' }.allowedActions")).isEmpty();
+    }
+
+    @Test
+    void allowedActionsOnLockedAccount() {
+        String id = createReader("locky");
+        as(publisher).post("/api/accounts/%s/lock".formatted(id)).then().statusCode(200);
+
+        as(publisher).get("/api/accounts").then()
+                .body("accounts.find { it.username == 'locky' }.allowedActions", contains("RESET_PASSWORD", "UNLOCK"));
+    }
+
+    @Test
+    void allowedActionsOfEditorInChief() {
+        JsonPath json = as(chief).get("/api/accounts").then().statusCode(200).extract().jsonPath();
+
+        assertThat(json.getList("accounts.find { it.username == 'reader' }.allowedActions", String.class))
+                .containsExactly("RESET_PASSWORD");
+        assertThat(json.getList("accounts.find { it.username == 'nogroups' }.allowedActions", String.class))
+                .containsExactly("RESET_PASSWORD");
+        assertThat(json.getList("accounts.find { it.username == 'chief' }.allowedActions")).isEmpty();
+        assertThat(json.getList("accounts.find { it.username == 'publisher' }.allowedActions")).isEmpty();
+    }
+
+    @Test
+    void createdAccountCarriesAllowedActionsOfCreator() {
+        post(publisher, "fresh", "[\"READER\"]", "Fresh").then().statusCode(201)
+                .body("account.allowedActions", contains("RESET_PASSWORD", "LOCK"));
+    }
+
+    // --- password reset ---------------------------------------------------------------------
+
+    @Test
+    void publisherResetsPassword() {
+        String oldPassword = createReaderWithPassword("resetme");
+        String id = idOf("resetme");
+        String refreshToken = refreshToken("resetme", oldPassword);
+
+        String password = as(publisher).post("/api/accounts/%s/password-reset".formatted(id)).then().statusCode(200)
+                .body("account.username", equalTo("resetme"))
+                .body("account.enabled", equalTo(true))
+                .body("account.allowedActions", contains("RESET_PASSWORD", "LOCK"))
+                .body("password", matchesPattern(PASSWORD))
+                .extract().path("password");
+
+        assertThat(password).isNotEqualTo(oldPassword);
+        TestSupport.passwordGrant(TestSupport.HTTP_CLIENT, "resetme", password).then().statusCode(200);
+        TestSupport.passwordGrant(TestSupport.HTTP_CLIENT, "resetme", oldPassword).then().statusCode(401);
+        refresh(refreshToken).then().statusCode(400);
+    }
+
+    @Test
+    void resetOfLockedAccountKeepsItLocked() {
+        String id = createReader("lockedreset");
+        as(publisher).post("/api/accounts/%s/lock".formatted(id)).then().statusCode(200);
+
+        String password = as(publisher).post("/api/accounts/%s/password-reset".formatted(id)).then().statusCode(200)
+                .body("account.enabled", equalTo(false))
+                .extract().path("password");
+
+        TestSupport.passwordGrant(TestSupport.HTTP_CLIENT, "lockedreset", password).then().statusCode(400);
+    }
+
+    @Test
+    void publisherMayNotResetPublisher() {
+        String password = createWithPassword("pub2", "[\"PUBLISHER\"]");
+
+        as(publisher).post("/api/accounts/%s/password-reset".formatted(idOf("pub2"))).then().statusCode(403)
+                .body("errors.message", hasItems(matchesPattern(".*reset the password of.*")));
+        TestSupport.passwordGrant(TestSupport.HTTP_CLIENT, "pub2", password).then().statusCode(200);
+    }
+
+    @Test
+    void editorInChiefMayNotResetEditorInChief() {
+        createWithPassword("chief2", "[\"EDITOR_IN_CHIEF\"]");
+
+        as(chief).post("/api/accounts/%s/password-reset".formatted(idOf("chief2"))).then().statusCode(403);
+    }
+
+    @Test
+    void editorInChiefResetsReader() {
+        as(chief).post("/api/accounts/%s/password-reset".formatted(createReader("kid"))).then().statusCode(200)
+                .body("account.allowedActions", contains("RESET_PASSWORD"));
+    }
+
+    @Test
+    void sectionEditorResetsOwnReporter() {
+        long sport = section("Sport");
+        sectionRole(sport, "nogroups", "SECTION_EDITOR");
+        String id = createReader("sportkid");
+        sectionRole(sport, "sportkid", "REPORTER");
+
+        as(TestSupport.token("nogroups", "nogroups")).post("/api/accounts/%s/password-reset".formatted(id)).then()
+                .statusCode(200)
+                .body("account.sectionRoles.role", contains("REPORTER"));
+    }
+
+    @Test
+    void sectionEditorMayNotResetReporterAlsoInOtherSection() {
+        long sport = section("Sport");
+        long kultur = section("Kultur");
+        sectionRole(sport, "nogroups", "SECTION_EDITOR");
+        String id = createReader("twokid");
+        sectionRole(sport, "twokid", "REPORTER");
+        sectionRole(kultur, "twokid", "REPORTER");
+
+        as(TestSupport.token("nogroups", "nogroups")).post("/api/accounts/%s/password-reset".formatted(id)).then()
+                .statusCode(403);
+    }
+
+    @Test
+    void sectionEditorMayNotResetPlainReader() {
+        sectionRole(section("Sport"), "nogroups", "SECTION_EDITOR");
+
+        as(TestSupport.token("nogroups", "nogroups")).post("/api/accounts/%s/password-reset".formatted(idOf("reader")))
+                .then().statusCode(403);
+    }
+
+    @Test
+    void nobodyResetsOwnPassword() {
+        as(publisher).post("/api/accounts/%s/password-reset".formatted(idOf("publisher"))).then().statusCode(403);
+        as(chief).post("/api/accounts/%s/password-reset".formatted(idOf("chief"))).then().statusCode(403);
+    }
+
+    @Test
+    void readerMayNotReset() {
+        as(TestSupport.token("reader", "reader")).post("/api/accounts/%s/password-reset".formatted(idOf("nogroups")))
+                .then().statusCode(403);
+    }
+
+    @Test
+    void unknownAndServiceAccountsAreNotFound() {
+        String serviceAccountToken = keycloak.tokenManager().getAccessTokenString();
+        String serviceAccount = new JsonPath(new String(Base64.getUrlDecoder().decode(
+                serviceAccountToken.split("\\.")[1]), StandardCharsets.UTF_8)).getString("sub");
+
+        for (String id : List.of("00000000-0000-0000-0000-000000000000", serviceAccount)) {
+            as(publisher).post("/api/accounts/%s/password-reset".formatted(id)).then().statusCode(404)
+                    .body("errors.size()", equalTo(1));
+            as(publisher).post("/api/accounts/%s/lock".formatted(id)).then().statusCode(404);
+            as(publisher).post("/api/accounts/%s/unlock".formatted(id)).then().statusCode(404);
+        }
+    }
+
+    // --- lock / unlock ----------------------------------------------------------------------
+
+    @Test
+    void publisherLocksAndUnlocks() {
+        String password = createReaderWithPassword("locked");
+        String id = idOf("locked");
+        String refreshToken = refreshToken("locked", password);
+
+        as(publisher).post("/api/accounts/%s/lock".formatted(id)).then().statusCode(200)
+                .body("username", equalTo("locked"))
+                .body("enabled", equalTo(false))
+                .body("allowedActions", contains("RESET_PASSWORD", "UNLOCK"));
+        assertThat(realm.users().get(id).toRepresentation().isEnabled()).isFalse();
+        TestSupport.passwordGrant(TestSupport.HTTP_CLIENT, "locked", password).then().statusCode(400);
+        refresh(refreshToken).then().statusCode(400);
+
+        as(publisher).post("/api/accounts/%s/unlock".formatted(id)).then().statusCode(200)
+                .body("enabled", equalTo(true))
+                .body("allowedActions", contains("RESET_PASSWORD", "LOCK"));
+        TestSupport.passwordGrant(TestSupport.HTTP_CLIENT, "locked", password).then().statusCode(200);
+    }
+
+    @Test
+    void lockAndUnlockAreIdempotent() {
+        String id = createReader("twice");
+
+        as(publisher).post("/api/accounts/%s/lock".formatted(id)).then().statusCode(200);
+        as(publisher).post("/api/accounts/%s/lock".formatted(id)).then().statusCode(200).body("enabled", equalTo(false));
+        as(publisher).post("/api/accounts/%s/unlock".formatted(id)).then().statusCode(200);
+        as(publisher).post("/api/accounts/%s/unlock".formatted(id)).then().statusCode(200).body("enabled", equalTo(true));
+    }
+
+    @Test
+    void editorInChiefMayNotLock() {
+        String readerId = idOf("reader");
+
+        as(chief).post("/api/accounts/%s/lock".formatted(readerId)).then().statusCode(403)
+                .body("errors.message", hasItems(matchesPattern(".*lock.*")));
+        as(chief).post("/api/accounts/%s/unlock".formatted(readerId)).then().statusCode(403);
+        assertThat(realm.users().get(readerId).toRepresentation().isEnabled()).isTrue();
+    }
+
+    @Test
+    void publisherMayNotLockPublisherOrSelf() {
+        createWithPassword("pub3", "[\"PUBLISHER\"]");
+
+        as(publisher).post("/api/accounts/%s/lock".formatted(idOf("pub3"))).then().statusCode(403);
+        as(publisher).post("/api/accounts/%s/lock".formatted(idOf("publisher"))).then().statusCode(403);
+        assertThat(realm.users().get(idOf("pub3")).toRepresentation().isEnabled()).isTrue();
+    }
+
+    @Test
+    void readerMayNotLock() {
+        as(TestSupport.token("reader", "reader")).post("/api/accounts/%s/lock".formatted(idOf("nogroups")))
+                .then().statusCode(403).body(emptyOrNullString());
+    }
+
+    private String idOf(String username) {
+        return realm.users().searchByUsername(username, true).getFirst().getId();
+    }
+
+    private String createWithPassword(String username, String roles) {
+        return post(publisher, username, roles, username).then().statusCode(201).extract().path("password");
+    }
+
+    private String createReaderWithPassword(String username) {
+        return createWithPassword(username, "[\"READER\"]");
+    }
+
+    private String createReader(String username) {
+        createReaderWithPassword(username);
+        return idOf(username);
+    }
+
+    private static String refreshToken(String username, String password) {
+        return TestSupport.passwordGrant(TestSupport.HTTP_CLIENT, username, password).then().statusCode(200)
+                .extract().path("refresh_token");
+    }
+
+    private static io.restassured.response.Response refresh(String refreshToken) {
+        return given().formParam("grant_type", "refresh_token")
+                .formParam("client_id", TestSupport.HTTP_CLIENT)
+                .formParam("refresh_token", refreshToken)
+                .post(TestSupport.issuer() + "/protocol/openid-connect/token");
+    }
+
     // --- logging ----------------------------------------------------------------------------
 
     @Test
@@ -454,5 +696,40 @@ class AccountResourceTest {
                 "EDITOR_IN_CHIEF", "READER", "REPORTER"));
         assertThat(messages).allSatisfy(message -> assertThat(message).doesNotContain(password));
         assertThat(password).isNotBlank();
+    }
+
+    @Test
+    void resetAndLockAreLoggedWithoutPassword() {
+        List<String> messages = new ArrayList<>();
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                messages.add(record instanceof ExtLogRecord ext ? ext.getFormattedMessage() : record.getMessage());
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        String id = createReader("audited");
+        java.util.logging.Logger logger = java.util.logging.Logger.getLogger(AccountResource.class.getName());
+        logger.addHandler(handler);
+        String password;
+        try {
+            password = as(publisher).post("/api/accounts/%s/password-reset".formatted(id)).then().statusCode(200)
+                    .extract().path("password");
+            as(publisher).post("/api/accounts/%s/lock".formatted(id)).then().statusCode(200);
+            as(publisher).post("/api/accounts/%s/unlock".formatted(id)).then().statusCode(200);
+        } finally {
+            logger.removeHandler(handler);
+        }
+
+        assertThat(messages).contains("Password of account 'audited' reset by 'publisher'",
+                "Account 'audited' locked by 'publisher'", "Account 'audited' unlocked by 'publisher'");
+        assertThat(messages).allSatisfy(message -> assertThat(message).doesNotContain(password));
     }
 }

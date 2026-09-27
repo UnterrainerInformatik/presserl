@@ -181,7 +181,11 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                         SectionFormScreen(api, route.section, route.defaultColor, onBack = back, onSaved = { stack = listOf(Route.Sections) })
                     }
                     is Route.SectionMembers -> key(route) { SectionMembersScreen(api, route.section, onBack = back) }
-                    Route.Accounts -> AccountListScreen(api, onNew = { roles, sections -> push(Route.NewAccount(roles, sections)) })
+                    Route.Accounts -> AccountListScreen(
+                        api,
+                        onNew = { roles, sections -> push(Route.NewAccount(roles, sections)) },
+                        onReset = { push(Route.AccountSlip(it)) },
+                    )
                     is Route.NewAccount -> key(route) {
                         NewAccountScreen(
                             api,

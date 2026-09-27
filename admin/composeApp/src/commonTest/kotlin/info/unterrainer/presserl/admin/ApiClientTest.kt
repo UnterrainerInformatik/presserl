@@ -52,7 +52,9 @@ class ApiClientTest {
                 path == "/api/accounts/username-suggestion" -> """{ "username": "juergen-maria" }"""
                 path == "/api/accounts" && request.method == HttpMethod.Get -> """{ "assignableRoles": ["EDITOR_IN_CHIEF", "READER"],
                     "accounts": [$ACCOUNT] }"""
-                path == "/api/accounts" -> """{ "account": $ACCOUNT, "password": "tiger-wolke-apfel-leiter" }"""
+                path == "/api/accounts" || path.endsWith("/password-reset") ->
+                    """{ "account": $ACCOUNT, "password": "tiger-wolke-apfel-leiter" }"""
+                path.endsWith("/lock") || path.endsWith("/unlock") -> ACCOUNT
                 path == "/api/sections" && request.method == HttpMethod.Get || path == "/api/sections/order" ->
                     """{ "canManage": true, "sections": [$SECTION] }"""
                 path.endsWith("/members") -> """{ "assignableRoles": ["SECTION_EDITOR", "REPORTER"], "members": [$MEMBER] }"""
@@ -184,8 +186,35 @@ class ApiClientTest {
     fun listAccounts() = runTest {
         val list = api.accounts()
         assertEquals(listOf("EDITOR_IN_CHIEF", "READER"), list.assignableRoles)
-        assertEquals(AccountDto("9a1e", "lena", "Lena", "", listOf("EDITOR_IN_CHIEF"), true), list.accounts.single())
+        assertEquals(
+            AccountDto("9a1e", "lena", "Lena", "", listOf("EDITOR_IN_CHIEF"), true, allowedActions = listOf("RESET_PASSWORD", "LOCK")),
+            list.accounts.single(),
+        )
         assertEquals(Recorded(HttpMethod.Get, "https://news.example.org/api/accounts", "Bearer token-123", null), requests.single())
+    }
+
+    @Test
+    fun resetPasswordPostsWithoutBodyAndReturnsThePassword() = runTest {
+        val created = api.resetPassword("9a1e")
+        assertEquals("tiger-wolke-apfel-leiter", created.password)
+        assertEquals(listOf("RESET_PASSWORD", "LOCK"), created.account.allowedActions)
+        assertEquals(
+            Recorded(HttpMethod.Post, "https://news.example.org/api/accounts/9a1e/password-reset", "Bearer token-123", null),
+            requests.single(),
+        )
+    }
+
+    @Test
+    fun lockAndUnlockPostWithoutBody() = runTest {
+        assertEquals("lena", api.lock("9a1e").username)
+        api.unlock("9a1e")
+        assertEquals(
+            listOf(
+                Recorded(HttpMethod.Post, "https://news.example.org/api/accounts/9a1e/lock", "Bearer token-123", null),
+                Recorded(HttpMethod.Post, "https://news.example.org/api/accounts/9a1e/unlock", "Bearer token-123", null),
+            ),
+            requests,
+        )
     }
 
     @Test
@@ -312,7 +341,7 @@ class ApiClientTest {
         const val MEMBER = """{ "accountId": "5f0c", "username": "nogroups", "firstName": "No", "lastName": "Groups",
             "role": "REPORTER" }"""
         const val ACCOUNT = """{ "id": "9a1e", "username": "lena", "firstName": "Lena", "lastName": "",
-            "roles": ["EDITOR_IN_CHIEF"], "enabled": true }"""
+            "roles": ["EDITOR_IN_CHIEF"], "enabled": true, "allowedActions": ["RESET_PASSWORD", "LOCK"] }"""
         const val SUMMARY = """{ "id": 42, "status": "DRAFT", "author": { "username": "papa", "displayName": "Papa" },
             "section": { "id": 1, "name": "Sport", "slug": "sport", "color": "green" },
             "headline": "H", "kicker": "", "revision": 1, "liveRevision": null, "hasUnpublishedChanges": false,

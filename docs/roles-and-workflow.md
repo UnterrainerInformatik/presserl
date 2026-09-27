@@ -16,7 +16,7 @@ Hierarchy: **Publisher > Editor-in-chief > Section editor > Reporter > Reader.**
 
 - **Several people per role.** Two publishers (both parents), two editors-in-chief, several section editors per section are all fine.
 - **Several roles per person.** A person can hold roles on several levels; for an article, the highest role the author holds *in the article's section* counts.
-- **Delegation.** Everyone from section editor up may create accounts and assign roles **at or below their own level, within their own scope** — a section editor assigns section editors and reporters only in their own sections and no newspaper-wide roles. Reporters and readers do not delegate. There is no confirmation step; publishers see every account and can lock it.
+- **Delegation.** Everyone from section editor up may create accounts and assign roles **at or below their own level, within their own scope** — a section editor assigns section editors and reporters only in their own sections and no newspaper-wide roles. Reporters and readers do not delegate. There is no confirmation step; publishers see every account and can lock it — except other publishers and their own.
 - **Implementation split.** Newspaper-wide roles (`PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`) are Keycloak groups and end up in the token. Per-section roles (`SECTION_EDITOR`, `REPORTER`) and trust switches live in the Presserl database. The backend manages Keycloak users and groups through a service account, so nobody needs the Keycloak admin console.
 
 ## Accounts
@@ -24,7 +24,8 @@ Hierarchy: **Publisher > Editor-in-chief > Section editor > Reporter > Reader.**
 - **No e-mail anywhere.** Username = first name (lowercase, ASCII-folded; collisions get a suffix: `anna`, `anna-2`; editable).
 - **Default password** = four words from a kid-friendly German word list, joined by dashes (`tiger-wolke-apfel-leiter`). Users may change it.
 - **Hand-over** on a printable slip: newspaper name, web address, username, password.
-- **Password reset** by anyone above the person (delegation rule). No self-registration, no "forgot password".
+- **Password reset** by anyone above the person (delegation rule): publishers reset every account except publishers, editors-in-chief every account holding neither publisher nor editor-in-chief, section editors only reporters who belong to their own sections only. Nobody resets their own password here (users change it in the Keycloak account console); a publisher who is locked out needs the Keycloak admin console. The reset hands out a new pass-phrase on the same slip. No self-registration, no "forgot password".
+- **Locking** by publishers only, never of a publisher or of their own account. A locked account cannot log in; unlocking restores it with its password.
 - **Setup**: on first start the backend creates the first account as publisher from `PRESSERL_PUBLISHER_USERNAME` / `PRESSERL_PUBLISHER_PASSWORD`. That account holds all roles. The publisher logs in and creates an editor-in-chief.
 - Later: a QR code on the slip replaces typing (see M8 in [vision.md](vision.md#milestones)).
 

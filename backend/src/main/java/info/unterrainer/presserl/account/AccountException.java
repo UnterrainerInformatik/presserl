@@ -33,6 +33,10 @@ public class AccountException extends RuntimeException {
         return new AccountException(Status.FORBIDDEN, List.of(new FieldError(field, message)), null);
     }
 
+    public static AccountException notFound(String id) {
+        return new AccountException(Status.NOT_FOUND, List.of(new FieldError(null, "no account " + id)), null);
+    }
+
     public static AccountException conflict(String field, String message) {
         return new AccountException(Status.CONFLICT, List.of(new FieldError(field, message)), null);
     }

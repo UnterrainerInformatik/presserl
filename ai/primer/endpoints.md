@@ -352,6 +352,17 @@ body; missing/invalid token → `401`. Every other refusal carries the error bod
 
 Section roles given on creation follow the section-role delegation (see Sections).
 
+**Account actions** (`allowedActions`; the server decides, clients render buttons from it). Nobody
+acts on their own account or on an account holding `PUBLISHER`:
+
+| Action | Requesting user holds | Target account |
+|---|---|---|
+| `RESET_PASSWORD` | `PUBLISHER` | any other |
+| `RESET_PASSWORD` | `EDITOR_IN_CHIEF` | not holding `EDITOR_IN_CHIEF` |
+| `RESET_PASSWORD` | `SECTION_EDITOR` | newspaper roles ⊆ {`READER`}, at least one section role, every section role `REPORTER` in a section the requesting user is `SECTION_EDITOR` of |
+| `LOCK` | `PUBLISHER` | enabled |
+| `UNLOCK` | `PUBLISHER` | disabled |
+
 **Keycloak unavailable:** when Keycloak cannot be reached or refuses the service account, every
 account endpoint answers `503` with
 `{"errors": [{"field": null, "message": "the account service is unavailable; try again later"}]}`.
@@ -361,11 +372,14 @@ account endpoint answers `503` with
 ```json
 { "id": "5f0c…", "username": "chief", "firstName": "Chief", "lastName": "Editor",
   "roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [ { "sectionId": 1, "role": "REPORTER" } ],
-  "enabled": true }
+  "enabled": true, "allowedActions": ["RESET_PASSWORD", "LOCK"] }
 ```
 `id` is the Keycloak user id. `firstName`/`lastName` are `""` when unset. `roles` are the newspaper
 roles from the account's groups in the order `PUBLISHER`, `EDITOR_IN_CHIEF`, `READER` (`[]` for
 none). `sectionRoles` are the account's section roles ordered by section position (`[]` for none).
+`enabled` is `false` for a locked account. `allowedActions` are the actions the requesting user may
+perform on the account now, in the order `RESET_PASSWORD`, `LOCK`, `UNLOCK` (see the account
+actions table; `LOCK` only for enabled, `UNLOCK` only for disabled accounts).
 
 ## `GET /api/accounts`
 
@@ -377,7 +391,8 @@ Every account of the realm except service accounts, sorted by `username`. At mos
   ```json
   { "assignableRoles": ["PUBLISHER", "EDITOR_IN_CHIEF", "READER"],
     "accounts": [ { "id": "5f0c…", "username": "chief", "firstName": "Chief", "lastName": "Editor",
-                    "roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [], "enabled": true } ] }
+                    "roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [], "enabled": true,
+                    "allowedActions": ["RESET_PASSWORD", "LOCK"] } ] }
   ```
   `assignableRoles` are the newspaper roles only (`[]` for a section editor); the section roles a
   user may assign are reported per section by `GET /api/sections`.
@@ -421,10 +436,10 @@ stores its section roles.
   ```json
   { "account": { "id": "9a1e…", "username": "lena", "firstName": "Lena", "lastName": "",
                  "roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [ { "sectionId": 1, "role": "REPORTER" } ],
-                 "enabled": true },
+                 "enabled": true, "allowedActions": ["RESET_PASSWORD", "LOCK"] },
     "password": "tiger-wolke-apfel-leiter" }
   ```
-  `password` is four words from a curated German word list (`a-z`, 3–8 letters each) joined by
+  `allowedActions` are computed for the creator. `password` is four words from a curated German word list (`a-z`, 3–8 letters each) joined by
   `-`, chosen with a secure random source. It is **not temporary** and appears **only in this
   response** — the server neither stores nor logs it. Show it on the account slip.
 - **Errors:** `400` validation (every violation; also names Keycloak rejects, e.g. forbidden
@@ -434,6 +449,46 @@ stores its section roles.
 - **Side effects:** Keycloak user created with the password credential and group memberships,
   section roles stored; all or nothing (a failure after the creation deletes the user again).
   Logged at INFO with username, creator, roles and section roles.
+
+## `POST /api/accounts/{id}/password-reset`
+
+Sets a newly generated default password (same pass-phrase rule as `POST /api/accounts`, not
+temporary) and ends every Keycloak session of the account. A locked account stays locked.
+
+- **Auth:** account access rule above, and `RESET_PASSWORD` permitted by the account actions table
+- **Body:** none
+- **Response `200`:** the creation shape, `CreatedAccountDto`
+  ```json
+  { "account": { "id": "…", "username": "reader", "firstName": "Reader", "lastName": "",
+                 "roles": ["READER"], "sectionRoles": [], "enabled": true,
+                 "allowedActions": ["RESET_PASSWORD", "LOCK"] },
+    "password": "tiger-wolke-apfel-leiter" }
+  ```
+  `password` appears **only in this response**; show it on the account slip.
+- **Errors:** `403` empty body (no account access), `403` error body when the rule refuses (field
+  `null`, e.g. `you may not reset the password of account 'chief'`), `404` error body for an unknown
+  id or a service account, `503`. If ending the sessions fails after the password was set, the
+  answer is `503`; a retry sets another new password.
+- **Side effects:** Keycloak password credential replaced, all sessions of the account ended (its
+  refresh tokens are rejected at once; access tokens already issued stay valid until they expire).
+  Logged at INFO `Password of account '<username>' reset by '<user>'` — never the password.
+
+## `POST /api/accounts/{id}/lock`, `POST /api/accounts/{id}/unlock`
+
+Lock disables the account in Keycloak and ends every session of it; unlock enables it again.
+Idempotent: locking a locked account (or unlocking an enabled one) answers `200` without change.
+
+- **Auth:** `PUBLISHER`; never an account holding `PUBLISHER`, never the own account
+- **Body:** none
+- **Response `200`:** the `AccountDto` with its new state, e.g. after a lock
+  `{ "id": "…", "username": "reader", …, "enabled": false, "allowedActions": ["RESET_PASSWORD", "UNLOCK"] }`
+- **Errors:** `403` empty body (no account access), `403` error body when refused (field `null`,
+  e.g. `you may not lock account 'reader'`), `404` error body for an unknown id or a service
+  account, `503`.
+- **Side effects:** Keycloak user `enabled` flag changed; on lock all sessions ended (refresh tokens
+  rejected at once; **access tokens issued before the lock stay valid until they expire**, Keycloak
+  default a few minutes). Logged at INFO `Account '<username>' locked|unlocked by '<user>'` when the
+  state changed.
 
 ---
 

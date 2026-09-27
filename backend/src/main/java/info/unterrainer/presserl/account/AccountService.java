@@ -14,7 +14,9 @@ import java.util.function.Supplier;
 import org.jboss.logging.Logger;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.resource.RealmResource;
+import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.representations.idm.CredentialRepresentation;
+import org.keycloak.representations.idm.GroupRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -86,13 +88,19 @@ public class AccountService {
     }
 
     /**
-     * The account with this id; empty when there is none or it is a service account.
+     * The account with this id and its newspaper roles, without section roles; empty when there is
+     * none or it is a service account.
      */
     public Optional<AccountDto> find(String id) {
         return keycloakCall(() -> {
             try {
-                UserRepresentation user = realm().users().get(id).toRepresentation();
-                return isServiceAccount(user) ? Optional.empty() : Optional.of(account(user, List.of()));
+                UserResource resource = realm().users().get(id);
+                UserRepresentation user = resource.toRepresentation();
+                if (isServiceAccount(user)) {
+                    return Optional.empty();
+                }
+                List<String> groups = resource.groups().stream().map(GroupRepresentation::getName).toList();
+                return Optional.of(account(user, NewspaperRole.fromGroups(groups)));
             } catch (WebApplicationException e) {
                 Response response = e.getResponse();
                 if (response != null && response.getStatus() == Response.Status.NOT_FOUND.getStatusCode()) {
@@ -129,9 +137,47 @@ public class AccountService {
                 throw e;
             }
             return new AccountDto(id, request.username(), request.firstName(), request.lastName(), request.roles(),
-                    List.of(), true);
+                    List.of(), true, List.of());
         });
         return new CreatedAccountDto(account, password);
+    }
+
+    /**
+     * Sets {@code password} as the account's permanent password.
+     */
+    public void resetPassword(String id, String password) {
+        keycloakCall(() -> {
+            realm().users().get(id).resetPassword(passwordCredential(password));
+            return null;
+        });
+    }
+
+    /**
+     * Enables or disables the account; no Keycloak write when it already is in that state.
+     *
+     * @return whether the state changed
+     */
+    public boolean setEnabled(String id, boolean enabled) {
+        return keycloakCall(() -> {
+            UserResource resource = realm().users().get(id);
+            UserRepresentation user = resource.toRepresentation();
+            if (Boolean.TRUE.equals(user.isEnabled()) == enabled) {
+                return false;
+            }
+            user.setEnabled(enabled);
+            resource.update(user);
+            return true;
+        });
+    }
+
+    /**
+     * Ends every Keycloak session of the account, so its refresh tokens stop working.
+     */
+    public void logout(String id) {
+        keycloakCall(() -> {
+            realm().users().get(id).logout();
+            return null;
+        });
     }
 
     /**
@@ -166,17 +212,12 @@ public class AccountService {
     }
 
     private String createUser(RealmResource realm, CreateAccountRequest request, String password) {
-        CredentialRepresentation credential = new CredentialRepresentation();
-        credential.setType(CredentialRepresentation.PASSWORD);
-        credential.setValue(password);
-        credential.setTemporary(false);
-
         UserRepresentation user = new UserRepresentation();
         user.setUsername(request.username());
         user.setFirstName(request.firstName());
         user.setLastName(request.lastName().isEmpty() ? null : request.lastName());
         user.setEnabled(true);
-        user.setCredentials(List.of(credential));
+        user.setCredentials(List.of(passwordCredential(password)));
 
         try (Response response = realm.users().create(user)) {
             int status = response.getStatus();
@@ -197,6 +238,14 @@ public class AccountService {
             throw new WebApplicationException("Creating user '%s' failed with HTTP %d: %s"
                     .formatted(request.username(), status, body), status);
         }
+    }
+
+    private static CredentialRepresentation passwordCredential(String password) {
+        CredentialRepresentation credential = new CredentialRepresentation();
+        credential.setType(CredentialRepresentation.PASSWORD);
+        credential.setValue(password);
+        credential.setTemporary(false);
+        return credential;
     }
 
     private void deleteOrphan(RealmResource realm, String id, String username) {
@@ -232,7 +281,7 @@ public class AccountService {
 
     private static AccountDto account(UserRepresentation user, List<NewspaperRole> roles) {
         return new AccountDto(user.getId(), user.getUsername(), orEmpty(user.getFirstName()),
-                orEmpty(user.getLastName()), roles, List.of(), Boolean.TRUE.equals(user.isEnabled()));
+                orEmpty(user.getLastName()), roles, List.of(), Boolean.TRUE.equals(user.isEnabled()), List.of());
     }
 
     private static String orEmpty(String value) {

@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalButton
@@ -22,10 +23,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -43,7 +46,18 @@ import info.unterrainer.presserl.admin.api.CreatedAccountDto
 import info.unterrainer.presserl.admin.api.MeDto
 import info.unterrainer.presserl.admin.api.SectionDto
 import info.unterrainer.presserl.admin.resources.Res
-import info.unterrainer.presserl.admin.resources.account_disabled
+import info.unterrainer.presserl.admin.resources.account_action_failed
+import info.unterrainer.presserl.admin.resources.account_locked
+import info.unterrainer.presserl.admin.resources.action_lock
+import info.unterrainer.presserl.admin.resources.action_reset_password
+import info.unterrainer.presserl.admin.resources.action_unlock
+import info.unterrainer.presserl.admin.resources.cancel
+import info.unterrainer.presserl.admin.resources.confirm_lock_text
+import info.unterrainer.presserl.admin.resources.confirm_lock_title
+import info.unterrainer.presserl.admin.resources.confirm_reset_text
+import info.unterrainer.presserl.admin.resources.confirm_reset_title
+import info.unterrainer.presserl.admin.resources.confirm_unlock_text
+import info.unterrainer.presserl.admin.resources.confirm_unlock_title
 import info.unterrainer.presserl.admin.resources.create_account
 import info.unterrainer.presserl.admin.resources.done
 import info.unterrainer.presserl.admin.resources.field_first_name
@@ -82,7 +96,11 @@ fun canAdministerAccounts(me: MeDto): Boolean =
 private data class AccountsView(val accounts: AccountListDto, val sections: List<SectionDto>)
 
 @Composable
-fun AccountListScreen(api: ApiClient, onNew: (assignableRoles: List<String>, sections: List<SectionDto>) -> Unit) {
+fun AccountListScreen(
+    api: ApiClient,
+    onNew: (assignableRoles: List<String>, sections: List<SectionDto>) -> Unit,
+    onReset: (CreatedAccountDto) -> Unit,
+) {
     var view by remember { mutableStateOf<AccountsView?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var loads by remember { mutableStateOf(0) }
@@ -104,23 +122,68 @@ fun AccountListScreen(api: ApiClient, onNew: (assignableRoles: List<String>, sec
         when {
             error != null -> LoadFailed(error!!, onReload = { loads++ })
             current == null -> Text(stringResource(Res.string.loading))
-            else -> {
-                val sectionNames = current.sections.associate { it.id to it.name }
-                LazyColumn {
-                    items(current.accounts.accounts, key = { it.id }) { account ->
-                        AccountRow(account, sectionNames)
-                        HorizontalDivider()
-                    }
-                }
-            }
+            else -> key(current) { AccountList(api, current, onReset) }
         }
     }
 }
 
 @Composable
-private fun AccountRow(account: AccountDto, sectionNames: Map<Long, String>) {
+private fun AccountList(api: ApiClient, view: AccountsView, onReset: (CreatedAccountDto) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val model = remember { AccountListModel(scope, view.accounts.accounts, api::resetPassword, api::lock, api::unlock) }
+    val state by model.state.collectAsState()
+    val sectionNames = view.sections.associate { it.id to it.name }
+
+    LaunchedEffect(state.reset) {
+        state.reset?.let {
+            model.resetShown()
+            onReset(it)
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        state.error?.let { Banner(stringResource(Res.string.account_action_failed, it)) }
+        LazyColumn {
+            items(state.accounts, key = { it.id }) { account ->
+                AccountRow(account, sectionNames, enabled = !state.busy, onAction = { model.request(account, it) })
+                HorizontalDivider()
+            }
+        }
+    }
+
+    state.pending?.let { pending -> ConfirmAction(pending, onConfirm = model::confirm, onCancel = model::cancel) }
+}
+
+/** Asks before an account action, naming the account. */
+@Composable
+private fun ConfirmAction(pending: PendingAction, onConfirm: () -> Unit, onCancel: () -> Unit) {
+    val (title, text) = when (pending.action) {
+        AccountAction.RESET_PASSWORD -> Res.string.confirm_reset_title to Res.string.confirm_reset_text
+        AccountAction.LOCK -> Res.string.confirm_lock_title to Res.string.confirm_lock_text
+        AccountAction.UNLOCK -> Res.string.confirm_unlock_title to Res.string.confirm_unlock_text
+    }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(title)) },
+        text = { Text(stringResource(text, pending.account.username)) },
+        confirmButton = { Button(onClick = onConfirm) { Text(actionText(pending.action)) } },
+        dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(Res.string.cancel)) } },
+    )
+}
+
+@Composable
+private fun actionText(action: AccountAction): String = stringResource(
+    when (action) {
+        AccountAction.RESET_PASSWORD -> Res.string.action_reset_password
+        AccountAction.LOCK -> Res.string.action_lock
+        AccountAction.UNLOCK -> Res.string.action_unlock
+    },
+)
+
+@Composable
+private fun AccountRow(account: AccountDto, sectionNames: Map<Long, String>, enabled: Boolean, onAction: (AccountAction) -> Unit) {
     Column(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(vertical = 12.dp, horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        val title = listOfNotNull(account.username, stringResource(Res.string.account_disabled).takeIf { !account.enabled })
+        val title = listOfNotNull(account.username, stringResource(Res.string.account_locked).takeIf { !account.enabled })
         Text(title.joinToString(" · "), style = MaterialTheme.typography.titleMedium)
         val roles = account.roles.map { roleText(it) } +
             account.sectionRoles.map { sectionRoleText(it.role) + " · " + (sectionNames[it.sectionId] ?: "#${it.sectionId}") }
@@ -129,6 +192,14 @@ private fun AccountRow(account: AccountDto, sectionNames: Map<Long, String>) {
             if (roles.isEmpty()) stringResource(Res.string.no_roles) else roles.joinToString(", "),
         ).filter { it.isNotEmpty() }
         Text(details.joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+        val actions = account.actions()
+        if (actions.isNotEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                actions.forEach { action ->
+                    TextButton(onClick = { onAction(action) }, enabled = enabled) { Text(actionText(action)) }
+                }
+            }
+        }
     }
 }
 
@@ -218,7 +289,7 @@ private fun FormField(value: String, onChange: (String) -> Unit, label: String, 
 }
 
 /**
- * The slip after a creation (design D9/D10): the password lives only in [created] and is gone once
+ * The slip after a creation or a password reset (design D9/D10): the password lives only in [created] and is gone once
  * the user leaves this screen.
  */
 @Composable

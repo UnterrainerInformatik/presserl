@@ -104,6 +104,17 @@ class ApiClient(
             setBody(request)
         }.body()
 
+    /** Sets a new generated password and ends the account's sessions; the response carries the password once. */
+    suspend fun resetPassword(accountId: String): CreatedAccountDto =
+        http.post("$baseUrl/api/accounts/$accountId/password-reset") { bearerAuth(accessToken()) }.body()
+
+    /** Disables the account and ends its sessions (publishers only). */
+    suspend fun lock(accountId: String): AccountDto =
+        http.post("$baseUrl/api/accounts/$accountId/lock") { bearerAuth(accessToken()) }.body()
+
+    suspend fun unlock(accountId: String): AccountDto =
+        http.post("$baseUrl/api/accounts/$accountId/unlock") { bearerAuth(accessToken()) }.body()
+
     /** All sections by position, with what the user may do. */
     suspend fun sections(): SectionListDto = http.get("$baseUrl/api/sections") { bearerAuth(accessToken()) }.body()
 

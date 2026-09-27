@@ -112,6 +112,7 @@ Content-Type: application/json
         client.assert(/^[a-z]{3,8}(-[a-z]{3,8}){3}$/.test(response.body.password), "password shape");
     });
     client.global.set("newPassword", response.body.password);
+    client.global.set("newAccountId", response.body.account.id);
 %}
 
 ### The new account can log in with the generated password
@@ -210,4 +211,117 @@ Content-Type: application/json
         client.assert(response.status === 400, "status " + response.status);
         client.assert(response.body.errors[0].field === "sectionRoles", JSON.stringify(response.body));
     });
+%}
+
+### Allowed actions of the publisher on the new account
+GET {{baseUrl}}/api/accounts
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("reset and lock offered, nothing on the own account", () => {
+        const created = response.body.accounts.find(a => a.id === client.global.get("newAccountId"));
+        client.assert(JSON.stringify(created.allowedActions) === '["RESET_PASSWORD","LOCK"]', JSON.stringify(created));
+        const own = response.body.accounts.find(a => a.username === "publisher");
+        client.assert(own && JSON.stringify(own.allowedActions) === '[]', JSON.stringify(own));
+    });
+%}
+
+### Reset the password of the new account
+POST {{baseUrl}}/api/accounts/{{newAccountId}}/password-reset
+Authorization: Bearer {{accessToken}}
+
+> {%
+    const previousPassword = client.global.get("newPassword");
+    client.test("200 with the account and a new four-word password", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.account.id === client.global.get("newAccountId"), JSON.stringify(response.body.account));
+        client.assert(/^[a-z]{3,8}(-[a-z]{3,8}){3}$/.test(response.body.password), "password shape");
+        client.assert(response.body.password !== previousPassword, "password unchanged");
+    });
+    client.global.set("oldPassword", previousPassword);
+    client.global.set("newPassword", response.body.password);
+%}
+
+### The old password no longer works
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{newUsername}}&password={{oldPassword}}
+
+> {%
+    client.test("401", () => client.assert(response.status === 401, "status " + response.status));
+%}
+
+### The new password works
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{newUsername}}&password={{newPassword}}
+
+> {%
+    client.test("token issued", () => client.assert(response.status === 200, "status " + response.status));
+%}
+
+### Lock the new account
+POST {{baseUrl}}/api/accounts/{{newAccountId}}/lock
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200, disabled, unlock offered", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.enabled === false, JSON.stringify(response.body));
+        client.assert(JSON.stringify(response.body.allowedActions) === '["RESET_PASSWORD","UNLOCK"]', JSON.stringify(response.body));
+    });
+%}
+
+### Lock again is idempotent
+POST {{baseUrl}}/api/accounts/{{newAccountId}}/lock
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200, still disabled", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.enabled === false, JSON.stringify(response.body));
+    });
+%}
+
+### A locked account cannot log in
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{newUsername}}&password={{newPassword}}
+
+> {%
+    client.test("refused", () => client.assert(response.status === 400, "status " + response.status));
+%}
+
+### Unlock the new account
+POST {{baseUrl}}/api/accounts/{{newAccountId}}/unlock
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200, enabled, lock offered", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.enabled === true, JSON.stringify(response.body));
+        client.assert(JSON.stringify(response.body.allowedActions) === '["RESET_PASSWORD","LOCK"]', JSON.stringify(response.body));
+    });
+%}
+
+### The editor-in-chief may not lock
+POST {{baseUrl}}/api/accounts/{{newAccountId}}/lock
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("403 with an error body", () => {
+        client.assert(response.status === 403, "status " + response.status);
+        client.assert(response.body.errors[0].field === null, JSON.stringify(response.body));
+    });
+%}
+
+### Unknown account
+POST {{baseUrl}}/api/accounts/00000000-0000-0000-0000-000000000000/password-reset
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
 %}

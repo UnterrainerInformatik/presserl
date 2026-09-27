@@ -158,7 +158,8 @@ class DtoTest {
                 { "id": "5f0c", "username": "chief", "firstName": "Chief", "lastName": "Editor",
                   "roles": ["EDITOR_IN_CHIEF"], "enabled": true },
                 { "id": "77aa", "username": "nogroups", "firstName": "No", "lastName": "Groups",
-                  "roles": [], "sectionRoles": [{ "sectionId": 1, "role": "REPORTER" }], "enabled": false }
+                  "roles": [], "sectionRoles": [{ "sectionId": 1, "role": "REPORTER" }], "enabled": false,
+                  "allowedActions": ["RESET_PASSWORD", "UNLOCK"] }
               ]
             }
             """,
@@ -169,6 +170,8 @@ class DtoTest {
         assertEquals(emptyList(), dto.accounts[1].roles)
         assertEquals(listOf(SectionRoleDto(1, "REPORTER")), dto.accounts[1].sectionRoles)
         assertEquals(false, dto.accounts[1].enabled)
+        assertEquals(emptyList(), dto.accounts[0].allowedActions)
+        assertEquals(listOf("RESET_PASSWORD", "UNLOCK"), dto.accounts[1].allowedActions)
     }
 
     @Test

@@ -153,7 +153,8 @@ data class FieldErrorDto(
 
 /**
  * Entry of `GET /api/accounts`; [roles] are newspaper roles in the order publisher, editor-in-chief, reader,
- * [sectionRoles] are ordered by section position.
+ * [sectionRoles] are ordered by section position, [allowedActions] what the user may do with it now
+ * (`RESET_PASSWORD`, `LOCK`, `UNLOCK`).
  */
 @Serializable
 data class AccountDto(
@@ -164,6 +165,7 @@ data class AccountDto(
     val roles: List<String>,
     val enabled: Boolean,
     val sectionRoles: List<SectionRoleDto> = emptyList(),
+    val allowedActions: List<String> = emptyList(),
 )
 
 /** A section role of an account (`SECTION_EDITOR` or `REPORTER`), in account lists and `POST /api/accounts`. */

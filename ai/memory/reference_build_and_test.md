@@ -25,6 +25,12 @@ Verified 2026-09-26 on Gerald's machine (JDK 21, Docker running) unless marked o
   `textbox` (editor order: section chooser, kicker, headline, subheadline, lead). Clicks must go
   to the bounding box via `page.mouse.click` (the canvas intercepts locator clicks); the
   semantics tree can lag (e.g. a closed menu still listed) — verify with screenshots or the API.
+- **Compose dialogs in Playwright (verified 2026-09-27):** there is no `dialog` role; while an
+  `AlertDialog` is open the semantics tree holds only the dialog. After it closes the tree keeps
+  the dialog's nodes indefinitely (waiting, mouse moves, wheel do not refresh it) — reload the page
+  after each dialog and check in-place updates by screenshot or API, secrets from the network response.
+- **.http response handlers:** `client.test(...)` callbacks run after the handler body, so read a
+  global into a `const` before a later `client.global.set` overwrites it.
 - **Admin tests:** `cd admin && ./gradlew check` (Karma, headless Chrome with SwiftShader via
   `composeApp/karma.config.d/`; Node cannot run the Compose runtime).
 - **Image:** `docker build -t presserl:local .` from the repo root (~3 min cold).

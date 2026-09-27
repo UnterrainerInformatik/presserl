@@ -156,15 +156,16 @@ GET    /api/articles/{id}/revisions/{n}   one revision                          
 GET    /api/review-queue                  what I have to approve (empty for solo)
 GET    /api/accounts                      section editor+; all accounts with their section roles (implemented)
 POST   /api/accounts                      create account (roles and section roles ≤ mine, within my scope) → username + pass-phrase for the slip (implemented)
-POST   /api/accounts/{id}/password-reset  anyone above the person
-POST   /api/accounts/{id}/lock            publisher
+POST   /api/accounts/{id}/password-reset  anyone above the person, never a publisher, never oneself → new pass-phrase for the slip (implemented)
+POST   /api/accounts/{id}/lock            publisher; never a publisher, never oneself (implemented)
+POST   /api/accounts/{id}/unlock          publisher; never a publisher, never oneself (implemented)
 PUT    /api/accounts/{id}/roles           roles at or below mine, within my scope
 PUT    /api/accounts/{id}/trust           set/clear trust for my level
 POST   /api/media                         reporter+ (size/type limit)
 GET    /api/me                            my roles and section roles (implemented); later scopes and allowed actions
 ```
 
-Article responses carry `allowedActions`; clients render buttons from it and never re-implement the approval chain. In M1, `publish` goes directly to `PUBLISHED` for a publisher-author only and `offline` does not lock; see `ai/primer/endpoints.md` for the binding contract of the implemented endpoints.
+Article and account responses carry `allowedActions`; clients render buttons from it and never re-implement the approval chain or the account rules. In M1, `publish` goes directly to `PUBLISHED` for a publisher-author only and `offline` does not lock; see `ai/primer/endpoints.md` for the binding contract of the implemented endpoints.
 
 ## Views
 

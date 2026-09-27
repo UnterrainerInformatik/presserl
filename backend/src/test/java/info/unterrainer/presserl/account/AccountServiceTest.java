@@ -154,7 +154,7 @@ class AccountServiceTest {
     @Test
     void createdAccountHidesThePasswordInToString() {
         CreatedAccountDto created = new CreatedAccountDto(
-                new AccountDto("id", "lena", "Lena", "", List.of(NewspaperRole.READER), List.of(), true), "tiger-wolke-apfel-leiter");
+                new AccountDto("id", "lena", "Lena", "", List.of(NewspaperRole.READER), List.of(), true, List.of()), "tiger-wolke-apfel-leiter");
 
         assertThat(created.toString()).contains("lena").doesNotContain("tiger");
     }
