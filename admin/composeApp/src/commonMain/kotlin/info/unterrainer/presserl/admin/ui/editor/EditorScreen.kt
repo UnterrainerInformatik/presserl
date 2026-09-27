@@ -19,6 +19,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +50,8 @@ import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.ui.material3.OutlinedRichTextEditor
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.ArticleDto
+import info.unterrainer.presserl.admin.api.SectionDto
+import info.unterrainer.presserl.admin.api.SectionRefDto
 import info.unterrainer.presserl.admin.article.Run
 import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.action_failed
@@ -58,6 +63,7 @@ import info.unterrainer.presserl.admin.resources.block_quote
 import info.unterrainer.presserl.admin.resources.block_subhead
 import info.unterrainer.presserl.admin.resources.bold
 import info.unterrainer.presserl.admin.resources.cancel
+import info.unterrainer.presserl.admin.resources.choose_section
 import info.unterrainer.presserl.admin.resources.conflict_text
 import info.unterrainer.presserl.admin.resources.delete
 import info.unterrainer.presserl.admin.resources.delete_text
@@ -66,6 +72,7 @@ import info.unterrainer.presserl.admin.resources.empty_body
 import info.unterrainer.presserl.admin.resources.field_headline
 import info.unterrainer.presserl.admin.resources.field_kicker
 import info.unterrainer.presserl.admin.resources.field_lead
+import info.unterrainer.presserl.admin.resources.field_section
 import info.unterrainer.presserl.admin.resources.field_subheadline
 import info.unterrainer.presserl.admin.resources.leave
 import info.unterrainer.presserl.admin.resources.leave_text
@@ -97,6 +104,7 @@ import info.unterrainer.presserl.admin.ui.Banner
 import info.unterrainer.presserl.admin.ui.LoadFailed
 import info.unterrainer.presserl.admin.ui.attempt
 import info.unterrainer.presserl.admin.ui.describe
+import info.unterrainer.presserl.admin.ui.section.ColorMarker
 import info.unterrainer.presserl.admin.ui.statusText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -154,6 +162,9 @@ private fun Editor(
         )
     }
     val actions = actionsFor(article.allowedActions)
+    // Loaded once for the chooser; without them the chooser shows the current section only
+    var sections by remember { mutableStateOf<List<SectionDto>?>(null) }
+    if (actions.editable) LaunchedEffect(Unit) { sections = attempt({}) { api.sections().sections } }
     val saveState by autosaver.state.collectAsState()
     var actionErrors by remember { mutableStateOf(FieldErrors()) }
     var busy by remember { mutableStateOf(false) }
@@ -198,6 +209,7 @@ private fun Editor(
         header = saveErrors.header + actionErrors.header,
         blocks = saveErrors.blocks + actionErrors.blocks,
         general = saveErrors.general + actionErrors.general,
+        section = actionErrors.section ?: saveErrors.section,
     )
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -223,7 +235,13 @@ private fun Editor(
         if (!actions.editable) Banner(stringResource(Res.string.read_only), color = MaterialTheme.colorScheme.secondaryContainer)
 
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (actions.editable) EditableArticle(model, errors, enabled = saveState != SaveState.Conflict) else ArticleView(model.draft)
+            if (actions.editable) {
+                SectionChooser(model, article.section, sections.orEmpty(), errors.section, enabled = saveState != SaveState.Conflict)
+                EditableArticle(model, errors, enabled = saveState != SaveState.Conflict)
+            } else {
+                article.section?.let { SectionLabel(it.name, it.color) }
+                ArticleView(model.draft)
+            }
         }
 
         HorizontalDivider()
@@ -326,6 +344,57 @@ private val EditorBlock.type: BlockType
         is EditorBlock.Quote -> BlockType.QUOTE
         is EditorBlock.BulletList -> BlockType.LIST
     }
+
+/** The section as a colour marker and name, for read-only articles. */
+@Composable
+private fun SectionLabel(name: String, color: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ColorMarker(color, size = 12.dp)
+        Text(stringResource(Res.string.field_section) + ": " + name, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+/**
+ * Chooses the article's section among the [sections] the user may write in (`canWrite`), in position order;
+ * [current] is the section as last saved, shown while the list is not loaded.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SectionChooser(model: EditorModel, current: SectionRefDto?, sections: List<SectionDto>, error: String?, enabled: Boolean) {
+    val selectedId = model.draft.sectionId
+    val selected = sections.firstOrNull { it.id == selectedId }?.let { it.name to it.color }
+        ?: current?.takeIf { it.id == selectedId }?.let { it.name to it.color }
+    val writable = sections.filter { it.canWrite }
+    var open by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it && enabled && writable.isNotEmpty() }) {
+        OutlinedTextField(
+            value = selected?.first ?: "",
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            enabled = enabled,
+            label = { Text(stringResource(Res.string.field_section)) },
+            placeholder = { Text(stringResource(Res.string.choose_section)) },
+            leadingIcon = selected?.let { { ColorMarker(it.second, size = 12.dp) } },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
+            isError = error != null,
+            supportingText = error?.let { { Text(it) } },
+            modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled),
+        )
+        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            writable.forEach { section ->
+                DropdownMenuItem(
+                    text = { Text(section.name) },
+                    leadingIcon = { ColorMarker(section.color, size = 12.dp) },
+                    onClick = {
+                        open = false
+                        model.dispatch(EditorIntent.ChooseSection(section.id))
+                    },
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun EditableArticle(model: EditorModel, errors: FieldErrors, enabled: Boolean) {

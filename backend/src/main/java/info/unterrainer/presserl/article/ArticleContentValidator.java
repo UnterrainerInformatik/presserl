@@ -14,21 +14,24 @@ import info.unterrainer.presserl.api.FieldError;
 /**
  * Reads an article request body strictly: the four text fields (default empty, trimmed, length
  * limited, no control characters), the body (default empty document, validated by
- * {@link ArticleBodyValidator}) and, for saves, the required {@code version}. Unknown fields are
- * rejected. All violations are reported together.
+ * {@link ArticleBodyValidator}), the optional {@code sectionId} and, for saves, the required
+ * {@code version}. Unknown fields are rejected. All violations are reported together. Whether the
+ * section exists and may be written in is checked by {@link ArticleService}.
  */
 public final class ArticleContentValidator {
 
     public static final String VERSION = "version";
+    public static final String SECTION_ID = "sectionId";
     private static final Set<String> CONTENT_FIELDS = Set.of("kicker", "headline", "subheadline", "lead", "body");
 
     private ArticleContentValidator() {
     }
 
     /**
-     * A validated request: the content and, if requested, the client's article version.
+     * A validated request: the content, the requested section ({@code null} when not given) and, if
+     * requested, the client's article version.
      */
-    public record Request(ArticleContent content, Long version) {
+    public record Request(ArticleContent content, Long sectionId, Long version) {
     }
 
     /**
@@ -46,7 +49,7 @@ public final class ArticleContentValidator {
         }
         for (Iterator<String> names = json.fieldNames(); names.hasNext();) {
             String name = names.next();
-            if (!CONTENT_FIELDS.contains(name) && !(withVersion && VERSION.equals(name))) {
+            if (!CONTENT_FIELDS.contains(name) && !SECTION_ID.equals(name) && !(withVersion && VERSION.equals(name))) {
                 errors.add(new FieldError(name, "unknown field"));
             }
         }
@@ -59,6 +62,15 @@ public final class ArticleContentValidator {
             body = emptyBody();
         } else {
             errors.addAll(ArticleBodyValidator.validate(body, "body"));
+        }
+        Long sectionId = null;
+        JsonNode section = json.get(SECTION_ID);
+        if (section != null && !section.isNull()) {
+            if (!section.isIntegralNumber() || !section.canConvertToLong() || section.asLong() <= 0) {
+                errors.add(new FieldError(SECTION_ID, "must be a positive integer"));
+            } else {
+                sectionId = section.asLong();
+            }
         }
         Long version = null;
         if (withVersion) {
@@ -74,7 +86,7 @@ public final class ArticleContentValidator {
         if (!errors.isEmpty()) {
             throw ArticleException.invalid(errors);
         }
-        return new Request(new ArticleContent(kicker, headline, subheadline, lead, body), version);
+        return new Request(new ArticleContent(kicker, headline, subheadline, lead, body), sectionId, version);
     }
 
     /**

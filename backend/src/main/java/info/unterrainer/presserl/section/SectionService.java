@@ -9,13 +9,17 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.hibernate.reactive.mutiny.Mutiny;
+
 import info.unterrainer.presserl.text.Slugs;
 import io.quarkus.hibernate.reactive.panache.Panache;
 import io.quarkus.hibernate.reactive.panache.common.WithSession;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.core.Response.Status;
 
 /**
  * Section operations. Access is checked by the callers; this class enforces the data rules: names
@@ -29,6 +33,9 @@ public class SectionService {
     static final String NAME_INDEX = "section_name_lower_idx";
 
     private static final String BY_POSITION = "order by position, id";
+
+    @Inject
+    Mutiny.SessionFactory sessionFactory;
 
     /**
      * All sections by position (ties by id).
@@ -47,6 +54,14 @@ public class SectionService {
     }
 
     /**
+     * The section named {@code name}, compared ignoring case; {@code null} when there is none.
+     */
+    @WithSession
+    public Uni<SectionEntity> findByNameIgnoreCase(String name) {
+        return Panache.getSession().flatMap(session -> findByName(session, name));
+    }
+
+    /**
      * Creates a section at the last position; without a colour it gets the palette colour at
      * (number of sections modulo palette size).
      *
@@ -54,23 +69,22 @@ public class SectionService {
      */
     @WithTransaction
     public Uni<SectionEntity> create(SectionInput input) {
-        return requireFreeName(input.name(), null)
-                .flatMap(ignored -> Panache.getSession().flatMap(session -> session.createSelectionQuery(
-                        "select s.slug, s.position from SectionEntity s", Object[].class).getResultList()))
-                .flatMap(rows -> {
-                    SectionEntity section = new SectionEntity();
-                    section.name = input.name();
-                    section.color = input.color() != null ? input.color() : SectionColor.defaultFor(rows.size());
-                    section.position = rows.stream().mapToInt(row -> (Integer) row[1] + 1).max().orElse(0);
-                    Set<String> slugs = new HashSet<>();
-                    rows.forEach(row -> slugs.add((String) row[0]));
-                    section.slug = Slugs.firstFree(Slugs.fold(input.name(), SLUG_MAX, SLUG_FALLBACK), SLUG_MAX,
-                            slugs::contains);
-                    section.createdAt = Instant.now().truncatedTo(ChronoUnit.MILLIS);
-                    return section.<SectionEntity>persist();
-                })
-                .call(Panache::flush)
+        return Panache.getSession().flatMap(session -> insert(session, input))
                 .onFailure(SectionService::isNameTaken).transform(e -> nameTaken());
+    }
+
+    /**
+     * The section named {@code name} (ignoring case), created by the rules of
+     * {@link #create(SectionInput)} with the default colour when there is none. Runs in its own
+     * session and transaction, independent of the caller's, so a concurrent creation of the same
+     * name (unique index violation) is answered by finding the section again.
+     */
+    public Uni<SectionEntity> ensureSection(String name) {
+        return independently(session -> session.withTransaction(tx -> findByName(session, name)
+                .flatMap(found -> found != null ? Uni.createFrom().item(found)
+                        : insert(session, new SectionInput(name, null)))))
+                .onFailure(SectionService::isRaceForName)
+                .recoverWithUni(() -> independently(session -> findByName(session, name)));
     }
 
     /**
@@ -82,7 +96,7 @@ public class SectionService {
     @WithTransaction
     public Uni<SectionEntity> update(long id, SectionInput input) {
         return find(id)
-                .call(section -> requireFreeName(input.name(), id))
+                .call(section -> Panache.getSession().flatMap(session -> requireFreeName(session, input.name(), id)))
                 .invoke(section -> {
                     section.name = input.name();
                     section.color = input.color();
@@ -117,11 +131,43 @@ public class SectionService {
                 .onItem().ifNull().failWith(NotFoundException::new);
     }
 
-    private static Uni<Void> requireFreeName(String name, Long exceptId) {
-        Uni<Long> count = exceptId == null
-                ? SectionEntity.count("lower(name) = lower(?1)", name)
-                : SectionEntity.count("lower(name) = lower(?1) and id <> ?2", name, exceptId);
-        return count.map(n -> {
+    private Uni<SectionEntity> independently(Function<Mutiny.Session, Uni<SectionEntity>> work) {
+        return sessionFactory.openSession().flatMap(session -> work.apply(session).eventually(session::close));
+    }
+
+    private static Uni<SectionEntity> findByName(Mutiny.Session session, String name) {
+        return session.createSelectionQuery("from SectionEntity where lower(name) = lower(:name)", SectionEntity.class)
+                .setParameter("name", name)
+                .getSingleResultOrNull();
+    }
+
+    private static Uni<SectionEntity> insert(Mutiny.Session session, SectionInput input) {
+        return requireFreeName(session, input.name(), null)
+                .flatMap(ignored -> session.createSelectionQuery(
+                        "select s.slug, s.position from SectionEntity s", Object[].class).getResultList())
+                .flatMap(rows -> {
+                    SectionEntity section = new SectionEntity();
+                    section.name = input.name();
+                    section.color = input.color() != null ? input.color() : SectionColor.defaultFor(rows.size());
+                    section.position = rows.stream().mapToInt(row -> (Integer) row[1] + 1).max().orElse(0);
+                    Set<String> slugs = new HashSet<>();
+                    rows.forEach(row -> slugs.add((String) row[0]));
+                    section.slug = Slugs.firstFree(Slugs.fold(input.name(), SLUG_MAX, SLUG_FALLBACK), SLUG_MAX,
+                            slugs::contains);
+                    section.createdAt = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+                    return session.persist(section).replaceWith(section);
+                })
+                .call(session::flush);
+    }
+
+    private static Uni<Void> requireFreeName(Mutiny.Session session, String name, Long exceptId) {
+        String hql = "select count(s) from SectionEntity s where lower(s.name) = lower(:name)"
+                + (exceptId == null ? "" : " and s.id <> :id");
+        Mutiny.SelectionQuery<Long> query = session.createSelectionQuery(hql, Long.class).setParameter("name", name);
+        if (exceptId != null) {
+            query.setParameter("id", exceptId);
+        }
+        return query.getSingleResult().map(n -> {
             if (n > 0) {
                 throw nameTaken();
             }
@@ -136,6 +182,10 @@ public class SectionService {
     /**
      * A concurrent creation or rename won the race for the name (unique index violation).
      */
+    private static boolean isRaceForName(Throwable e) {
+        return isNameTaken(e) || e instanceof SectionException section && section.status() == Status.CONFLICT;
+    }
+
     private static boolean isNameTaken(Throwable e) {
         for (Throwable cause = e; cause != null; cause = cause.getCause()) {
             if (cause.getMessage() != null && cause.getMessage().contains(NAME_INDEX)) {

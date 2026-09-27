@@ -57,6 +57,7 @@ Authorization: Bearer {{readerToken}}
         client.assert(response.status === 200, "status " + response.status);
         client.assert(response.body.canManage === false, "canManage");
         client.assert(response.body.sections.every(s => s.assignableRoles.length === 0), "assignableRoles");
+        client.assert(response.body.sections.every(s => s.canWrite === false), "canWrite");
     });
 %}
 
@@ -239,6 +240,29 @@ Content-Type: application/json
     client.test("200 reporter", () => {
         client.assert(response.status === 200, "status " + response.status);
         client.assert(response.body.role === "REPORTER", JSON.stringify(response.body));
+    });
+%}
+
+### The reporter may write in Sport only
+GET {{baseUrl}}/api/sections
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("canWrite only for Sport", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const writable = response.body.sections.filter(s => s.canWrite).map(s => s.id);
+        client.assert(JSON.stringify(writable) === JSON.stringify([client.global.get("sportId")]), JSON.stringify(writable));
+    });
+%}
+
+### The publisher may write everywhere
+GET {{baseUrl}}/api/sections
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("canWrite for every section", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.sections.every(s => s.canWrite === true), "canWrite");
     });
 %}
 

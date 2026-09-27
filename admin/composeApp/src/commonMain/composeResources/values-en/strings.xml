@@ -25,6 +25,8 @@
     <string name="no_articles">There are no articles here yet.</string>
     <string name="no_headline">(no headline yet)</string>
     <string name="changed_at">changed %1$s</string>
+    <string name="field_section">Section</string>
+    <string name="choose_section">Choose section</string>
     <string name="field_kicker">Kicker</string>
     <string name="field_headline">Headline</string>
     <string name="field_subheadline">Subheadline</string>

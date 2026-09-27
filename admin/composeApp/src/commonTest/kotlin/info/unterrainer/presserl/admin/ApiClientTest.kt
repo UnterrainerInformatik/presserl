@@ -85,7 +85,9 @@ class ApiClientTest {
 
     @Test
     fun listArticlesWithoutFilters() = runTest {
-        assertEquals(42, api.articles().single().id)
+        val summary = api.articles().single()
+        assertEquals(42, summary.id)
+        assertEquals("Sport", summary.section?.name)
         assertEquals(Recorded(HttpMethod.Get, "https://news.example.org/api/articles", "Bearer token-123", null), requests.single())
     }
 
@@ -129,6 +131,23 @@ class ApiClientTest {
                 put("version", 5)
             },
             request.body,
+        )
+    }
+
+    @Test
+    fun updateArticleSendsTheSection() = runTest {
+        api.updateArticle(42, ArticleContent(headline = "H", sectionId = 4), version = 5)
+        assertEquals(
+            buildJsonObject {
+                put("kicker", "")
+                put("headline", "H")
+                put("subheadline", "")
+                put("lead", "")
+                put("body", null as String?)
+                put("version", 5)
+                put("sectionId", 4)
+            },
+            requests.single().body,
         )
     }
 
@@ -221,6 +240,7 @@ class ApiClientTest {
         val list = api.sections()
         assertEquals(true, list.canManage)
         assertEquals("sport", list.sections.single().slug)
+        assertEquals(true, list.sections.single().canWrite)
         assertEquals(Recorded(HttpMethod.Get, "https://news.example.org/api/sections", "Bearer token-123", null), requests.single())
     }
 
@@ -288,12 +308,13 @@ class ApiClientTest {
 
     private companion object {
         const val SECTION = """{ "id": 1, "name": "Sport", "slug": "sport", "color": "green", "position": 0,
-            "assignableRoles": ["SECTION_EDITOR", "REPORTER"] }"""
+            "assignableRoles": ["SECTION_EDITOR", "REPORTER"], "canWrite": true }"""
         const val MEMBER = """{ "accountId": "5f0c", "username": "nogroups", "firstName": "No", "lastName": "Groups",
             "role": "REPORTER" }"""
         const val ACCOUNT = """{ "id": "9a1e", "username": "lena", "firstName": "Lena", "lastName": "",
             "roles": ["EDITOR_IN_CHIEF"], "enabled": true }"""
         const val SUMMARY = """{ "id": 42, "status": "DRAFT", "author": { "username": "papa", "displayName": "Papa" },
+            "section": { "id": 1, "name": "Sport", "slug": "sport", "color": "green" },
             "headline": "H", "kicker": "", "revision": 1, "liveRevision": null, "hasUnpublishedChanges": false,
             "updatedAt": "2026-09-26T10:05:00Z", "publishedAt": null, "allowedActions": ["EDIT", "PUBLISH", "DELETE"] }"""
     }

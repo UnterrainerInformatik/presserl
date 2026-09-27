@@ -235,9 +235,11 @@ class AutosaverTest {
                 header = mapOf(HeaderField.LEAD to "too long", HeaderField.KICKER to "control character"),
                 blocks = mapOf(0 to "unknown block type 'html'", 12 to "must contain at least one item"),
                 general = listOf("body text too long", "blocks.x"),
+                section = "you may not write in this section",
             ),
             fieldErrors(
                 listOf(
+                    FieldErrorDto("sectionId", "you may not write in this section"),
                     FieldErrorDto("lead", "too long"),
                     FieldErrorDto("kicker", "control character"),
                     FieldErrorDto("body.blocks[0].type", "unknown block type 'html'"),

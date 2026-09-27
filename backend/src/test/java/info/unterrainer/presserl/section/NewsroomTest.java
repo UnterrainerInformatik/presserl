@@ -47,6 +47,33 @@ class NewsroomTest {
         assertThat(newsroom.roleIn(2L)).isEmpty();
     }
 
+    @Test
+    void writersAreAdministratorsAndSectionMembers() {
+        assertThat(newsroom(Map.of(), NewspaperRole.PUBLISHER).isWriter()).isTrue();
+        assertThat(newsroom(Map.of(), NewspaperRole.EDITOR_IN_CHIEF).isWriter()).isTrue();
+        assertThat(newsroom(Map.of(1L, SectionRole.REPORTER), NewspaperRole.READER).isWriter()).isTrue();
+        assertThat(newsroom(Map.of(1L, SectionRole.SECTION_EDITOR)).isWriter()).isTrue();
+        assertThat(newsroom(Map.of(), NewspaperRole.READER).isWriter()).isFalse();
+    }
+
+    @Test
+    void administratorsWriteEverywhereMembersInTheirSections() {
+        assertThat(newsroom(Map.of(), NewspaperRole.EDITOR_IN_CHIEF).mayWriteIn(7L)).isTrue();
+        Newsroom member = newsroom(Map.of(1L, SectionRole.REPORTER, 2L, SectionRole.SECTION_EDITOR));
+        assertThat(member.mayWriteIn(1L)).isTrue();
+        assertThat(member.mayWriteIn(2L)).isTrue();
+        assertThat(member.mayWriteIn(3L)).isFalse();
+    }
+
+    @Test
+    void sectionEditorOfASection() {
+        Newsroom member = newsroom(Map.of(1L, SectionRole.REPORTER, 2L, SectionRole.SECTION_EDITOR));
+        assertThat(member.isSectionEditorOf(1L)).isFalse();
+        assertThat(member.isSectionEditorOf(2L)).isTrue();
+        assertThat(member.isSectionEditorOf(3L)).isFalse();
+        assertThat(newsroom(Map.of(), NewspaperRole.PUBLISHER).isSectionEditorOf(1L)).isFalse();
+    }
+
     static Newsroom newsroom(Map<Long, SectionRole> sectionRoles, NewspaperRole... roles) {
         return new Newsroom(new CurrentUser("sub", "someone", "Someone", List.of(roles)), sectionRoles);
     }

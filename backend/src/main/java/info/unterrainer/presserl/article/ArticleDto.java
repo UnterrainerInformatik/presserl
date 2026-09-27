@@ -5,7 +5,7 @@ import java.util.List;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
-import info.unterrainer.presserl.auth.CurrentUser;
+import info.unterrainer.presserl.section.Newsroom;
 
 /**
  * An article with the content of its latest revision ({@code revision}).
@@ -14,6 +14,7 @@ public record ArticleDto(
         long id,
         ArticleStatus status,
         AuthorDto author,
+        SectionRefDto section,
         int revision,
         Integer liveRevision,
         boolean hasUnpublishedChanges,
@@ -28,11 +29,11 @@ public record ArticleDto(
         JsonNode body,
         List<ArticleAction> allowedActions) {
 
-    public static ArticleDto of(ArticleView view, CurrentUser user) {
+    public static ArticleDto of(ArticleView view, Newsroom newsroom) {
         ArticleEntity a = view.article();
         ArticleRevisionEntity r = view.revision();
-        return new ArticleDto(a.id, a.status, AuthorDto.of(a), r.number, a.liveRevision,
+        return new ArticleDto(a.id, a.status, AuthorDto.of(a), SectionRefDto.of(view.section()), r.number, a.liveRevision,
                 ArticlePolicy.hasUnpublishedChanges(a, r.number), a.version, a.createdAt, a.updatedAt, a.publishedAt,
-                r.kicker, r.headline, r.subheadline, r.lead, r.body, ArticlePolicy.allowedActions(user, a, r.number));
+                r.kicker, r.headline, r.subheadline, r.lead, r.body, ArticlePolicy.allowedActions(newsroom, a, r.number));
     }
 }

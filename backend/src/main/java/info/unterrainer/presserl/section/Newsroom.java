@@ -37,6 +37,24 @@ public record Newsroom(CurrentUser user, Map<Long, SectionRole> sectionRoles) {
         return isAdministrator() || isSectionEditorAnywhere();
     }
 
+    /**
+     * Administrators and every holder of a section role may use the article endpoints.
+     */
+    public boolean isWriter() {
+        return isAdministrator() || !sectionRoles.isEmpty();
+    }
+
+    /**
+     * Administrators write in every section, section members in their own sections.
+     */
+    public boolean mayWriteIn(long sectionId) {
+        return isAdministrator() || sectionRoles.containsKey(sectionId);
+    }
+
+    public boolean isSectionEditorOf(long sectionId) {
+        return roleIn(sectionId).orElse(null) == SectionRole.SECTION_EDITOR;
+    }
+
     public Optional<SectionRole> roleIn(long sectionId) {
         return Optional.ofNullable(sectionRoles.get(sectionId));
     }

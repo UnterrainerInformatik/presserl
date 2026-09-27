@@ -28,15 +28,92 @@ grant_type=password&client_id=presserl-http&username={{readerUsername}}&password
     client.global.set("readerToken", response.body.access_token);
 %}
 
+### Token for the user without groups (made section editor below)
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{nogroupsUsername}}&password={{nogroupsPassword}}
+
+> {%
+    client.global.set("nogroupsToken", response.body.access_token);
+    client.global.set("suffix", Math.random().toString(36).slice(2, 8));
+%}
+
+### Account ids of reader and nogroups
+GET {{baseUrl}}/api/accounts
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.global.set("readerId", response.body.accounts.find(a => a.username === "reader").id);
+    client.global.set("nogroupsId", response.body.accounts.find(a => a.username === "nogroups").id);
+%}
+
+### A section for the articles below
+POST {{baseUrl}}/api/sections
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "name": "Garden {{suffix}}" }
+
+> {%
+    client.global.set("gardenId", response.body.id);
+%}
+
+### A second section to move articles to
+POST {{baseUrl}}/api/sections
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "name": "Kitchen {{suffix}}" }
+
+> {%
+    client.global.set("kitchenId", response.body.id);
+%}
+
+### reader becomes reporter of Garden
+PUT {{baseUrl}}/api/sections/{{gardenId}}/members/{{readerId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "role": "REPORTER" }
+
+### nogroups becomes section editor of Garden
+PUT {{baseUrl}}/api/sections/{{gardenId}}/members/{{nogroupsId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "role": "SECTION_EDITOR" }
+
+### Create without a section lands in the default section
+POST {{baseUrl}}/api/articles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{}
+
+> {%
+    client.test("201 with a section", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        client.assert(response.body.section !== null && response.body.section.id > 0, JSON.stringify(response.body.section));
+    });
+    client.global.set("defaultDraftId", response.body.id);
+%}
+
+### Clean up the default-section draft
+DELETE {{baseUrl}}/api/articles/{{defaultDraftId}}
+Authorization: Bearer {{accessToken}}
+
 ### Create a draft
 POST {{baseUrl}}/api/articles
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
-{ "kicker": "Garden", "headline": "The pumpkin is growing" }
+{ "sectionId": {{gardenId}}, "kicker": "Garden", "headline": "The pumpkin is growing" }
 
 > {%
     client.test("201 draft with revision 1", () => {
+        client.assert(response.body.section.id === client.global.get("gardenId"), JSON.stringify(response.body.section));
+        client.assert(response.body.section.name === "Garden " + client.global.get("suffix"), "section name");
         client.assert(response.status === 201, "status " + response.status);
         client.assert(response.headers.valueOf("Location").endsWith("/api/articles/" + response.body.id), "Location");
         client.assert(response.body.status === "DRAFT", "status " + response.body.status);
@@ -169,6 +246,52 @@ Authorization: Bearer {{accessToken}}
         client.assert(response.body.liveRevision === 2, "liveRevision");
         client.assert(response.body.hasUnpublishedChanges === false, "hasUnpublishedChanges");
     });
+    client.global.set("version", response.body.version);
+%}
+
+### Move the published article to Kitchen, content unchanged
+PUT {{baseUrl}}/api/articles/{{articleId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "version": {{version}}, "sectionId": {{kitchenId}}, "kicker": "Garden", "headline": "The pumpkin is enormous" }
+
+> {%
+    client.test("200 in Kitchen, no new revision", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.section.id === client.global.get("kitchenId"), JSON.stringify(response.body.section));
+        client.assert(response.body.revision === 2, "revision " + response.body.revision);
+        client.assert(response.body.hasUnpublishedChanges === false, "hasUnpublishedChanges");
+    });
+    client.global.set("version", response.body.version);
+%}
+
+### Unknown section
+PUT {{baseUrl}}/api/articles/{{articleId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "version": {{version}}, "sectionId": 999999999, "headline": "Nowhere" }
+
+> {%
+    client.test("400 naming sectionId", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "sectionId", JSON.stringify(response.body));
+    });
+%}
+
+### Section id that is no number
+PUT {{baseUrl}}/api/articles/{{articleId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "version": {{version}}, "sectionId": "garden", "headline": "Typed" }
+
+> {%
+    client.test("400 naming sectionId", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "sectionId", JSON.stringify(response.body));
+    });
 %}
 
 ### Editor-in-chief takes it offline
@@ -270,6 +393,85 @@ Authorization: Bearer {{accessToken}}
         client.assert(response.status === 404, "status " + response.status);
     });
 %}
+
+### Reporter writes a draft in Garden
+POST {{baseUrl}}/api/articles
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{ "sectionId": {{gardenId}}, "headline": "Tomatoes" }
+
+> {%
+    client.test("201 by reader in Garden", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        client.assert(response.body.author.username === "reader", "author");
+        client.assert(response.body.section.id === client.global.get("gardenId"), "section");
+        client.assert(JSON.stringify(response.body.allowedActions) === '["EDIT","DELETE"]',
+            "allowedActions " + JSON.stringify(response.body.allowedActions));
+    });
+    client.global.set("reporterDraftId", response.body.id);
+    client.global.set("reporterVersion", response.body.version);
+%}
+
+### Reporter may not move it into Kitchen
+PUT {{baseUrl}}/api/articles/{{reporterDraftId}}
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{ "version": {{reporterVersion}}, "sectionId": {{kitchenId}}, "headline": "Tomatoes" }
+
+> {%
+    client.test("403 naming sectionId", () => {
+        client.assert(response.status === 403, "status " + response.status);
+        client.assert(response.body.errors[0].field === "sectionId", JSON.stringify(response.body));
+    });
+%}
+
+### Reporter does not see the publisher's article
+GET {{baseUrl}}/api/articles/{{articleId}}
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### Reporter lists only own articles
+GET {{baseUrl}}/api/articles
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("200, all by reader", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.length > 0 && response.body.every(a => a.author.username === "reader"), JSON.stringify(response.body.map(a => a.author.username)));
+    });
+%}
+
+### Section editor of Garden sees the reporter's draft read-only
+GET {{baseUrl}}/api/articles/{{reporterDraftId}}
+Authorization: Bearer {{nogroupsToken}}
+
+> {%
+    client.test("200 without actions", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.allowedActions.length === 0, JSON.stringify(response.body.allowedActions));
+    });
+%}
+
+### Clean up: reporter deletes the draft
+DELETE {{baseUrl}}/api/articles/{{reporterDraftId}}
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("204", () => client.assert(response.status === 204, "status " + response.status));
+%}
+
+### Clean up: reader is no reporter any more
+DELETE {{baseUrl}}/api/sections/{{gardenId}}/members/{{readerId}}
+Authorization: Bearer {{accessToken}}
+
+### Clean up: nogroups is no section editor any more
+DELETE {{baseUrl}}/api/sections/{{gardenId}}/members/{{nogroupsId}}
+Authorization: Bearer {{accessToken}}
 
 ### Reader is refused
 GET {{baseUrl}}/api/articles

@@ -47,8 +47,18 @@ data class AuthorDto(
     val displayName: String,
 )
 
+/** The section an article belongs to; [color] is a palette key. */
+@Serializable
+data class SectionRefDto(
+    val id: Long,
+    val name: String,
+    val slug: String,
+    val color: String,
+)
+
 /**
- * `GET/POST/PUT /api/articles/{id}`, publish and offline. Content fields are those of the latest
+ * `GET/POST/PUT /api/articles/{id}`, publish and offline. [section] is `null` only for an article
+ * the server has not filed under a section yet. Content fields are those of the latest
  * revision ([revision]); [body] is format v1 (`{"version": 1, "blocks": [...]}`).
  * Timestamps are ISO-8601 strings.
  */
@@ -57,6 +67,7 @@ data class ArticleDto(
     val id: Long,
     val status: String,
     val author: AuthorDto,
+    val section: SectionRefDto? = null,
     val revision: Int,
     val liveRevision: Int? = null,
     val hasUnpublishedChanges: Boolean,
@@ -78,6 +89,7 @@ data class ArticleSummaryDto(
     val id: Long,
     val status: String,
     val author: AuthorDto,
+    val section: SectionRefDto? = null,
     val headline: String,
     val kicker: String,
     val revision: Int,
@@ -88,7 +100,10 @@ data class ArticleSummaryDto(
     val allowedActions: List<String>,
 )
 
-/** Request body of `POST /api/articles` and, with a version, `PUT /api/articles/{id}`. A missing [body] means an empty document. */
+/**
+ * Request body of `POST /api/articles` and, with a version, `PUT /api/articles/{id}`. A missing [body] means an
+ * empty document; a missing [sectionId] lets the server choose the section (create) or keeps it (save).
+ */
 @Serializable
 data class ArticleContent(
     val kicker: String = "",
@@ -96,6 +111,7 @@ data class ArticleContent(
     val subheadline: String = "",
     val lead: String = "",
     val body: JsonObject? = null,
+    val sectionId: Long? = null,
 )
 
 /** Entry of `GET /api/articles/{id}/revisions`. */
@@ -187,7 +203,10 @@ data class CreatedAccountDto(
     override fun toString(): String = "CreatedAccountDto(account=$account, password=***)"
 }
 
-/** One section; [color] is a palette key (`red` … `pink`), [assignableRoles] the section roles the user may assign in it. */
+/**
+ * One section; [color] is a palette key (`red` … `pink`), [assignableRoles] the section roles the user may assign in it,
+ * [canWrite] whether the user may write articles in it.
+ */
 @Serializable
 data class SectionDto(
     val id: Long,
@@ -196,6 +215,7 @@ data class SectionDto(
     val color: String,
     val position: Int,
     val assignableRoles: List<String>,
+    val canWrite: Boolean = false,
 )
 
 /** `GET /api/sections` and `PUT /api/sections/order`: [canManage] allows creating, changing and reordering sections. */

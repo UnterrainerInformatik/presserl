@@ -31,6 +31,10 @@ public class ArticleException extends RuntimeException {
         return new ArticleException(Status.FORBIDDEN, List.of(new FieldError(null, message)));
     }
 
+    public static ArticleException forbidden(String field, String message) {
+        return new ArticleException(Status.FORBIDDEN, List.of(new FieldError(field, message)));
+    }
+
     public static ArticleException notFound(String message) {
         return new ArticleException(Status.NOT_FOUND, List.of(new FieldError(null, message)));
     }

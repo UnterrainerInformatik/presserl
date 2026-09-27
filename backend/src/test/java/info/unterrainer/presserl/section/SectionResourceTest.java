@@ -137,6 +137,35 @@ class SectionResourceTest {
                 .body("sections.find { it.name == 'Kultur' }.assignableRoles", empty());
     }
 
+    @Test
+    void publisherMayWriteInEverySection() {
+        create(publisher, "Sport");
+        create(publisher, "Kultur");
+
+        as(publisher).get("/api/sections").then().statusCode(200)
+                .body("sections.canWrite", contains(true, true));
+    }
+
+    @Test
+    void readerMayWriteNowhere() {
+        create(publisher, "Sport");
+        create(publisher, "Kultur");
+
+        as(reader).get("/api/sections").then().statusCode(200)
+                .body("sections.canWrite", contains(false, false));
+    }
+
+    @Test
+    void reporterMayWriteInTheirSectionOnly() {
+        long sport = create(publisher, "Sport");
+        create(publisher, "Kultur");
+        assign(publisher, sport, "reader", "REPORTER").statusCode(200);
+
+        as(reader).get("/api/sections").then().statusCode(200)
+                .body("sections.name", contains("Sport", "Kultur"))
+                .body("sections.canWrite", contains(true, false));
+    }
+
     // --- create -----------------------------------------------------------------------------
 
     @Test

@@ -10,33 +10,52 @@ import static info.unterrainer.presserl.article.ArticlePolicy.Verdict.FORBIDDEN;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
 import info.unterrainer.presserl.auth.CurrentUser;
 import info.unterrainer.presserl.auth.NewspaperRole;
+import info.unterrainer.presserl.section.Newsroom;
+import info.unterrainer.presserl.section.SectionRole;
 
 class ArticlePolicyTest {
 
-    private static final CurrentUser PUBLISHER = user("pub", NewspaperRole.PUBLISHER);
-    private static final CurrentUser OTHER_PUBLISHER = user("pub2", NewspaperRole.PUBLISHER);
-    private static final CurrentUser CHIEF = user("chief", NewspaperRole.EDITOR_IN_CHIEF);
-    private static final CurrentUser PUBLISHING_CHIEF = user("both", NewspaperRole.PUBLISHER,
-            NewspaperRole.EDITOR_IN_CHIEF);
-    private static final CurrentUser NOBODY = user("nobody");
+    private static final long SPORT = 1L;
+    private static final long KULTUR = 2L;
 
-    private static CurrentUser user(String sub, NewspaperRole... roles) {
-        return new CurrentUser(sub, sub, sub, List.of(roles));
+    private static final Newsroom PUBLISHER = user("pub", NewspaperRole.PUBLISHER);
+    private static final Newsroom OTHER_PUBLISHER = user("pub2", NewspaperRole.PUBLISHER);
+    private static final Newsroom CHIEF = user("chief", NewspaperRole.EDITOR_IN_CHIEF);
+    private static final Newsroom PUBLISHING_CHIEF = user("both", NewspaperRole.PUBLISHER,
+            NewspaperRole.EDITOR_IN_CHIEF);
+    private static final Newsroom NOBODY = user("nobody");
+    private static final Newsroom REPORTER = member("rep", Map.of(SPORT, SectionRole.REPORTER));
+    private static final Newsroom OTHER_REPORTER = member("rep2", Map.of(SPORT, SectionRole.REPORTER));
+    private static final Newsroom SECTION_EDITOR = member("sed", Map.of(SPORT, SectionRole.SECTION_EDITOR));
+
+    private static Newsroom user(String sub, NewspaperRole... roles) {
+        return new Newsroom(new CurrentUser(sub, sub, sub, List.of(roles)), Map.of());
+    }
+
+    private static Newsroom member(String sub, Map<Long, SectionRole> sectionRoles) {
+        return new Newsroom(new CurrentUser(sub, sub, sub, List.of(NewspaperRole.READER)), sectionRoles);
     }
 
     /**
-     * An article by {@code author} in {@code status}, live revision {@code live} (or never published).
+     * An article by {@code author} in {@code status} in {@code Sport}, live revision {@code live}
+     * (or never published).
      */
-    private static ArticleEntity article(CurrentUser author, ArticleStatus status, Integer live) {
+    private static ArticleEntity article(Newsroom author, ArticleStatus status, Integer live) {
+        return article(author, status, live, SPORT);
+    }
+
+    private static ArticleEntity article(Newsroom author, ArticleStatus status, Integer live, long section) {
         ArticleEntity article = new ArticleEntity();
-        article.authorSub = author.sub();
+        article.authorSub = author.user().sub();
         article.status = status;
         article.liveRevision = live;
+        article.sectionId = section;
         return article;
     }
 
@@ -85,7 +104,7 @@ class ArticlePolicyTest {
 
     @Test
     void takeOfflineByAuthorChiefOrPublisherOnlyWhenPublished() {
-        for (CurrentUser user : List.of(PUBLISHER, OTHER_PUBLISHER, CHIEF)) {
+        for (Newsroom user : List.of(PUBLISHER, OTHER_PUBLISHER, CHIEF)) {
             assertThat(ArticlePolicy.verdict(TAKE_OFFLINE, user, PUBLISHED, 1)).isEqualTo(ALLOWED);
             assertThat(ArticlePolicy.verdict(TAKE_OFFLINE, user, DRAFT, 1)).isEqualTo(CONFLICT);
             assertThat(ArticlePolicy.verdict(TAKE_OFFLINE, user, OFFLINE, 1)).isEqualTo(CONFLICT);
@@ -111,6 +130,47 @@ class ArticlePolicyTest {
         assertThat(ArticlePolicy.allowedActions(PUBLISHER, OFFLINE, 1)).containsExactly(EDIT, PUBLISH);
         assertThat(ArticlePolicy.allowedActions(CHIEF, article(CHIEF, ArticleStatus.DRAFT, null), 1))
                 .containsExactly(EDIT, DELETE);
+    }
+
+    @Test
+    void reporterOnOwnDraftInOwnSection() {
+        assertThat(ArticlePolicy.allowedActions(REPORTER, article(REPORTER, ArticleStatus.DRAFT, null), 1))
+                .containsExactly(EDIT, DELETE);
+    }
+
+    @Test
+    void authorWithoutSectionRoleMayNotEditButMayTakeOffline() {
+        ArticleEntity draftInKultur = article(REPORTER, ArticleStatus.DRAFT, null, KULTUR);
+        assertThat(ArticlePolicy.verdict(EDIT, REPORTER, draftInKultur, 1)).isEqualTo(FORBIDDEN);
+        assertThat(ArticlePolicy.verdict(DELETE, REPORTER, draftInKultur, 1)).isEqualTo(FORBIDDEN);
+        assertThat(ArticlePolicy.allowedActions(REPORTER, draftInKultur, 1)).isEmpty();
+        ArticleEntity publishedInKultur = article(REPORTER, ArticleStatus.PUBLISHED, 1, KULTUR);
+        assertThat(ArticlePolicy.allowedActions(REPORTER, publishedInKultur, 1)).containsExactly(TAKE_OFFLINE);
+    }
+
+    @Test
+    void sectionEditorTakesArticlesOfTheirSectionOffline() {
+        assertThat(ArticlePolicy.allowedActions(SECTION_EDITOR, PUBLISHED, 1)).containsExactly(TAKE_OFFLINE);
+        assertThat(ArticlePolicy.allowedActions(SECTION_EDITOR,
+                article(PUBLISHER, ArticleStatus.PUBLISHED, 1, KULTUR), 1)).isEmpty();
+        assertThat(ArticlePolicy.verdict(TAKE_OFFLINE, REPORTER, PUBLISHED, 1)).isEqualTo(FORBIDDEN);
+    }
+
+    @Test
+    void visibility() {
+        ArticleEntity reportersDraft = article(REPORTER, ArticleStatus.DRAFT, null);
+        ArticleEntity reportersDraftInKultur = article(REPORTER, ArticleStatus.DRAFT, null, KULTUR);
+        for (Newsroom administrator : List.of(PUBLISHER, CHIEF)) {
+            assertThat(ArticlePolicy.visible(administrator, reportersDraft)).isTrue();
+            assertThat(ArticlePolicy.visible(administrator, reportersDraftInKultur)).isTrue();
+        }
+        assertThat(ArticlePolicy.visible(REPORTER, reportersDraft)).isTrue();
+        assertThat(ArticlePolicy.visible(REPORTER, reportersDraftInKultur)).isTrue();
+        assertThat(ArticlePolicy.visible(SECTION_EDITOR, reportersDraft)).isTrue();
+        assertThat(ArticlePolicy.visible(SECTION_EDITOR, reportersDraftInKultur)).isFalse();
+        assertThat(ArticlePolicy.visible(OTHER_REPORTER, reportersDraft)).isFalse();
+        assertThat(ArticlePolicy.visible(OTHER_REPORTER, PUBLISHED)).isFalse();
+        assertThat(ArticlePolicy.visible(NOBODY, PUBLISHED)).isFalse();
     }
 
     @Test

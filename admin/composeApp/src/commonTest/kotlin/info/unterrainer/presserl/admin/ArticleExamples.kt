@@ -6,6 +6,7 @@ const val ARTICLE = """
   "id": 42,
   "status": "PUBLISHED",
   "author": { "username": "papa", "displayName": "Papa" },
+  "section": { "id": 4, "name": "Kultur", "slug": "kultur", "color": "blue" },
   "revision": 2,
   "liveRevision": 1,
   "hasUnpublishedChanges": true,

@@ -27,9 +27,24 @@ private fun verifySameKeys(): Promise<JsAny?> = js(
 })""",
 )
 
+/** Rejects unless both files define the section strings of the editor with the expected texts. */
+private fun verifySectionStrings(): Promise<JsAny?> = js(
+    """Promise.all([['values', 'Ressort'], ['values-en', 'Section']].map(([qualifier, expected]) =>
+    fetch('/strings/' + qualifier + '/strings.xml').then(response => response.text()).then(text => {
+        const strings = new DOMParser().parseFromString(text, 'application/xml');
+        const value = name => strings.querySelector('string[name="' + name + '"]')?.textContent;
+        if (value('field_section') !== expected) throw new Error(qualifier + ': field_section is ' + value('field_section'));
+        if (!value('choose_section')) throw new Error(qualifier + ': choose_section is missing');
+    }))
+).then(() => null)""",
+)
+
 /** German (default) and English must stay complete; a missing key would silently fall back to German. */
 class StringsTest {
 
     @Test
     fun germanAndEnglishDefineTheSameKeys(): Promise<JsAny?> = verifySameKeys()
+
+    @Test
+    fun sectionIsRessortInGermanAndSectionInEnglish(): Promise<JsAny?> = verifySectionStrings()
 }

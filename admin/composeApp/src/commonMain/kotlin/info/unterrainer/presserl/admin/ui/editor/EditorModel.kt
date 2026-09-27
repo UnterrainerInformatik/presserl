@@ -33,7 +33,9 @@ sealed interface EditorBlock {
     data class BulletList(override val id: Long, val items: List<ListItem>) : EditorBlock
 }
 
+/** The undoable document state; [sectionId] is part of it, so moving an article is autosaved and undone like text. */
 data class Draft(
+    val sectionId: Long? = null,
     val kicker: String = "",
     val headline: String = "",
     val subheadline: String = "",
@@ -65,7 +67,7 @@ data class Draft(
         },
     )
 
-    fun toContent(): ArticleContent = ArticleContent(kicker, headline, subheadline, lead, body().toJson())
+    fun toContent(): ArticleContent = ArticleContent(kicker, headline, subheadline, lead, body().toJson(), sectionId)
 }
 
 /** Hands out the local ids of blocks and list items. */
@@ -77,6 +79,7 @@ class IdSource {
 
 fun draftOf(article: ArticleDto, ids: IdSource): Draft =
     draftOf(article.kicker, article.headline, article.subheadline, article.lead, Body.fromJson(article.body), ids)
+        .copy(sectionId = article.section?.id)
 
 fun draftOf(revision: RevisionDto, ids: IdSource): Draft =
     draftOf(revision.kicker, revision.headline, revision.subheadline, revision.lead, Body.fromJson(revision.body), ids)
@@ -97,6 +100,8 @@ private fun draftOf(kicker: String, headline: String, subheadline: String, lead:
 )
 
 sealed interface EditorIntent {
+    /** Moves the article to another section; its own undo step. */
+    data class ChooseSection(val sectionId: Long) : EditorIntent
     data class EditHeader(val field: HeaderField, val value: String) : EditorIntent
     data class EditSubhead(val blockId: Long, val text: String) : EditorIntent
 
@@ -150,6 +155,7 @@ class EditorModel(
 
     fun dispatch(intent: EditorIntent) {
         when (intent) {
+            is EditorIntent.ChooseSection -> change(draft.copy(sectionId = intent.sectionId))
             is EditorIntent.EditHeader ->
                 change(draft.with(intent.field, singleLine(intent.value, intent.field.maxLength)), typing = intent.field)
             is EditorIntent.EditSubhead ->

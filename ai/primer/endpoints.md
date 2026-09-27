@@ -92,20 +92,40 @@ The logged-in user as seen by the backend.
 
 # Articles
 
-All article endpoints require a bearer token **and** the role `PUBLISHER` or `EDITOR_IN_CHIEF`.
-Users with neither role (e.g. only `READER`) get `403` with an empty body; missing/invalid token
-→ `401`. Every other refusal carries the error body below.
+All article endpoints require a bearer token of a **writer**: a user holding `PUBLISHER` or
+`EDITOR_IN_CHIEF`, or a section role (`SECTION_EDITOR` or `REPORTER`) in at least one section.
+Everyone else (e.g. only `READER`) gets `403` with an empty body; missing/invalid token → `401`.
+Every other refusal carries the error body below. Publishers and editors-in-chief write in every
+section; section editors and reporters only in the sections where they hold a section role.
+
+**Visibility.** Publishers and editors-in-chief see every article. Every other writer sees the
+articles they authored and, in each section where they are `SECTION_EDITOR`, all articles of that
+section. Lists contain only visible articles; every `/api/articles/{id}…` endpoint (get,
+revisions, save, delete, publish, offline) answers an invisible article with `404`, exactly like
+an unknown id.
+
+**Sections.** Every article belongs to one section (`section` in `ArticleDto` and
+`ArticleSummaryDto`). The section belongs to the article, not to a revision: moving an article
+(`sectionId` on `PUT`) creates no revision and applies to the published article too. **Default
+section:** the section named by the setting `section.default` (ignoring case, code default
+`General`). At startup the server creates it when no section exists or articles without a section
+exist, and files those articles under it. `POST` without `sectionId` files the article under the
+default section when it exists and the user may write there, otherwise under the first section by
+position the user may write in; when no section exists at all, the default section is created.
 
 **Error body** (`400`, `403`, `404`, `409` raised by the article rules):
 ```json
 { "errors": [ { "field": "body.blocks[0].type", "message": "unknown block type 'html'" } ] }
 ```
-`field` is a path (`headline`, `version`, `status`, `body.blocks[2].content[0].text`, …) for
-validation errors and `null` for `403`/`404`/`409`. A `400` lists **every** violation found.
+`field` is a path (`headline`, `version`, `status`, `sectionId`, `body.blocks[2].content[0].text`,
+…) for validation errors and `null` for `403`/`404`/`409`, except a `403` for a section the user may
+not write in, which names `sectionId`. A `400` lists **every** violation found.
 
 **Revisions.** Revisions are numbered from `1`. `PUT` overwrites the latest revision while it has
 never been published (working revision — autosave does not create revisions); once the latest
-revision has been published, the next `PUT` creates revision `latest + 1`. Publishing makes the
+revision has been published, the next `PUT` creates revision `latest + 1` — unless the sent content
+(`kicker`, `headline`, `subheadline`, `lead`, `body`) equals the latest revision's content: then no
+revision is created or changed (`updatedAt` and `version` still change). Publishing makes the
 latest revision the **live revision** (`liveRevision`); later saves do not touch it until the
 next publish. `hasUnpublishedChanges` = `liveRevision != null && revision != liveRevision`.
 
@@ -116,18 +136,19 @@ take-offline increases it. `PUT` must send the version last received; a differen
 **`allowedActions`.** Every article representation lists what the requesting user may do now, in
 the order `EDIT`, `PUBLISH`, `TAKE_OFFLINE`, `DELETE`. Render buttons only from this list: an
 action is accepted exactly when it is listed (apart from content validation and `409` on a stale
-version). Rules (M1, no sections yet):
+version). Rules:
 
 | Action | Allowed when |
 |---|---|
-| `EDIT` | user is the author |
+| `EDIT` | user is the author and may write in the article's section |
 | `PUBLISH` | user is the author, holds `PUBLISHER`, and status ≠ `PUBLISHED` or unpublished changes exist |
-| `TAKE_OFFLINE` | status = `PUBLISHED` and user is the author, an `EDITOR_IN_CHIEF` or a `PUBLISHER` |
-| `DELETE` | user is the author and the article was never published (`liveRevision == null`) |
+| `TAKE_OFFLINE` | status = `PUBLISHED` and user is the author, an `EDITOR_IN_CHIEF`, a `PUBLISHER` or `SECTION_EDITOR` of the article's section |
+| `DELETE` | user is the author, may write in the article's section, and the article was never published (`liveRevision == null`) |
 
-Endpoints check role → ownership → state: a missing role/ownership is `403`, a state that does
-not permit the action is `409`. An editor-in-chief cannot publish their own article yet (needs
-approval, arrives in M3).
+Endpoints check writer (`403`, empty body) → visibility (`404`) → role/ownership/section access
+(`403`) → state (`409`) → the target `sectionId` (`400`/`403`). An editor-in-chief, section editor
+or reporter cannot publish yet (needs approval, arrives in M3). An author who lost their section
+role keeps seeing the article, read-only, and may still take it offline.
 
 **Status:** `DRAFT` | `PUBLISHED` | `OFFLINE` (`SUBMITTED` reserved for M3, never returned yet).
 
@@ -135,10 +156,14 @@ approval, arrives in M3).
 
 `ArticleContent` (request body of create and save):
 ```json
-{ "kicker": "", "headline": "", "subheadline": "", "lead": "", "body": { "version": 1, "blocks": [] } }
+{ "sectionId": 3, "kicker": "", "headline": "", "subheadline": "", "lead": "", "body": { "version": 1, "blocks": [] } }
 ```
 - All fields optional; missing or `null` text fields → `""`, missing `body` →
-  `{"version": 1, "blocks": []}`. Every save is a **full replacement** (no PATCH).
+  `{"version": 1, "blocks": []}`. Every save is a **full replacement** (no PATCH) of the content.
+- `sectionId` (positive integer): on create the article's section (missing → default-section
+  rule), on save the section to move to (missing → the section stays). Not a positive integer →
+  `400`, unknown section → `400`, a section the user may not write in → `403`, each naming
+  `sectionId`; nothing is stored then.
 - Text fields are plain text, stored trimmed, no control characters (no line breaks). Max length
   (code points): `kicker`, `headline`, `subheadline` 200; `lead` 1000.
 - Unknown fields → `400` naming them.
@@ -177,6 +202,7 @@ revision (`revision`).
   "id": 42,
   "status": "PUBLISHED",
   "author": { "username": "papa", "displayName": "Papa" },
+  "section": { "id": 4, "name": "Kultur", "slug": "kultur", "color": "blue" },
   "revision": 2,
   "liveRevision": 1,
   "hasUnpublishedChanges": true,
@@ -193,19 +219,22 @@ revision (`revision`).
 }
 ```
 - `author`: username and display name as `GET /api/me` returned them when the article was created.
+- `section`: the article's section with its current name and palette colour.
 - `liveRevision`, `publishedAt` (first publication): `null` until the first publish.
 - Timestamps: ISO-8601 UTC, millisecond precision.
 
 ## `GET /api/articles`
 
-Summaries of all articles, newest change (`updatedAt`) first. No pagination yet.
+Summaries of the articles visible to the requesting user, newest change (`updatedAt`) first. No
+pagination yet.
 
-- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`
+- **Auth:** writer
 - **Query:** `status` (optional, `DRAFT` | `SUBMITTED` | `PUBLISHED` | `OFFLINE`), `mine`
   (optional, `true` → only articles the requesting user authored)
 - **Response `200`:** array of `ArticleSummaryDto`
   ```json
   [ { "id": 42, "status": "DRAFT", "author": { "username": "papa", "displayName": "Papa" },
+      "section": { "id": 1, "name": "Sport", "slug": "sport", "color": "green" },
       "headline": "Hello", "kicker": "", "revision": 1, "liveRevision": null,
       "hasUnpublishedChanges": false, "updatedAt": "2026-09-26T10:05:00Z", "publishedAt": null,
       "allowedActions": ["EDIT", "PUBLISH", "DELETE"] } ]
@@ -215,37 +244,44 @@ Summaries of all articles, newest change (`updatedAt`) first. No pagination yet.
 
 ## `POST /api/articles`
 
-Creates a `DRAFT` with revision `1`; the requesting user becomes the author.
+Creates a `DRAFT` with revision `1` in `sectionId` or by the default-section rule; the requesting
+user becomes the author.
 
-- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`
+- **Auth:** writer; may write in the target section
 - **Body:** `ArticleContent` (`{}` is fine)
 - **Response `201`:** `ArticleDto`, header `Location: …/api/articles/{id}`
-- **Errors:** `400` content validation.
-- **Side effects:** article and revision `1` stored.
+- **Errors:** `400` content validation or unknown section (field `sectionId`), `403` section not
+  writable (field `sectionId`).
+- **Side effects:** article and revision `1` stored; the default section is created when no
+  section exists at all.
 
 ## `GET /api/articles/{id}`
 
-- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`
+- **Auth:** writer
 - **Response `200`:** `ArticleDto`
-- **Errors:** `404` unknown id.
+- **Errors:** `404` unknown id or not visible.
 
 ## `PUT /api/articles/{id}`
 
-Saves the content (full replacement) following the working-revision rule.
+Saves the content (full replacement) following the working-revision rule and moves the article
+to `sectionId` if given.
 
-- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`; only the author (`EDIT`)
+- **Auth:** writer; `EDIT` (the author, while they may write in the article's section); the target
+  section must be writable too
 - **Body:** `ArticleContent` plus `"version": 5` (required)
 - **Response `200`:** `ArticleDto` (new `version`, `revision` possibly incremented)
-- **Errors:** `400` validation (missing `version` names `version`), `403` not the author, `404`,
-  `409` stale `version`.
-- **Side effects:** latest revision overwritten, or new revision if the latest was published;
-  `updatedAt` and `version` change.
+- **Errors:** `400` validation (missing `version` names `version`; bad or unknown `sectionId`
+  names `sectionId`), `403` not the author or no write access to the article's section, `403`
+  target section not writable (field `sectionId`), `404`, `409` stale `version`.
+- **Side effects:** latest revision overwritten, or new revision if the latest was published,
+  or none if the content is unchanged; section changed if `sectionId` is given; `updatedAt` and
+  `version` change.
 
 ## `DELETE /api/articles/{id}`
 
-- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`; only the author (`DELETE`)
+- **Auth:** writer; `DELETE` (the author, while they may write in the article's section)
 - **Response `204`**
-- **Errors:** `403` not the author, `404`, `409` the article was published at least once (take
+- **Errors:** `403` not the author or no write access to the section, `404`, `409` the article was published at least once (take
   it offline instead).
 - **Side effects:** article and all revisions removed.
 
@@ -253,7 +289,7 @@ Saves the content (full replacement) following the working-revision rule.
 
 Makes the latest revision live. No request body.
 
-- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`; `PUBLISH` (author holding `PUBLISHER`)
+- **Auth:** writer; `PUBLISH` (author holding `PUBLISHER`)
 - **Response `200`:** `ArticleDto` with `status` `PUBLISHED`, `liveRevision` = `revision`
 - **Errors:** `400` empty headline (field `headline`), `403`, `404`, `409` already `PUBLISHED`
   without unpublished changes.
@@ -266,15 +302,15 @@ Makes the latest revision live. No request body.
 
 Takes a published article offline without approval. No request body.
 
-- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF` (`TAKE_OFFLINE`: author, any editor-in-chief, any
-  publisher)
+- **Auth:** writer; `TAKE_OFFLINE` (author, any editor-in-chief, any publisher, section editors
+  of the article's section)
 - **Response `200`:** `ArticleDto` with `status` `OFFLINE`; `liveRevision` is kept
 - **Errors:** `403`, `404`, `409` status is not `PUBLISHED`.
 - **Side effects:** status `OFFLINE`; `updatedAt` and `version` change.
 
 ## `GET /api/articles/{id}/revisions`
 
-- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`
+- **Auth:** writer; article visible
 - **Response `200`:** array of `RevisionSummaryDto`, newest first
   ```json
   [ { "number": 2, "headline": "Second", "createdAt": "…", "updatedAt": "…",
@@ -283,14 +319,14 @@ Takes a published article offline without approval. No request body.
       "publishedAt": "2026-09-26T10:01:00Z", "live": false } ]
   ```
   `publishedAt`: when that revision became live, `null` for a working revision.
-- **Errors:** `404` unknown article.
+- **Errors:** `404` unknown or invisible article.
 
 ## `GET /api/articles/{id}/revisions/{number}`
 
-- **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`
+- **Auth:** writer; article visible
 - **Response `200`:** `RevisionDto` = `RevisionSummaryDto` fields plus `kicker`, `subheadline`,
   `lead`, `body`
-- **Errors:** `404` unknown article or revision number.
+- **Errors:** `404` unknown or invisible article, unknown revision number.
 
 ---
 
@@ -437,10 +473,12 @@ Colours are keys, not colour values; the reader theme maps them to `--presserl-s
 
 ```json
 { "id": 1, "name": "Sport", "slug": "sport", "color": "green", "position": 0,
-  "assignableRoles": ["SECTION_EDITOR", "REPORTER"] }
+  "assignableRoles": ["SECTION_EDITOR", "REPORTER"], "canWrite": true }
 ```
 `assignableRoles`: the section roles the requesting user may assign in this section, in the order
-`SECTION_EDITOR`, `REPORTER` (`[]` for none).
+`SECTION_EDITOR`, `REPORTER` (`[]` for none). `canWrite`: whether the requesting user may write
+articles in this section (`PUBLISHER`/`EDITOR_IN_CHIEF` everywhere, section-role holders in their
+sections).
 
 ## `GET /api/sections`
 
@@ -451,7 +489,7 @@ All sections ordered by `position` (ties by `id`).
   ```json
   { "canManage": true,
     "sections": [ { "id": 1, "name": "Sport", "slug": "sport", "color": "green", "position": 0,
-                    "assignableRoles": ["SECTION_EDITOR", "REPORTER"] } ] }
+                    "assignableRoles": ["SECTION_EDITOR", "REPORTER"], "canWrite": true } ] }
   ```
   `canManage`: whether the user may create, change and reorder sections (`PUBLISHER`,
   `EDITOR_IN_CHIEF`).

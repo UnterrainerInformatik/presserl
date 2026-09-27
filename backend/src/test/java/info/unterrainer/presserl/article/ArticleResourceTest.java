@@ -14,19 +14,29 @@ import static org.hamcrest.Matchers.nullValue;
 import java.util.List;
 import java.util.Map;
 
+import javax.sql.DataSource;
+
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.admin.client.Keycloak;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import info.unterrainer.presserl.TestSupport;
+import info.unterrainer.presserl.bootstrap.KeycloakAdminProducer.KeycloakRealm;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
 import io.restassured.response.ValidatableResponse;
 import io.restassured.specification.RequestSpecification;
+import jakarta.inject.Inject;
 
+/**
+ * Article endpoints. Articles and sections (with all section roles) are deleted before and after
+ * every test.
+ */
 @QuarkusTest
 class ArticleResourceTest {
 
@@ -38,14 +48,61 @@ class ArticleResourceTest {
               {"type": "quote", "content": [{"text": "Every day!"}]},
               {"type": "list", "items": [[{"text": "Water"}], [{"text": "Sun"}]]}]}""";
 
+    @Inject
+    DataSource dataSource;
+
+    @Inject
+    Keycloak keycloak;
+
+    @Inject
+    KeycloakRealm keycloakRealm;
+
     private String publisher;
     private String chief;
+    private String reader;
+    private String nogroups;
 
     @BeforeEach
     void ready() {
         TestSupport.awaitReady();
+        TestSupport.deleteSections(dataSource);
         publisher = TestSupport.token("publisher", "publisher");
         chief = TestSupport.token("chief", "chief");
+        reader = TestSupport.token("reader", "reader");
+        nogroups = TestSupport.token("nogroups", "nogroups");
+    }
+
+    @AfterEach
+    void cleanUp() {
+        TestSupport.deleteSections(dataSource);
+    }
+
+    private long section(String name) {
+        return as(publisher).body("{\"name\": \"%s\"}".formatted(name)).post("/api/sections").then().statusCode(201)
+                .extract().jsonPath().getLong("id");
+    }
+
+    private String accountId(String username) {
+        return keycloak.realm(keycloakRealm.name()).users().searchByUsername(username, true).getFirst().getId();
+    }
+
+    private void assign(long section, String username, String role) {
+        as(publisher).body("{\"role\": \"%s\"}".formatted(role))
+                .put("/api/sections/%d/members/%s".formatted(section, accountId(username))).then().statusCode(200);
+    }
+
+    private void unassign(long section, String username) {
+        as(publisher).delete("/api/sections/%d/members/%s".formatted(section, accountId(username))).then()
+                .statusCode(204);
+    }
+
+    private static ObjectNode in(long section, String headline) {
+        return content(headline).put("sectionId", section);
+    }
+
+    private static List<Long> listIds(String token) {
+        return as(token).get("/api/articles").then().statusCode(200).extract().jsonPath()
+                .getList("id", Long.class);
     }
 
     private static RequestSpecification as(String token) {
@@ -121,6 +178,29 @@ class ArticleResourceTest {
     }
 
     @Test
+    void reporterCreatesInOwnSection() {
+        section("General");
+        long sport = section("Sport");
+        assign(sport, "reader", "REPORTER");
+        as(reader).body(in(sport, "Match report").toString()).post("/api/articles").then()
+                .statusCode(201)
+                .body("section.id", equalTo((int) sport))
+                .body("section.name", equalTo("Sport"))
+                .body("section.slug", equalTo("sport"))
+                .body("section.color", notNullValue())
+                .body("author.username", equalTo("reader"))
+                .body("allowedActions", contains("EDIT", "DELETE"));
+    }
+
+    @Test
+    void sectionEditorCreates() {
+        section("General");
+        long sport = section("Sport");
+        assign(sport, "nogroups", "SECTION_EDITOR");
+        as(nogroups).body("{}").post("/api/articles").then().statusCode(201).body("section.name", equalTo("Sport"));
+    }
+
+    @Test
     void readerIsRefused() {
         String reader = TestSupport.token("reader", "reader");
         as(reader).get("/api/articles").then().statusCode(403);
@@ -142,6 +222,200 @@ class ArticleResourceTest {
         long id = create(chief, content("Chief writes"));
         get(chief, id).statusCode(200).body("author.username", equalTo("chief"))
                 .body("author.displayName", equalTo("Chief Editor"));
+    }
+
+    // --- default section
+
+    @Test
+    void publisherCreatesWithoutSectionInTheDefaultSection() {
+        section("Sport");
+        section("General");
+        as(publisher).body("{}").post("/api/articles").then().statusCode(201).body("section.name", equalTo("General"));
+    }
+
+    @Test
+    void reporterCreatesWithoutSectionInTheirSection() {
+        section("General");
+        section("Sport");
+        long kultur = section("Kultur");
+        assign(kultur, "reader", "REPORTER");
+        as(reader).body("{}").post("/api/articles").then().statusCode(201).body("section.name", equalTo("Kultur"));
+    }
+
+    @Test
+    void renamedDefaultSectionIsNotRecreated() {
+        long general = section("General");
+        section("Sport");
+        as(publisher).body("{\"name\": \"Allerlei\", \"color\": \"red\"}").put("/api/sections/" + general).then()
+                .statusCode(200);
+        as(publisher).body("{}").post("/api/articles").then().statusCode(201).body("section.name", equalTo("Allerlei"));
+        as(publisher).get("/api/sections").then().statusCode(200).body("sections.name", contains("Allerlei", "Sport"));
+    }
+
+    @Test
+    void defaultSectionIsCreatedWhenNoSectionExists() {
+        as(publisher).body("{}").post("/api/articles").then().statusCode(201).body("section.name", equalTo("General"));
+        as(publisher).get("/api/sections").then().statusCode(200).body("sections.name", contains("General"));
+    }
+
+    // --- sections
+
+    @Test
+    void moveADraft() {
+        long sport = section("Sport");
+        long kultur = section("Kultur");
+        long id = create(chief, in(sport, "Moving"));
+        save(chief, id, in(kultur, "Moving")).statusCode(200)
+                .body("section.name", equalTo("Kultur")).body("revision", equalTo(1));
+        get(chief, id).body("section.id", equalTo((int) kultur));
+    }
+
+    @Test
+    void moveAPublishedArticle() {
+        long sport = section("Sport");
+        long kultur = section("Kultur");
+        long id = create(publisher, in(sport, "Live"));
+        publish(publisher, id).statusCode(200);
+        save(publisher, id, in(kultur, "Live")).statusCode(200)
+                .body("section.name", equalTo("Kultur"))
+                .body("revision", equalTo(1))
+                .body("hasUnpublishedChanges", equalTo(false));
+        as(publisher).get("/api/articles/" + id + "/revisions").then().statusCode(200).body("number", contains(1));
+    }
+
+    @Test
+    void saveWithoutSectionIdKeepsTheSection() {
+        long sport = section("Sport");
+        section("Kultur");
+        long id = create(publisher, in(sport, "Stay"));
+        save(publisher, id, content("Stay here")).statusCode(200).body("section.name", equalTo("Sport"));
+    }
+
+    @Test
+    void reporterCannotMoveIntoAForeignSection() {
+        long sport = section("Sport");
+        long kultur = section("Kultur");
+        assign(sport, "reader", "REPORTER");
+        long id = create(reader, in(sport, "Mine"));
+        ValidatableResponse response = save(reader, id, in(kultur, "Moved")).statusCode(403);
+        assertThat(errorFields(response)).containsExactly("sectionId");
+        get(reader, id).body("section.name", equalTo("Sport")).body("headline", equalTo("Mine"));
+    }
+
+    @Test
+    void reporterCannotCreateInAForeignSection() {
+        long sport = section("Sport");
+        long kultur = section("Kultur");
+        assign(sport, "reader", "REPORTER");
+        assertThat(errorFields(as(reader).body(in(kultur, "Foreign").toString()).post("/api/articles").then()
+                .statusCode(403))).containsExactly("sectionId");
+        assertThat(listIds(reader)).isEmpty();
+    }
+
+    @Test
+    void unknownSection() {
+        section("Sport");
+        ValidatableResponse response = as(publisher).body(in(999999, "Nowhere").toString()).post("/api/articles")
+                .then().statusCode(400);
+        assertThat(errorFields(response)).containsExactly("sectionId");
+        assertThat(listIds(publisher)).isEmpty();
+    }
+
+    @Test
+    void nonNumericSectionId() {
+        long id = create(publisher, content("Typed"));
+        assertThat(errorFields(save(publisher, id, content("Typed").put("sectionId", "sport")).statusCode(400)))
+                .containsExactly("sectionId");
+        assertThat(errorFields(as(publisher).body(content("x").put("sectionId", 1.5).toString())
+                .post("/api/articles").then().statusCode(400))).containsExactly("sectionId");
+    }
+
+    @Test
+    void unchangedSaveOfAPublishedArticleCreatesNoRevision() {
+        long id = create(publisher, content("Same"));
+        publish(publisher, id).statusCode(200);
+        long version = version(publisher, id);
+        long next = save(publisher, id, content("Same"), version).statusCode(200)
+                .body("revision", equalTo(1))
+                .body("hasUnpublishedChanges", equalTo(false))
+                .extract().jsonPath().getLong("version");
+        assertThat(next).isGreaterThan(version);
+        as(publisher).get("/api/articles/" + id + "/revisions").then().statusCode(200).body("number", contains(1));
+    }
+
+    // --- visibility
+
+    @Test
+    void sectionEditorSeesDraftsOfTheirSectionOnly() {
+        long sport = section("Sport");
+        long kultur = section("Kultur");
+        assign(sport, "nogroups", "SECTION_EDITOR");
+        assign(sport, "reader", "REPORTER");
+        assign(kultur, "reader", "REPORTER");
+        long sportDraft = create(reader, in(sport, "Sport draft"));
+        long kulturDraft = create(reader, in(kultur, "Kultur draft"));
+        assertThat(listIds(nogroups)).contains(sportDraft).doesNotContain(kulturDraft);
+        get(nogroups, sportDraft).statusCode(200).body("allowedActions", empty());
+        get(nogroups, kulturDraft).statusCode(404);
+    }
+
+    @Test
+    void reporterListsOnlyOwnArticles() {
+        long sport = section("Sport");
+        assign(sport, "reader", "REPORTER");
+        long published = create(publisher, in(sport, "Publisher's"));
+        publish(publisher, published).statusCode(200);
+        long own = create(reader, in(sport, "Reader's"));
+        assertThat(listIds(reader)).containsExactly(own);
+        as(reader).get("/api/articles?status=PUBLISHED").then().statusCode(200).body("$", empty());
+    }
+
+    @Test
+    void reporterCannotReadAForeignArticle() {
+        long sport = section("Sport");
+        assign(sport, "reader", "REPORTER");
+        assign(sport, "nogroups", "REPORTER");
+        long foreign = create(nogroups, in(sport, "Not yours"));
+        long publishers = create(publisher, in(sport, "Publisher's"));
+        for (long id : List.of(foreign, publishers)) {
+            get(reader, id).statusCode(404);
+            as(reader).get("/api/articles/" + id + "/revisions").then().statusCode(404);
+            as(reader).get("/api/articles/" + id + "/revisions/1").then().statusCode(404);
+            save(reader, id, content("x"), 0).statusCode(404);
+            as(reader).delete("/api/articles/" + id).then().statusCode(404);
+            publish(reader, id).statusCode(404);
+            offline(reader, id).statusCode(404);
+        }
+        get(nogroups, foreign).statusCode(200).body("headline", equalTo("Not yours"));
+    }
+
+    @Test
+    void authorWhoLostTheSectionRoleSeesTheArticleReadOnly() {
+        long sport = section("Sport");
+        long kultur = section("Kultur");
+        assign(sport, "reader", "REPORTER");
+        assign(kultur, "reader", "REPORTER");
+        long id = create(reader, in(sport, "Before"));
+        long version = version(reader, id);
+        unassign(sport, "reader");
+        save(reader, id, content("After"), version).statusCode(403);
+        get(reader, id).statusCode(200).body("headline", equalTo("Before")).body("allowedActions", empty());
+        as(reader).delete("/api/articles/" + id).then().statusCode(403);
+    }
+
+    @Test
+    void sectionEditorTakesAnArticleOfTheirSectionOffline() {
+        long sport = section("Sport");
+        long kultur = section("Kultur");
+        assign(sport, "nogroups", "SECTION_EDITOR");
+        long inSport = create(publisher, in(sport, "Sport news"));
+        publish(publisher, inSport).statusCode(200);
+        get(nogroups, inSport).body("allowedActions", contains("TAKE_OFFLINE"));
+        offline(nogroups, inSport).statusCode(200).body("status", equalTo("OFFLINE"));
+        long inKultur = create(publisher, in(kultur, "Kultur news"));
+        publish(publisher, inKultur).statusCode(200);
+        offline(nogroups, inKultur).statusCode(404);
+        get(publisher, inKultur).body("status", equalTo("PUBLISHED"));
     }
 
     // --- content fields

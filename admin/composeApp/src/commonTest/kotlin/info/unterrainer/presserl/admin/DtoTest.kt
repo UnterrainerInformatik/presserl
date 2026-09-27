@@ -15,6 +15,7 @@ import info.unterrainer.presserl.admin.api.MySectionRoleDto
 import info.unterrainer.presserl.admin.api.NewspaperDto
 import info.unterrainer.presserl.admin.api.SectionDto
 import info.unterrainer.presserl.admin.api.SectionListDto
+import info.unterrainer.presserl.admin.api.SectionRefDto
 import info.unterrainer.presserl.admin.api.SectionRoleDto
 import info.unterrainer.presserl.admin.api.json
 import kotlinx.serialization.json.boolean
@@ -107,6 +108,7 @@ class DtoTest {
         assertEquals(42, dto.id)
         assertEquals("PUBLISHED", dto.status)
         assertEquals(AuthorDto("papa", "Papa"), dto.author)
+        assertEquals(SectionRefDto(4, "Kultur", "kultur", "blue"), dto.section)
         assertEquals(2, dto.revision)
         assertEquals(1, dto.liveRevision)
         assertEquals(true, dto.hasUnpublishedChanges)
@@ -194,14 +196,14 @@ class DtoTest {
               "canManage": true,
               "sections": [
                 { "id": 1, "name": "Sport", "slug": "sport", "color": "green", "position": 0,
-                  "assignableRoles": ["SECTION_EDITOR", "REPORTER"] }
+                  "assignableRoles": ["SECTION_EDITOR", "REPORTER"], "canWrite": true }
               ]
             }
             """,
         )
 
         assertEquals(true, dto.canManage)
-        assertEquals(SectionDto(1, "Sport", "sport", "green", 0, listOf("SECTION_EDITOR", "REPORTER")), dto.sections.single())
+        assertEquals(SectionDto(1, "Sport", "sport", "green", 0, listOf("SECTION_EDITOR", "REPORTER"), canWrite = true), dto.sections.single())
     }
 
     @Test

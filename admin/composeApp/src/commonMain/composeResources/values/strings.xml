@@ -25,6 +25,8 @@
     <string name="no_articles">Hier gibt es noch keine Artikel.</string>
     <string name="no_headline">(noch ohne Schlagzeile)</string>
     <string name="changed_at">geändert %1$s</string>
+    <string name="field_section">Ressort</string>
+    <string name="choose_section">Ressort wählen</string>
     <string name="field_kicker">Dachzeile</string>
     <string name="field_headline">Schlagzeile</string>
     <string name="field_subheadline">Unterzeile</string>

@@ -61,6 +61,16 @@ public class ArticleRevisionEntity extends PanacheEntityBase {
     @Column(name = "published_at")
     public Instant publishedAt;
 
+    /**
+     * Whether this revision holds exactly {@code content}; bodies compare as JSON trees, so key
+     * order does not matter.
+     */
+    boolean holds(ArticleContent content) {
+        return kicker.equals(content.kicker()) && headline.equals(content.headline())
+                && subheadline.equals(content.subheadline()) && lead.equals(content.lead())
+                && body.equals(content.body());
+    }
+
     void apply(ArticleContent content) {
         kicker = content.kicker();
         headline = content.headline();

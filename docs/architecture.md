@@ -85,8 +85,8 @@ One newspaper per server; a second newspaper is a second deployment.
 - **Section** — name (unique ignoring case), slug (derived once from the name, stable for reader URLs), colour (palette key `red` | `orange` | `yellow` | `green` | `teal` | `blue` | `purple` | `pink`, mapped to `--presserl-section-<key>` by the theme), position, settings (JSON, overrides only)
 - **SectionRole** — user (Keycloak id = token `sub`) × section × role (`SECTION_EDITOR` | `REPORTER`), at most one role per user and section. Newspaper-wide roles (`PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`) are Keycloak groups, not rows.
 - **Trust** — approving level × trusted user (+ who set it). One row skips that level for that user.
-- **Article** — author (token `sub` plus username/display-name snapshot for the byline), status (`DRAFT` | `SUBMITTED` | `PUBLISHED` | `OFFLINE`; `SUBMITTED` reserved for the approval chain), live revision (by number, `NULL` until the first publication), first publication time, optimistic-lock version; later: section, pending approval level, emergency-brake lock, lead image
-- **ArticleRevision** — numbered per article (`1, 2, …`), holds the content: kicker, headline, subheadline, lead (plain text) and body (**body format v1**: structured JSON of blocks — paragraph, subhead, quote, bullet list — with inline runs whose only mark is bold; validated server-side against an allowlist, never raw HTML). The latest revision is the **working revision**: saves overwrite it until it is published; after that the next save starts a new revision. Publishing makes the latest revision the article's live revision, which stays unchanged until the next publication. Taking offline keeps the live revision reference.
+- **Article** — section (exactly one; the section belongs to the article, not to a revision, so moving an article creates no revision; articles from before sections are filed under the default section `presserl.section.default` at startup), author (token `sub` plus username/display-name snapshot for the byline), status (`DRAFT` | `SUBMITTED` | `PUBLISHED` | `OFFLINE`; `SUBMITTED` reserved for the approval chain), live revision (by number, `NULL` until the first publication), first publication time, optimistic-lock version; later: pending approval level, emergency-brake lock, lead image
+- **ArticleRevision** — numbered per article (`1, 2, …`), holds the content: kicker, headline, subheadline, lead (plain text) and body (**body format v1**: structured JSON of blocks — paragraph, subhead, quote, bullet list — with inline runs whose only mark is bold; validated server-side against an allowlist, never raw HTML). The latest revision is the **working revision**: saves overwrite it until it is published; after that the next save with changed content starts a new revision. Publishing makes the latest revision the article's live revision, which stays unchanged until the next publication. Taking offline keeps the live revision reference.
 - **ReviewNote** — feedback to the author on rejection
 - **Issue** — number and publication date; groups articles; basis for the issue print view
 - **Media** — upload, EXIF-stripped, resized (thumbnail / web / print)
@@ -143,11 +143,11 @@ PUT    /api/sections/order                editor-in-chief+                      
 GET    /api/sections/{id}/members         who may assign section roles there                 (implemented)
 PUT    /api/sections/{id}/members/{acc}   assign/replace a section role, within my scope     (implemented)
 DELETE /api/sections/{id}/members/{acc}   remove a section role, within my scope             (implemented)
-GET    /api/articles?status=…&mine=true   my articles / archive                              (implemented)
-GET    /api/articles/{id}                                                                    (implemented)
-POST   /api/articles                      reporter+                                          (implemented)
-PUT    /api/articles/{id}                 overwrites the working revision, or starts a new one after a publication (implemented)
-DELETE /api/articles/{id}                 author, only if never published                    (implemented)
+GET    /api/articles?status=…&mine=true   visible articles: all for editor-in-chief+, own and own sections' for section editors, own for reporters (implemented)
+GET    /api/articles/{id}                 visible articles only, else 404                    (implemented)
+POST   /api/articles                      reporter+ in a section they may write in           (implemented)
+PUT    /api/articles/{id}                 author with write access to the section; overwrites the working revision, or starts a new one after a publication; optional move to another section (implemented)
+DELETE /api/articles/{id}                 author with write access to the section, only if never published (implemented)
 POST   /api/articles/{id}/publish         → PUBLISHED or SUBMITTED + pending level (server decides)
 POST   /api/articles/{id}/approve|reject  holder of the pending level
 POST   /api/articles/{id}/offline         take offline: author, section editor, editor-in-chief, publisher (publisher ⇒ locked)

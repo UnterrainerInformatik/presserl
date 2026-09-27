@@ -6,12 +6,12 @@ change — never tick it off.
 Milestones from `docs/vision.md`; details in `docs/`.
 
 ## M2 — Accounts & sections
-Account creation is done (`accounts-create`); sections and section roles are proposed
-(`sections-and-section-roles`). Remaining: articles in sections (`articles-in-sections`: article
-gets a section, reporters and section editors may write; default section from
-`presserl.section.default`); deleting sections; changing the newspaper roles of existing
-accounts; password reset (new pass-phrase and slip), lock/unlock; extend `GET /api/me`
-additively (scopes, allowed actions).
+Account creation (`accounts-create`) and sections with section roles
+(`sections-and-section-roles`) are done; articles in sections are proposed
+(`articles-in-sections`). Remaining: deleting sections (what happens to their articles);
+changing the newspaper roles of existing accounts; password reset (new pass-phrase and slip),
+lock/unlock; extend `GET /api/me` additively (scopes, allowed actions); `article.section_id NOT
+NULL` (correction migration) once all installations ran the default-section bootstrap.
 
 ## M3 — Approval chain
 Chain section editor → editor-in-chief → publisher with skip rules (own role, trust, section

@@ -7,7 +7,7 @@
 - [Chat language is German](feedback_conversation_language_german.md) — Replies in German from the first message; repo content stays English
 - [Code in English only](feedback_english_only.md) — Identifiers, comments, logs, docs, commits: English
 - [Tests are welcome](feedback_tests_welcome.md) — Write backend (JUnit 5 + AssertJ) and admin (Kotlin) tests freely; no need to ask
-- [Run tests locally before push](feedback_tests_before_push.md) — CI runs no tests; run backend + admin suites before every commit/push
+- [Run relevant tests before push](feedback_tests_before_push.md) — CI runs no tests; before commit/push run the tests that make sense for the change, not blindly all suites; full suites only before a release
 - [Keep endpoints primer in sync](feedback_endpoints_primer.md) — REST contract change ⇒ update ./ai/primer/endpoints.md and the admin API client in the same change
 - [Always add .http test files for REST endpoints](feedback_http_tests.md) — Create/update .http files and run them against a live backend
 - [Evidence over speculation](feedback_evidence_over_speculation.md) — When the cause is not in the logs, add targeted diagnostic logging and wait for a reproduction instead of theorising
@@ -18,3 +18,5 @@
 - [Machine JDK setup](reference_machine_jdk.md) — Default JDK is 21 (Lombok-safe); backend targets release 21; JDK 26 installed but not default
 - [Build and test commands](reference_build_and_test.md) — Verified dev/test/image/.http/e2e commands for backend and admin
 - [Diagrams always PlantUML](feedback_diagrams_plantuml.md) — .puml + rendered SVG; render via plantuml.unterrainer.info with -L and charset=utf-8
+- [Click through UI checks myself](feedback_ui_tests_myself.md) — Manual-check tasks: drive the apps headless (Playwright) myself, don't hand click steps to Gerald
+- [Stop own servers](feedback_stop_own_servers.md) — Stop every server/daemon/container I started and verify with ps/ss/docker

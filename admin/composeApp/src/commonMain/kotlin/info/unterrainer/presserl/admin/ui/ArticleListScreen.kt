@@ -36,6 +36,7 @@ import info.unterrainer.presserl.admin.resources.no_headline
 import info.unterrainer.presserl.admin.resources.tab_all
 import info.unterrainer.presserl.admin.resources.tab_mine
 import info.unterrainer.presserl.admin.resources.unpublished_changes
+import info.unterrainer.presserl.admin.ui.section.ColorMarker
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
@@ -94,11 +95,15 @@ private fun ArticleRow(article: ArticleSummaryDto, onClick: () -> Unit) {
     ) {
         Text(article.headline.ifEmpty { stringResource(Res.string.no_headline) }, style = MaterialTheme.typography.titleMedium)
         val details = listOfNotNull(
+            article.section?.name,
             statusText(article.status),
             stringResource(Res.string.unpublished_changes).takeIf { article.hasUnpublishedChanges },
             article.author.displayName,
             stringResource(Res.string.changed_at, formatTimestamp(article.updatedAt)),
         )
-        Text(details.joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            article.section?.let { ColorMarker(it.color, size = 12.dp) }
+            Text(details.joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+        }
     }
 }

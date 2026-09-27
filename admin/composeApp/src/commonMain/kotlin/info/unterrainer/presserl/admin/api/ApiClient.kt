@@ -59,12 +59,15 @@ class ApiClient(
             setBody(content)
         }.body()
 
-    /** Saves [content] as a full replacement; [version] is the article version last received (`409` if stale). */
+    /**
+     * Saves [content] as a full replacement, moving the article to [ArticleContent.sectionId] if given; [version] is
+     * the article version last received (`409` if stale).
+     */
     suspend fun updateArticle(id: Long, content: ArticleContent, version: Long): ArticleDto =
         http.put("$baseUrl/api/articles/$id") {
             bearerAuth(accessToken())
             contentType(ContentType.Application.Json)
-            setBody(ArticleSave(content.kicker, content.headline, content.subheadline, content.lead, content.body, version))
+            setBody(ArticleSave(content.kicker, content.headline, content.subheadline, content.lead, content.body, version, content.sectionId))
         }.body()
 
     suspend fun deleteArticle(id: Long) {
@@ -151,7 +154,7 @@ private data class SectionOrder(val ids: List<Long>)
 @Serializable
 private data class MemberRole(val role: String)
 
-/** Body of `PUT /api/articles/{id}`: [ArticleContent] plus the article version. */
+/** Body of `PUT /api/articles/{id}`: [ArticleContent] plus the article version; a `null` [sectionId] is left out. */
 @Serializable
 private data class ArticleSave(
     val kicker: String,
@@ -160,4 +163,5 @@ private data class ArticleSave(
     val lead: String,
     val body: JsonObject?,
     val version: Long,
+    val sectionId: Long? = null,
 )

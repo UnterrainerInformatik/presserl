@@ -36,6 +36,27 @@ class EditorModelTest {
     fun anUnchangedDraftSavesTheSameContent() {
         assertEquals(article.body, draft.toContent().body)
         assertEquals("The pumpkin is huge", draft.toContent().headline)
+        assertEquals(4, draft.toContent().sectionId)
+        assertEquals(draftOf(article, IdSource()).toContent(), draft.toContent())
+    }
+
+    @Test
+    fun choosingASectionIsSavedAndUndoable() {
+        dispatch(EditorIntent.ChooseSection(7))
+        assertEquals(7, draft.toContent().sectionId)
+        assertTrue(model.canUndo)
+
+        dispatch(EditorIntent.Undo)
+        assertEquals(4, draft.toContent().sectionId)
+
+        dispatch(EditorIntent.Redo)
+        assertEquals(7, draft.toContent().sectionId)
+    }
+
+    @Test
+    fun choosingTheCurrentSectionChangesNothing() {
+        dispatch(EditorIntent.ChooseSection(4))
+        assertFalse(model.canUndo)
     }
 
     @Test
