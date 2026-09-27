@@ -17,6 +17,7 @@ import info.unterrainer.presserl.auth.CurrentUser;
 import info.unterrainer.presserl.auth.NewspaperRole;
 import info.unterrainer.presserl.section.Newsroom;
 import info.unterrainer.presserl.section.SectionRole;
+import info.unterrainer.presserl.trust.TrustScope;
 
 class ApprovalChainTest {
 
@@ -28,6 +29,22 @@ class ApprovalChainTest {
      * {@code sed} edits Sport, {@code chief} and {@code pub} hold the newspaper-wide levels.
      */
     private static final Staffing FULL = new Staffing(Map.of(SPORT, Set.of("sed")), Set.of("chief"), Set.of("pub"));
+
+    /**
+     * {@link #FULL} with the author trusted in {@code scopes}.
+     */
+    private static Staffing trusting(TrustScope... scopes) {
+        return new Staffing(FULL.sectionEditors(), FULL.editorsInChief(), FULL.publishers(),
+                Map.of(AUTHOR, Set.of(scopes)));
+    }
+
+    private static TrustScope sectionTrust(long sectionId) {
+        return new TrustScope(SECTION_EDITOR, sectionId);
+    }
+
+    private static TrustScope trust(ApprovalLevel level) {
+        return new TrustScope(level, null);
+    }
 
     private static Newsroom user(NewspaperRole... roles) {
         return new Newsroom(new CurrentUser(AUTHOR, AUTHOR, AUTHOR, List.of(roles)), Map.of());
@@ -151,5 +168,52 @@ class ApprovalChainTest {
     @Test
     void lockedChainOfAPublisherIsEmpty() {
         assertThat(nextLocked(Optional.of(PUBLISHER), SPORT, Staffing.NOT_NEEDED)).isEmpty();
+    }
+
+    @Test
+    void trustedSectionEditorLevelIsSkippedInItsSectionOnly() {
+        Staffing sportTrust = new Staffing(Map.of(SPORT, Set.of("sed"), KULTUR, Set.of("sed")), Set.of("chief"),
+                Set.of("pub"), Map.of(AUTHOR, Set.of(sectionTrust(SPORT))));
+        assertThat(next(Optional.empty(), SPORT, sportTrust)).contains(EDITOR_IN_CHIEF);
+        assertThat(next(Optional.empty(), KULTUR, sportTrust)).contains(SECTION_EDITOR);
+    }
+
+    @Test
+    void trustedNewspaperWideLevelsAreSkipped() {
+        assertThat(next(Optional.of(SECTION_EDITOR), SPORT, trusting(trust(EDITOR_IN_CHIEF)))).contains(PUBLISHER);
+        assertThat(next(Optional.of(EDITOR_IN_CHIEF), SPORT, trusting(trust(PUBLISHER)))).isEmpty();
+        assertThat(next(Optional.empty(), KULTUR, trusting(trust(EDITOR_IN_CHIEF), trust(PUBLISHER)))).isEmpty();
+    }
+
+    @Test
+    void trustOfAnotherAccountDoesNotCount() {
+        Staffing otherTrusted = new Staffing(FULL.sectionEditors(), FULL.editorsInChief(), FULL.publishers(),
+                Map.of("someone-else", Set.of(sectionTrust(SPORT), trust(EDITOR_IN_CHIEF), trust(PUBLISHER))));
+        assertThat(next(Optional.empty(), SPORT, otherTrusted)).contains(SECTION_EDITOR);
+    }
+
+    @Test
+    void fullyTrustedAuthorHasAnEmptyChain() {
+        assertThat(next(Optional.empty(), SPORT, trusting(sectionTrust(SPORT), trust(EDITOR_IN_CHIEF),
+                trust(PUBLISHER)))).isEmpty();
+    }
+
+    @Test
+    void lockOverridesTrust() {
+        assertThat(nextLocked(Optional.of(EDITOR_IN_CHIEF), SPORT, trusting(trust(PUBLISHER)))).contains(PUBLISHER);
+        assertThat(nextLocked(Optional.empty(), SPORT, trusting(sectionTrust(SPORT), trust(EDITOR_IN_CHIEF),
+                trust(PUBLISHER)))).contains(PUBLISHER);
+    }
+
+    @Test
+    void approvalSkipsTrustedLevelsAbove() {
+        // a section editor approves up to their level; the trusted editor-in-chief level is skipped
+        assertThat(next(Optional.of(SECTION_EDITOR), SPORT, trusting(trust(EDITOR_IN_CHIEF)))).contains(PUBLISHER);
+    }
+
+    @Test
+    void notNeededRefusesTrustQuestions() {
+        assertThatThrownBy(() -> Staffing.NOT_NEEDED.trusts(PUBLISHER, SPORT, AUTHOR))
+                .isInstanceOf(IllegalStateException.class);
     }
 }

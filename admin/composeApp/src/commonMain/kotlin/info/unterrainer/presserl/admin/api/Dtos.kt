@@ -178,8 +178,9 @@ data class FieldErrorDto(
 
 /**
  * Entry of `GET /api/accounts`; [roles] are newspaper roles in the order publisher, editor-in-chief, reader,
- * [sectionRoles] are ordered by section position, [allowedActions] what the user may do with it now
- * (`EDIT_ROLES`, `RESET_PASSWORD`, `LOCK`, `UNLOCK`).
+ * [sectionRoles] are ordered by section position, [trusts] the levels that trust the account, [trustScopes] the trust
+ * entries the user may set or clear on it (both ordered publisher, editor-in-chief, section editor by section
+ * position), [allowedActions] what the user may do with it now (`EDIT_ROLES`, `RESET_PASSWORD`, `LOCK`, `UNLOCK`).
  */
 @Serializable
 data class AccountDto(
@@ -190,7 +191,27 @@ data class AccountDto(
     val roles: List<String>,
     val enabled: Boolean,
     val sectionRoles: List<SectionRoleDto> = emptyList(),
+    val trusts: List<TrustScopeDto> = emptyList(),
+    val trustScopes: List<TrustScopeDto> = emptyList(),
     val allowedActions: List<String> = emptyList(),
+)
+
+/**
+ * A trust entry: the approval [level] (`SECTION_EDITOR`, `EDITOR_IN_CHIEF`, `PUBLISHER`) and, for `SECTION_EDITOR`
+ * only, the section; [sectionId] is `null` for the newspaper-wide levels.
+ */
+@Serializable
+data class TrustScopeDto(
+    val level: String,
+    val sectionId: Long? = null,
+)
+
+/** Request body of `PUT /api/accounts/{id}/trust`; [sectionId] is always sent, `null` for newspaper-wide levels. */
+@Serializable
+data class SetTrustRequest(
+    val level: String,
+    val sectionId: Long?,
+    val trusted: Boolean,
 )
 
 /** A section role of an account (`SECTION_EDITOR` or `REPORTER`), in account lists and `POST /api/accounts`. */

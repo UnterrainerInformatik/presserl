@@ -5,13 +5,6 @@ change — never tick it off.
 
 Milestones from `docs/vision.md`; details in `docs/`.
 
-## M3 — Approval chain
-The chain itself (submit/approve/reject/withdraw, skip rules, reviews) is `approval-chain-core`.
-Still open:
-- **Trust switches** per person and level (a holder of an approving level trusts a person below;
-  applies to the whole level) — one more skip predicate in `ApprovalChain.next`, storage, endpoints,
-  admin UI.
-
 ## M4 — Look
 Reader theme built on `--presserl-*` design tokens per `docs/design-guidelines.md`,
 self-hosted fonts, `data-view` hooks, `custom.css` served from `deploy/theme/`, reader

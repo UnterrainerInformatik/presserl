@@ -147,4 +147,9 @@
     <string name="remove">Remove</string>
     <string name="remove_member_title">Remove from section?</string>
     <string name="remove_member_text">%1$s loses the role “%2$s” in the section %3$s.</string>
+    <string name="trusted_by">Trusted by: %1$s</string>
+    <string name="trust_switches">Trust as</string>
+    <string name="action_trust">Trust</string>
+    <string name="confirm_trust_title">Trust this account?</string>
+    <string name="confirm_trust_text">Articles by “%1$s” will no longer wait for %2$s.</string>
 </resources>

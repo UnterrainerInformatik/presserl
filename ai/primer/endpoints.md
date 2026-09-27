@@ -151,16 +151,22 @@ version: of two concurrent decisions on the same article the second gets `409`. 
 `EDITOR_IN_CHIEF`, `PUBLISHER`. A user's **level** for an article is the highest of these they
 hold (`PUBLISHER` role, `EDITOR_IN_CHIEF` role, `SECTION_EDITOR` of that section); none = reporter.
 The author's **chain** = the levels above the author's level that are **staffed**, i.e. held by at
-least one account other than the author (locked accounts count); unstaffed levels are skipped.
-While the article is **locked** by the emergency brake (`locked: true`), `PUBLISHER` belongs to the
-chain of every author below `PUBLISHER`, staffed or not — only a publisher brings it back online.
+least one account other than the author (locked accounts count), and do **not trust** the author;
+unstaffed and trusting levels are skipped. A level trusts the author when a trust entry exists for
+the author at that level (see Accounts, trust): `SECTION_EDITOR` for the article's section,
+`EDITOR_IN_CHIEF` and `PUBLISHER` newspaper-wide — whoever set it and whether they still hold the
+role. While the article is **locked** by the emergency brake (`locked: true`), `PUBLISHER` belongs
+to the chain of every author below `PUBLISHER`, staffed or trusting or not — only a publisher brings
+it back online.
 An author whose chain is empty publishes directly (`PUBLISH`); everyone else submits (`SUBMIT`) and
 the article waits for the lowest level of the chain (`pendingLevel`). Any user other than the
 author whose level is at least the pending level may approve or reject; an approval settles every
-level up to the approver's level, the article then waits for the next staffed level above it or,
-when none remains, goes live. While a submission is pending, content and section are frozen
-(`EDIT` not offered, `PUT` → `409`). The chain is computed per request from the current roles, so
-role changes act at once. Requests that need it (an author without `PUBLISHER` among the returned
+level up to the approver's level, the article then waits for the next staffed, non-trusting level
+above it or, when none remains, goes live. While a submission is pending, content and section are frozen
+(`EDIT` not offered, `PUT` → `409`). The chain is computed per request from the current roles and
+trust, so role and trust changes act at once — but a pending submission is **not moved**: its
+`pendingLevel` changes only on submit and approve, so an article already waiting for a level that
+starts to trust its author keeps waiting (approve, reject or withdraw as before). Requests that need it (an author without `PUBLISHER` among the returned
 articles, every approve) read the role holders from Keycloak; when Keycloak is unavailable they
 answer `503` with the error body.
 
@@ -174,7 +180,7 @@ are never listed together. Rules ("pending" = `pendingLevel != null`):
 |---|---|
 | `EDIT` | user is the author and may write in the article's section; nothing pending |
 | `SUBMIT` | user is the author, may write in the article's section, their chain is not empty; nothing pending; status ≠ `PUBLISHED` or unpublished changes exist |
-| `PUBLISH` | as `SUBMIT`, but the author's chain is empty (today: the author holds `PUBLISHER`, or no other account staffs a level) |
+| `PUBLISH` | as `SUBMIT`, but the author's chain is empty (the author holds `PUBLISHER`, or every level above is unstaffed or trusts the author) |
 | `WITHDRAW` | user is the author; pending |
 | `APPROVE`, `REJECT` | user is not the author and their level ≥ `pendingLevel`; pending |
 | `TAKE_OFFLINE` | status = `PUBLISHED` and user is the author, an `EDITOR_IN_CHIEF`, a `PUBLISHER` or `SECTION_EDITOR` of the article's section |
@@ -400,7 +406,8 @@ Approves the pending submission up to the approver's level. No request body.
 
 - **Auth:** writer; `APPROVE` (not the author; level ≥ `pendingLevel`)
 - **Response `200`:** `ArticleDto` waiting for the next staffed level above the approver's level
-  (`pendingLevel`; `PUBLISHER` is always next for a locked article), or, when none remains,
+  that does not trust the author (`pendingLevel`; `PUBLISHER` is always next for a locked
+  article), or, when none remains,
   `PUBLISHED` with `pendingLevel` `null`, `locked` `false` and the latest revision live
 - **Errors:** `403` the author or level too low, `404`, `409` nothing pending or a concurrent
   decision.
@@ -504,6 +511,24 @@ acts on their own account or on an account holding `PUBLISHER`:
 | `LOCK` | `PUBLISHER` | enabled |
 | `UNLOCK` | `PUBLISHER` | disabled |
 
+**Trust** (`trusts`, `trustScopes`, `PUT /api/accounts/{id}/trust`; the server decides). A trust
+entry = approval level × trusted account (× section for `SECTION_EDITOR`; `sectionId` `null` for the
+newspaper-wide levels), at most one per account, level and section, recording who set it and when.
+It makes that level skip the account's articles in the approval chain (see Articles). A user acts
+only for their **own highest level**: `PUBLISHER` if they hold it, else `EDITOR_IN_CHIEF`, else
+`SECTION_EDITOR` in each section they edit; never on their own account. Locked accounts are treated
+like enabled ones.
+
+| Requesting user's level | May set on accounts that | May clear |
+|---|---|---|
+| `PUBLISHER` | do not hold `PUBLISHER` and hold `EDITOR_IN_CHIEF` or any section role | any existing `PUBLISHER` entry |
+| `EDITOR_IN_CHIEF` (not `PUBLISHER`) | hold neither `PUBLISHER` nor `EDITOR_IN_CHIEF` and any section role | any existing `EDITOR_IN_CHIEF` entry |
+| `SECTION_EDITOR` in *S* (neither of the above) | hold neither `PUBLISHER` nor `EDITOR_IN_CHIEF` and are `REPORTER` in *S* | any existing `SECTION_EDITOR` entry of *S* |
+
+Clearing does not depend on who set the entry or whether the account is still below (stale entries
+after role changes stay and can be cleared). Deleting a section deletes its trust entries; role
+changes delete none. An editor-in-chief who is also a section editor acts as editor-in-chief only.
+
 **Keycloak unavailable:** when Keycloak cannot be reached or refuses the service account, every
 account endpoint answers `503` with
 `{"errors": [{"field": null, "message": "the account service is unavailable; try again later"}]}`.
@@ -513,12 +538,19 @@ account endpoint answers `503` with
 ```json
 { "id": "5f0c…", "username": "chief", "firstName": "Chief", "lastName": "Editor",
   "roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [ { "sectionId": 1, "role": "REPORTER" } ],
-  "enabled": true, "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK"] }
+  "enabled": true,
+  "trusts": [ { "level": "PUBLISHER", "sectionId": null } ],
+  "trustScopes": [ { "level": "PUBLISHER", "sectionId": null } ],
+  "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK"] }
 ```
 `id` is the Keycloak user id. `firstName`/`lastName` are `""` when unset. `roles` are the newspaper
 roles from the account's groups in the order `PUBLISHER`, `EDITOR_IN_CHIEF`, `READER` (`[]` for
 none). `sectionRoles` are the account's section roles ordered by section position (`[]` for none).
-`enabled` is `false` for a locked account. `allowedActions` are the actions the requesting user may
+`enabled` is `false` for a locked account. `trusts` are the account's trust entries (`level`
+`SECTION_EDITOR` | `EDITOR_IN_CHIEF` | `PUBLISHER`, `sectionId` for `SECTION_EDITOR`, else `null`),
+ordered `PUBLISHER`, `EDITOR_IN_CHIEF`, then `SECTION_EDITOR` by section position; `trustScopes`
+are the entries the requesting user may set or clear on it (same shape and order, see the trust
+table; render one switch each, on when the entry is in `trusts`). `allowedActions` are the actions the requesting user may
 perform on the account now, in the order `EDIT_ROLES`, `RESET_PASSWORD`, `LOCK`, `UNLOCK` (see the
 account actions table; `LOCK` only for enabled, `UNLOCK` only for disabled accounts). Clients ignore
 values they do not know.
@@ -534,6 +566,7 @@ Every account of the realm except service accounts, sorted by `username`. At mos
   { "assignableRoles": ["PUBLISHER", "EDITOR_IN_CHIEF", "READER"],
     "accounts": [ { "id": "5f0c…", "username": "chief", "firstName": "Chief", "lastName": "Editor",
                     "roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [], "enabled": true,
+                    "trusts": [], "trustScopes": [ { "level": "PUBLISHER", "sectionId": null } ],
                     "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK"] } ] }
   ```
   `assignableRoles` are the newspaper roles only (`[]` for a section editor); the section roles a
@@ -578,10 +611,11 @@ stores its section roles.
   ```json
   { "account": { "id": "9a1e…", "username": "lena", "firstName": "Lena", "lastName": "",
                  "roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [ { "sectionId": 1, "role": "REPORTER" } ],
-                 "enabled": true, "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK"] },
+                 "enabled": true, "trusts": [], "trustScopes": [ { "level": "PUBLISHER", "sectionId": null } ],
+                 "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK"] },
     "password": "tiger-wolke-apfel-leiter" }
   ```
-  `allowedActions` are computed for the creator. `password` is four words from a curated German word list (`a-z`, 3–8 letters each) joined by
+  `trustScopes` and `allowedActions` are computed for the creator. `password` is four words from a curated German word list (`a-z`, 3–8 letters each) joined by
   `-`, chosen with a secure random source. It is **not temporary** and appears **only in this
   response** — the server neither stores nor logs it. Show it on the account slip.
 - **Errors:** `400` validation (every violation; also names Keycloak rejects, e.g. forbidden
@@ -611,13 +645,15 @@ all or nothing. Only the difference to the current roles is checked and written.
   `{sectionId, role}` naming existing sections at most once each, at least one role of either kind
   (field `roles`), unknown fields rejected. `sectionRoles` is required so that a client forgetting
   it cannot remove every section role.
-- **Response `200`:** the `AccountDto` with its new roles, `allowedActions` computed for the
+- **Response `200`:** the `AccountDto` with its new roles (trust entries unchanged),
+  `trustScopes` and `allowedActions` computed for the
   requesting user (may be `[]` afterwards, e.g. after an editor-in-chief made someone
   editor-in-chief)
   ```json
   { "id": "5f0c…", "username": "reader", "firstName": "Reader", "lastName": "",
     "roles": ["EDITOR_IN_CHIEF", "READER"], "sectionRoles": [ { "sectionId": 2, "role": "REPORTER" } ],
-    "enabled": true, "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK"] }
+    "enabled": true, "trusts": [], "trustScopes": [ { "level": "PUBLISHER", "sectionId": null } ],
+    "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK"] }
   ```
   A request that changes nothing answers `200` without writing.
 - **Errors:** `400` validation (every violation; unknown section at `sectionRoles`), `403` empty
@@ -646,7 +682,7 @@ temporary) and ends every Keycloak session of the account. A locked account stay
 - **Response `200`:** the creation shape, `CreatedAccountDto`
   ```json
   { "account": { "id": "…", "username": "reader", "firstName": "Reader", "lastName": "",
-                 "roles": ["READER"], "sectionRoles": [], "enabled": true,
+                 "roles": ["READER"], "sectionRoles": [], "enabled": true, "trusts": [], "trustScopes": [],
                  "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK"] },
     "password": "tiger-wolke-apfel-leiter" }
   ```
@@ -667,7 +703,7 @@ Idempotent: locking a locked account (or unlocking an enabled one) answers `200`
 - **Auth:** `PUBLISHER`; never an account holding `PUBLISHER`, never the own account
 - **Body:** none
 - **Response `200`:** the `AccountDto` with its new state, e.g. after a lock
-  `{ "id": "…", "username": "reader", …, "enabled": false, "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "UNLOCK"] }`
+  `{ "id": "…", "username": "reader", …, "enabled": false, "trusts": [], "trustScopes": [], "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "UNLOCK"] }`
 - **Errors:** `403` empty body (no account access), `403` error body when refused (field `null`,
   e.g. `you may not lock account 'reader'`), `404` error body for an unknown id or a service
   account, `503`.
@@ -675,6 +711,40 @@ Idempotent: locking a locked account (or unlocking an enabled one) answers `200`
   rejected at once; **access tokens issued before the lock stay valid until they expire**, Keycloak
   default a few minutes). Logged at INFO `Account '<username>' locked|unlocked by '<user>'` when the
   state changed.
+
+## `PUT /api/accounts/{id}/trust`
+
+Sets or clears one trust entry of the account. Idempotent.
+
+- **Auth:** account access rule above, and the entry must be among the requesting user's
+  `trustScopes` for the account (see the trust table)
+- **Body:**
+  ```json
+  { "level": "SECTION_EDITOR", "sectionId": 1, "trusted": true }
+  ```
+  `level` (required) `SECTION_EDITOR` | `EDITOR_IN_CHIEF` | `PUBLISHER`; `sectionId` an existing
+  section for `SECTION_EDITOR` (required), `null` or absent otherwise; `trusted` (required) boolean
+  — `true` sets, `false` clears. Unknown fields are rejected.
+- **Response `200`:** the `AccountDto` as listed, computed for the requesting user
+  ```json
+  { "id": "5f0c…", "username": "reader", "firstName": "Reader", "lastName": "",
+    "roles": ["READER"], "sectionRoles": [ { "sectionId": 1, "role": "REPORTER" } ], "enabled": true,
+    "trusts": [ { "level": "SECTION_EDITOR", "sectionId": 1 } ],
+    "trustScopes": [ { "level": "SECTION_EDITOR", "sectionId": 1 } ],
+    "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD"] }
+  ```
+  Setting an existing entry keeps its original setter and time; clearing a missing one changes
+  nothing.
+- **Errors:** `400` validation (every violation: `level`, `sectionId` — e.g. `is required for
+  SECTION_EDITOR`, `must be null for PUBLISHER`, `unknown section 7` —, `trusted`, unknown fields
+  at their name), `403` empty body (no account access), `403` error body when the entry is not in
+  the requesting user's `trustScopes` (field `null`, e.g.
+  `you may not change trust of account 'reader' at EDITOR_IN_CHIEF`), `404` error body for an
+  unknown id or a service account, `503` Keycloak unavailable.
+- **Side effects:** the trust row inserted (with the requesting user and time) or deleted. **No
+  article changes:** pending submissions keep their `pendingLevel`; trust applies the next time a
+  chain is computed (fetch/publish check, submit, approve). Logged at INFO only when something
+  changed: `Trust of account '<username>' at <LEVEL>[ in section <id>] set|cleared by '<user>'`.
 
 ---
 
@@ -777,7 +847,7 @@ Sets the positions `0, 1, 2, …` in the given order.
 
 ## `DELETE /api/sections/{id}`
 
-Deletes an empty section together with every section role held in it.
+Deletes an empty section together with every section role and trust entry held in it.
 
 - **Auth:** `PUBLISHER` or `EDITOR_IN_CHIEF`
 - **Response `204`**, empty body.
@@ -785,7 +855,8 @@ Deletes an empty section together with every section role held in it.
   to the section — field `null`, e.g. `"section still contains 3 article(s); move them to another
   section first"`; nothing is changed. Move the articles first (`PUT /api/articles/{id}` with
   `sectionId`).
-- **Side effects:** section and its section roles deleted; the remaining sections' positions set
+- **Side effects:** section, its section roles and its `SECTION_EDITOR` trust entries deleted; the
+  remaining sections' positions set
   to `0, 1, 2, …` in their previous order; logged at INFO with the section and the acting user.
   Deleting the only section is allowed; the next `POST /api/articles` (or restart) recreates the
   default section.

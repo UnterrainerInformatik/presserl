@@ -10,8 +10,9 @@ import info.unterrainer.presserl.section.Newsroom;
  * The approval chain as pure functions. A user's level for an article is the highest of
  * {@code PUBLISHER}, {@code EDITOR_IN_CHIEF} and {@code SECTION_EDITOR} of the article's section they
  * hold; empty means reporter (below every level). The chain above a level consists of the higher
- * levels that are staffed by someone other than the author ({@link Staffing}); unstaffed levels are
- * skipped, except {@code PUBLISHER} while the article is locked by the emergency brake.
+ * levels that are staffed by someone other than the author and do not trust the author
+ * ({@link Staffing}); other levels are skipped, except {@code PUBLISHER} while the article is locked
+ * by the emergency brake, which qualifies whether it is staffed or trusts the author or not.
  */
 public final class ApprovalChain {
 
@@ -35,18 +36,19 @@ public final class ApprovalChain {
     }
 
     /**
-     * The lowest staffed level strictly above {@code above} (above nothing when empty); empty when no
-     * level remains, which means the article is published.
+     * The lowest staffed level strictly above {@code above} (above nothing when empty) that does not
+     * trust the author; empty when no level remains, which means the article is published.
      *
      * @param locked whether the article is locked by the emergency brake: {@code PUBLISHER} then
-     *               qualifies whether it is staffed or not
+     *               qualifies whether it is staffed or trusts the author or not
      */
     public static Optional<ApprovalLevel> next(Optional<ApprovalLevel> above, long sectionId, String authorSub,
             Staffing staffing, boolean locked) {
         return Arrays.stream(ApprovalLevel.values())
                 .filter(level -> above.map(a -> level.compareTo(a) > 0).orElse(true))
                 .filter(level -> locked && level == ApprovalLevel.PUBLISHER
-                        || staffing.staffed(level, sectionId, authorSub))
+                        || staffing.staffed(level, sectionId, authorSub)
+                                && !staffing.trusts(level, sectionId, authorSub))
                 .findFirst();
     }
 

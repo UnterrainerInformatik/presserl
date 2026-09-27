@@ -14,6 +14,9 @@ import info.unterrainer.presserl.section.Newsroom;
 import info.unterrainer.presserl.section.NewsroomService;
 import info.unterrainer.presserl.section.SectionRoleDto;
 import info.unterrainer.presserl.section.SectionRoleStore;
+import info.unterrainer.presserl.trust.TrustPolicy;
+import info.unterrainer.presserl.trust.TrustScope;
+import info.unterrainer.presserl.trust.TrustStore;
 import io.quarkus.security.Authenticated;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
@@ -32,7 +35,8 @@ import jakarta.ws.rs.core.MediaType;
  * Account endpoints for publishers, editors-in-chief and section editors (of any section); others
  * get {@code 403}. Which newspaper roles a user may assign is decided by {@link RoleDelegation} and
  * reported as {@code assignableRoles}, which actions a user may perform on an account by
- * {@link AccountPolicy} ({@code allowedActions}). The Keycloak Admin client blocks, so Keycloak calls run
+ * {@link AccountPolicy} ({@code allowedActions}), which trust entries they may set or clear by
+ * {@link TrustPolicy} ({@code trustScopes}). The Keycloak Admin client blocks, so Keycloak calls run
  * through {@link KeycloakCalls}.
  */
 @Path("/api/accounts")
@@ -64,17 +68,23 @@ public class AccountResource {
     SectionRoleStore sectionRoles;
 
     @Inject
+    TrustStore trustStore;
+
+    @Inject
     PassPhraseGenerator passPhrases;
 
     @GET
     public Uni<AccountListDto> list() {
         return newsroom().flatMap(newsroom -> keycloakCalls.call(service::list)
-                .flatMap(accounts -> sectionRoles.byAccount().map(roles -> new AccountListDto(
-                        RoleDelegation.assignableBy(newsroom.user()),
-                        accounts.stream()
-                                .map(account -> account.withSectionRoles(roles.getOrDefault(account.id(), List.of()))
-                                        .withAllowedActionsFor(newsroom))
-                                .toList()))));
+                .flatMap(accounts -> sectionRoles.byAccount().flatMap(roles -> trustStore.byAccount()
+                        .flatMap(trusts -> sectionRoles.sectionIds().map(sectionIds -> new AccountListDto(
+                                RoleDelegation.assignableBy(newsroom.user()),
+                                accounts.stream()
+                                        .map(account -> account
+                                                .withSectionRoles(roles.getOrDefault(account.id(), List.of()))
+                                                .withTrusts(trusts.getOrDefault(account.id(), List.of()))
+                                                .withAllowedActionsFor(newsroom, sectionIds))
+                                        .toList()))))));
     }
 
     @GET
@@ -92,8 +102,8 @@ public class AccountResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<RestResponse<CreatedAccountDto>> create(JsonNode json) {
         return newsroom().flatMap(newsroom -> creation.create(newsroom, AccountRequestValidator.validate(json))
-                .map(created -> new CreatedAccountDto(created.account().withAllowedActionsFor(newsroom),
-                        created.password())))
+                .flatMap(created -> sectionRoles.sectionIds().map(sectionIds -> new CreatedAccountDto(
+                        created.account().withAllowedActionsFor(newsroom, sectionIds), created.password()))))
                 .map(created -> RestResponse.ResponseBuilder
                         .<CreatedAccountDto>created(URI.create("/api/accounts/" + created.account().id()))
                         .entity(created)
@@ -110,7 +120,43 @@ public class AccountResource {
     public Uni<AccountDto> editRoles(@PathParam("id") String id, JsonNode json) {
         return target(id, AccountAction.EDIT_ROLES, "edit the roles of").flatMap(target -> roleEdit
                 .edit(target.requester(), target.account(), AccountRequestValidator.validateRoles(json))
-                .map(edited -> edited.withAllowedActionsFor(target.requester())));
+                .map(edited -> target.answer(edited)));
+    }
+
+    /**
+     * Sets ({@code trusted: true}) or clears ({@code trusted: false}) a trust entry of the account;
+     * idempotent, an existing entry keeps its setter and time. Articles are not touched: pending
+     * submissions keep waiting, trust applies the next time a chain is computed.
+     */
+    @PUT
+    @Path("/{id}/trust")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Uni<AccountDto> setTrust(@PathParam("id") String id, JsonNode json) {
+        return newsroom().flatMap(newsroom -> load(newsroom, id)).flatMap(target -> {
+            SetTrustRequest request = AccountRequestValidator.validateTrust(json, target.sectionIds());
+            TrustScope scope = request.scope();
+            AccountDto account = target.account();
+            Newsroom requester = target.requester();
+            if (!TrustPolicy.scopes(requester, account, target.sectionIds()).contains(scope)) {
+                throw AccountException.forbidden(null, "you may not change trust of account '" + account.username()
+                        + "' at " + scope.level() + section(scope));
+            }
+            Uni<Boolean> write = request.trusted()
+                    ? trustStore.set(id, scope, requester.user().sub())
+                    : trustStore.clear(id, scope);
+            return write.flatMap(changed -> {
+                if (changed) {
+                    LOG.infof("Trust of account '%s' at %s%s %s by '%s'", account.username(), scope.level(),
+                            section(scope), request.trusted() ? "set" : "cleared", requester.user().username());
+                }
+                return trustStore.scopesOf(id);
+            }).map(trusts -> target.answer(account.withTrusts(
+                    trusts.stream().sorted(TrustScope.order(target.sectionIds())).toList())));
+        });
+    }
+
+    private static String section(TrustScope scope) {
+        return scope.sectionId() == null ? "" : " in section " + scope.sectionId();
     }
 
     /**
@@ -127,7 +173,7 @@ public class AccountResource {
             }).map(done -> {
                 LOG.infof("Password of account '%s' reset by '%s'", target.account().username(),
                         target.requester().user().username());
-                return new CreatedAccountDto(target.account().withAllowedActionsFor(target.requester()), password);
+                return new CreatedAccountDto(target.answer(target.account()), password);
             });
         });
     }
@@ -163,34 +209,55 @@ public class AccountResource {
                 LOG.infof("Account '%s' %s by '%s'", target.account().username(), enabled ? "unlocked" : "locked",
                         target.requester().user().username());
             }
-            return target.account().withEnabled(enabled).withAllowedActionsFor(target.requester());
+            return target.answer(target.account().withEnabled(enabled));
         }));
     }
 
     /**
-     * The requesting user and the account {@code id} (with newspaper and section roles), once the
-     * access rule and {@link AccountPolicy#permitted} allow {@code action}.
+     * The requesting user and the account {@code id} (see {@link #load}), once the access rule and
+     * {@link AccountPolicy#permitted} allow {@code action}.
      *
      * @throws AccountException {@code 404} for an unknown id or a service account, {@code 403} when
      *                          the policy refuses
      */
     private Uni<Target> target(String id, AccountAction action, String verb) {
-        return newsroom().flatMap(newsroom -> keycloakCalls.call(() -> service.find(id))
+        return newsroom().flatMap(newsroom -> load(newsroom, id)).invoke(target -> {
+            if (!AccountPolicy.permitted(action, target.requester(), target.account())) {
+                throw AccountException.forbidden(null, "you may not " + verb + " account '"
+                        + target.account().username() + "'");
+            }
+        });
+    }
+
+    /**
+     * The account {@code id} with newspaper roles, section roles and trust entries, and the ids of
+     * all sections by position.
+     *
+     * @throws AccountException {@code 404} for an unknown id or a service account
+     */
+    private Uni<Target> load(Newsroom newsroom, String id) {
+        return keycloakCalls.call(() -> service.find(id))
                 .flatMap(found -> {
                     AccountDto account = found.orElseThrow(() -> AccountException.notFound(id));
                     return sectionRoles.namedRolesOf(id).map(roles -> account.withSectionRoles(roles.stream()
                             .map(role -> new SectionRoleDto(role.sectionId(), role.role())).toList()));
                 })
-                .map(account -> {
-                    if (!AccountPolicy.permitted(action, newsroom, account)) {
-                        throw AccountException.forbidden(null, "you may not " + verb + " account '"
-                                + account.username() + "'");
-                    }
-                    return new Target(newsroom, account);
-                }));
+                .flatMap(account -> sectionRoles.sectionIds().flatMap(sectionIds -> trustStore.scopesOf(id)
+                        .map(trusts -> new Target(newsroom, account.withTrusts(
+                                trusts.stream().sorted(TrustScope.order(sectionIds)).toList()), sectionIds))));
     }
 
-    private record Target(Newsroom requester, AccountDto account) {
+    /**
+     * @param sectionIds the ids of all sections by position
+     */
+    private record Target(Newsroom requester, AccountDto account, List<Long> sectionIds) {
+
+        /**
+         * {@code account} (this target after a change) as answered to the requester.
+         */
+        AccountDto answer(AccountDto account) {
+            return account.withAllowedActionsFor(requester, sectionIds);
+        }
     }
 
     /**

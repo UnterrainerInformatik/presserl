@@ -10,7 +10,10 @@ note right
   A level is **skipped** when
   • no account other than A holds its role
     (locked accounts count), or
-  • someone of that level trusts A (planned).
+  • that level trusts A (section editor:
+    per section; others newspaper-wide).
+  Never skipped: the publisher level
+  of a locked article.
 end note
 if (chain empty?) then (yes)
   :A clicks **Publish**;
@@ -25,7 +28,7 @@ else (no)
     else (approve)
       :every level up to the\napprover's level is settled;
     endif
-  repeat while (a staffed level above\nthe approver's level left?) is (yes)
+  repeat while (a staffed, non-trusting level\nabove the approver's level left?) is (yes)
 endif
 :**Published** (latest revision live);
 stop
@@ -34,6 +37,7 @@ note left
   Solo: the first account holds all roles
   → empty chain → published at once.
   A may **withdraw** a submission at any time.
-  Levels are re-evaluated at every approval.
+  Levels are re-evaluated at every approval;
+  trust set later does not move a pending one.
 end note
 @enduml

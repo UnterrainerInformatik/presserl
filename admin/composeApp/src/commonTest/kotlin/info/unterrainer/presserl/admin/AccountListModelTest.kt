@@ -2,8 +2,11 @@ package info.unterrainer.presserl.admin
 
 import info.unterrainer.presserl.admin.api.AccountDto
 import info.unterrainer.presserl.admin.api.CreatedAccountDto
+import info.unterrainer.presserl.admin.api.TrustScopeDto
 import info.unterrainer.presserl.admin.ui.account.AccountAction
 import info.unterrainer.presserl.admin.ui.account.AccountListModel
+import info.unterrainer.presserl.admin.ui.account.PendingAction
+import info.unterrainer.presserl.admin.ui.account.PendingTrust
 import info.unterrainer.presserl.admin.ui.account.actions
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
@@ -12,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
@@ -42,6 +46,11 @@ class AccountListModelTest {
             sent += "unlock $id"
             account(id, "reader", enabled = true, "RESET_PASSWORD", "LOCK")
         },
+        setTrust = { id, level, sectionId, trusted ->
+            sent += "trust $id $level $sectionId $trusted"
+            if (refuse) throw IllegalStateException("you may not change trust of account 'chief' at PUBLISHER")
+            chief.copy(trusts = if (trusted) listOf(TrustScopeDto(level, sectionId)) else emptyList())
+        },
     )
 
     @Test
@@ -55,7 +64,7 @@ class AccountListModelTest {
     fun cancelSendsNothing() = runTest {
         val model = model()
         model.request(reader, AccountAction.LOCK)
-        assertEquals(AccountAction.LOCK, model.state.value.pending?.action)
+        assertEquals(AccountAction.LOCK, assertIs<PendingAction>(model.state.value.pending).action)
 
         model.cancel()
         runCurrent()
@@ -122,6 +131,74 @@ class AccountListModelTest {
         val model = model()
         model.confirm()
         runCurrent()
+        assertEquals(emptyList(), sent)
+    }
+
+    // --- trust
+
+    private val publisherTrust = TrustScopeDto("PUBLISHER", null)
+
+    @Test
+    fun turningTrustOnAsksFirstAndReplacesTheRow() = runTest {
+        val model = model()
+        model.requestTrust(chief, publisherTrust, on = true)
+        runCurrent()
+        assertEquals(PendingTrust(chief, publisherTrust), model.state.value.pending)
+        assertEquals(emptyList(), sent)
+
+        model.confirm()
+        runCurrent()
+        assertEquals(listOf("trust c1 PUBLISHER null true"), sent)
+        assertEquals(listOf(publisherTrust), model.state.value.accounts.first { it.id == "c1" }.trusts)
+        assertNull(model.state.value.pending)
+        assertFalse(model.state.value.busy)
+    }
+
+    @Test
+    fun cancellingTrustSendsNothing() = runTest {
+        val model = model()
+        model.requestTrust(chief, publisherTrust, on = true)
+        model.cancel()
+        runCurrent()
+
+        assertNull(model.state.value.pending)
+        assertEquals(emptyList(), sent)
+        assertEquals(listOf(chief, reader), model.state.value.accounts)
+    }
+
+    @Test
+    fun turningTrustOffSendsAtOnce() = runTest {
+        val model = model()
+        val trusted = chief.copy(trusts = listOf(TrustScopeDto("SECTION_EDITOR", 3)))
+        model.requestTrust(trusted, TrustScopeDto("SECTION_EDITOR", 3), on = false)
+        runCurrent()
+
+        assertNull(model.state.value.pending)
+        assertEquals(listOf("trust c1 SECTION_EDITOR 3 false"), sent)
+        assertEquals(emptyList(), model.state.value.accounts.first { it.id == "c1" }.trusts)
+    }
+
+    @Test
+    fun refusedTrustShowsAnErrorAndKeepsTheSwitch() = runTest {
+        refuse = true
+        val model = model()
+        model.requestTrust(chief, publisherTrust, on = true)
+        model.confirm()
+        runCurrent()
+
+        assertEquals("you may not change trust of account 'chief' at PUBLISHER", model.state.value.error)
+        assertEquals(listOf(chief, reader), model.state.value.accounts)
+        assertFalse(model.state.value.busy)
+    }
+
+    @Test
+    fun unknownTrustLevelsAreIgnored() = runTest {
+        val model = model()
+        model.requestTrust(chief, TrustScopeDto("OMBUDSMAN", null), on = true)
+        model.requestTrust(chief, TrustScopeDto("OMBUDSMAN", null), on = false)
+        runCurrent()
+
+        assertNull(model.state.value.pending)
         assertEquals(emptyList(), sent)
     }
 

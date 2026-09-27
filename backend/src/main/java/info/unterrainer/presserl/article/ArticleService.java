@@ -234,13 +234,14 @@ public class ArticleService {
 
     /**
      * Approves the pending submission up to the approver's level: the article then waits for the
-     * next staffed level above it or, when none remains, goes live with its latest revision.
+     * next staffed level above it that does not trust the author or, when none remains, goes live
+     * with its latest revision.
      */
     @WithTransaction
     public Uni<ArticleView> approve(Newsroom newsroom, long id) {
         return load(newsroom, id).flatMap(view -> {
             require(ArticleAction.APPROVE, newsroom, view, Staffing.NOT_NEEDED);
-            return staffing.forApproval().flatMap(staffed -> {
+            return staffing.forApproval(view.article().authorSub).flatMap(staffed -> {
                 ArticleEntity article = view.article();
                 Instant now = now();
                 ArticleReviewEntity review = review(newsroom, view, ReviewDecision.APPROVED, null, now);

@@ -399,3 +399,164 @@ Content-Type: application/json
         client.assert(JSON.stringify(response.body.errors.map(e => e.field)) === '["sectionRoles"]', JSON.stringify(response.body));
     });
 %}
+
+### Trust: the publisher's trust scopes in the list
+GET {{baseUrl}}/api/accounts
+Authorization: Bearer {{accessToken}}
+
+> {%
+    const chief = response.body.accounts.find(a => a.username === "chief");
+    client.test("200; the publisher may trust chief at PUBLISHER", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.accounts.every(a => Array.isArray(a.trusts) && Array.isArray(a.trustScopes)),
+            "trusts or trustScopes missing");
+        client.assert(JSON.stringify(chief.trustScopes) === '[{"level":"PUBLISHER","sectionId":null}]',
+            JSON.stringify(chief));
+    });
+    client.global.set("chiefId", chief.id);
+%}
+
+### Trust: the publisher trusts chief
+PUT {{baseUrl}}/api/accounts/{{chiefId}}/trust
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "level": "PUBLISHER", "sectionId": null, "trusted": true }
+
+> {%
+    client.test("200 with the trust entry", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.username === "chief", JSON.stringify(response.body));
+        client.assert(JSON.stringify(response.body.trusts) === '[{"level":"PUBLISHER","sectionId":null}]',
+            JSON.stringify(response.body));
+        client.assert(JSON.stringify(response.body.trustScopes) === '[{"level":"PUBLISHER","sectionId":null}]',
+            JSON.stringify(response.body));
+    });
+%}
+
+### Trust: setting it again is idempotent
+PUT {{baseUrl}}/api/accounts/{{chiefId}}/trust
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "level": "PUBLISHER", "trusted": true }
+
+> {%
+    client.test("200, one entry", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(JSON.stringify(response.body.trusts) === '[{"level":"PUBLISHER","sectionId":null}]',
+            JSON.stringify(response.body));
+    });
+%}
+
+### Trust: the publisher clears it
+PUT {{baseUrl}}/api/accounts/{{chiefId}}/trust
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "level": "PUBLISHER", "sectionId": null, "trusted": false }
+
+> {%
+    client.test("200 without trust entries", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(JSON.stringify(response.body.trusts) === '[]', JSON.stringify(response.body));
+    });
+%}
+
+### Trust: only at the own highest level
+PUT {{baseUrl}}/api/accounts/{{chiefId}}/trust
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "level": "EDITOR_IN_CHIEF", "trusted": true }
+
+> {%
+    client.test("403 with an error body", () => {
+        client.assert(response.status === 403, "status " + response.status);
+        client.assert(response.body.errors[0].message === "you may not change trust of account 'chief' at EDITOR_IN_CHIEF",
+            JSON.stringify(response.body));
+    });
+%}
+
+### Trust: not on an account that writes nowhere
+PUT {{baseUrl}}/api/accounts/{{newAccountId}}/trust
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "level": "PUBLISHER", "trusted": true }
+
+> {%
+    client.test("403 with an error body", () => {
+        client.assert(response.status === 403, "status " + response.status);
+        client.assert(response.body.errors[0].field === null, JSON.stringify(response.body));
+    });
+%}
+
+### Trust: not on oneself
+PUT {{baseUrl}}/api/accounts/{{chiefId}}/trust
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "level": "EDITOR_IN_CHIEF", "trusted": true }
+
+> {%
+    client.test("403", () => {
+        client.assert(response.status === 403, "status " + response.status);
+    });
+%}
+
+### Trust: readers have no account access
+PUT {{baseUrl}}/api/accounts/{{chiefId}}/trust
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{ "level": "PUBLISHER", "trusted": true }
+
+> {%
+    client.test("403 with an empty body", () => {
+        client.assert(response.status === 403, "status " + response.status);
+        client.assert(!response.body, JSON.stringify(response.body));
+    });
+%}
+
+### Trust: no section for a newspaper-wide level
+PUT {{baseUrl}}/api/accounts/{{chiefId}}/trust
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "level": "PUBLISHER", "sectionId": 1, "trusted": true }
+
+> {%
+    client.test("400 at sectionId", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(JSON.stringify(response.body.errors.map(e => e.field)) === '["sectionId"]', JSON.stringify(response.body));
+    });
+%}
+
+### Trust: every violation is listed
+PUT {{baseUrl}}/api/accounts/{{chiefId}}/trust
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "level": "SECTION_EDITOR", "trusted": "yes", "note": "x" }
+
+> {%
+    client.test("400 at note, sectionId and trusted", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(JSON.stringify(response.body.errors.map(e => e.field)) === '["note","sectionId","trusted"]',
+            JSON.stringify(response.body));
+    });
+%}
+
+### Trust: unknown account
+PUT {{baseUrl}}/api/accounts/00000000-0000-0000-0000-000000000000/trust
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "level": "PUBLISHER", "trusted": true }
+
+> {%
+    client.test("404", () => {
+        client.assert(response.status === 404, "status " + response.status);
+    });
+%}

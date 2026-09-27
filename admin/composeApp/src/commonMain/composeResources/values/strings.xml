@@ -147,4 +147,9 @@
     <string name="remove">Entfernen</string>
     <string name="remove_member_title">Aus dem Ressort entfernen?</string>
     <string name="remove_member_text">%1$s verliert die Rolle „%2$s“ im Ressort %3$s.</string>
+    <string name="trusted_by">Vertraut von: %1$s</string>
+    <string name="trust_switches">Vertrauen als</string>
+    <string name="action_trust">Vertrauen</string>
+    <string name="confirm_trust_title">Vertrauen aussprechen?</string>
+    <string name="confirm_trust_text">Artikel von „%1$s“ warten dann nicht mehr auf %2$s.</string>
 </resources>

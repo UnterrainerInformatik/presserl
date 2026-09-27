@@ -159,6 +159,14 @@ class ApiClient(
     suspend fun unlock(accountId: String): AccountDto =
         http.post("$baseUrl/api/accounts/$accountId/unlock") { bearerAuth(accessToken()) }.body()
 
+    /** Sets ([trusted]) or clears a trust entry of the account; answers the account as listed. */
+    suspend fun setTrust(accountId: String, level: String, sectionId: Long?, trusted: Boolean): AccountDto =
+        http.put("$baseUrl/api/accounts/$accountId/trust") {
+            bearerAuth(accessToken())
+            contentType(ContentType.Application.Json)
+            setBody(SetTrustRequest(level, sectionId, trusted))
+        }.body()
+
     /** All sections by position, with what the user may do. */
     suspend fun sections(): SectionListDto = http.get("$baseUrl/api/sections") { bearerAuth(accessToken()) }.body()
 

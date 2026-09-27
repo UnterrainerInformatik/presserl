@@ -3,6 +3,8 @@ package info.unterrainer.presserl.account;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -10,17 +12,21 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import info.unterrainer.presserl.api.FieldError;
+import info.unterrainer.presserl.article.ApprovalLevel;
 import info.unterrainer.presserl.auth.NewspaperRole;
 import info.unterrainer.presserl.section.SectionRole;
 import info.unterrainer.presserl.section.SectionRoleDto;
+import info.unterrainer.presserl.trust.TrustScope;
 import jakarta.ws.rs.core.Response.Status;
 
 /**
- * {@link AccountRequestValidator#validateRoles}: the {@code PUT /api/accounts/{id}/roles} body.
+ * {@link AccountRequestValidator#validateRoles}: the {@code PUT /api/accounts/{id}/roles} body;
+ * {@link AccountRequestValidator#validateTrust}: the {@code PUT /api/accounts/{id}/trust} body.
  */
 class AccountRequestValidatorTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final List<Long> SECTION_IDS = List.of(1L, 3L);
 
     @Test
     void validBody() {
@@ -86,6 +92,50 @@ class AccountRequestValidatorTest {
     @Test
     void notAnObject() {
         assertInvalid("[]", (String) null);
+    }
+
+    @Test
+    void validTrustBodies() {
+        assertThat(AccountRequestValidator.validateTrust(json("""
+                {"level": "SECTION_EDITOR", "sectionId": 3, "trusted": true}"""), SECTION_IDS))
+                .isEqualTo(new SetTrustRequest(new TrustScope(ApprovalLevel.SECTION_EDITOR, 3L), true));
+        assertThat(AccountRequestValidator.validateTrust(json("""
+                {"level": "PUBLISHER", "sectionId": null, "trusted": false}"""), SECTION_IDS))
+                .isEqualTo(new SetTrustRequest(new TrustScope(ApprovalLevel.PUBLISHER, null), false));
+        assertThat(AccountRequestValidator.validateTrust(json("""
+                {"level": "EDITOR_IN_CHIEF", "trusted": true}"""), SECTION_IDS).scope())
+                .isEqualTo(new TrustScope(ApprovalLevel.EDITOR_IN_CHIEF, null));
+    }
+
+    @Test
+    void trustSectionRequiredForSectionEditor() {
+        assertInvalidTrust("{\"level\": \"SECTION_EDITOR\", \"trusted\": true}", "sectionId");
+    }
+
+    @Test
+    void trustSectionOnlyForSectionEditor() {
+        assertInvalidTrust("{\"level\": \"PUBLISHER\", \"sectionId\": 1, \"trusted\": true}", "sectionId");
+    }
+
+    @Test
+    void trustSectionMustExist() {
+        assertInvalidTrust("{\"level\": \"SECTION_EDITOR\", \"sectionId\": 2, \"trusted\": true}", "sectionId");
+        assertInvalidTrust("{\"level\": \"SECTION_EDITOR\", \"sectionId\": \"1\", \"trusted\": true}", "sectionId");
+    }
+
+    @Test
+    void everyTrustViolationIsReported() {
+        assertInvalidTrust("{\"level\": \"REPORTER\", \"trusted\": \"yes\", \"note\": 1}", "note", "level", "trusted");
+        assertInvalidTrust("{}", "level", "trusted");
+        assertInvalidTrust("[]", (String) null);
+    }
+
+    private static void assertInvalidTrust(String body, String... fields) {
+        assertThatThrownBy(() -> AccountRequestValidator.validateTrust(json(body), SECTION_IDS))
+                .isInstanceOfSatisfying(AccountException.class, e -> {
+                    assertThat(e.status()).isEqualTo(Status.BAD_REQUEST);
+                    assertThat(e.errors()).extracting(FieldError::field).containsExactly(fields);
+                });
     }
 
     private static void assertInvalid(String body, String... fields) {

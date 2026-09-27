@@ -45,13 +45,21 @@ Levels, bottom to top: **section editor (of the article's section) → editor-in
 1. Start at the level directly above *A*'s highest role in *S*.
 2. A level is **skipped** when
    - no account other than *A* holds that level's role — e.g. *S* has no section editor (the editor-in-chief level takes over), or *A* is the only editor-in-chief; locked accounts count as holders, or
-   - any person of that level has set **trust** on *A* (planned).
-3. Each remaining level needs the approval of **one** person (other than *A*) holding that level's role **or a higher one**. An approval settles every level up to the approver's own: after a section editor the article waits for the editor-in-chief, after an editor-in-chief for the publisher, and a publisher's approval publishes at once. Which levels remain is decided again at every approval, so role changes act at once.
+   - that level **trusts** *A* — for the section-editor level in *S*, for the editor-in-chief and publisher levels newspaper-wide.
+
+   The publisher level of an article **locked** by the emergency brake is never skipped (see below).
+3. Each remaining level needs the approval of **one** person (other than *A*) holding that level's role **or a higher one**. An approval settles every level up to the approver's own: after a section editor the article waits for the next remaining level above (editor-in-chief or publisher), after an editor-in-chief for the publisher, and a publisher's approval publishes at once. Which levels remain is decided again at every submission and approval, so role and trust changes act at once — a pending submission, however, is not moved: an article already waiting for a level that starts to trust *A* keeps waiting for it (approve, reject or withdraw and submit again).
 4. When no level remains, the article is **published**: its latest revision becomes live.
 
 While a submission is pending, the article's content and section are **frozen**; the revision under review is always the latest one. **Rejection** needs a note and ends the submission: a never-published article returns to *Draft*, a published or offline article keeps its status and live revision. The author may **withdraw** the submission at any time (no note, no record). Approvals and rejections are recorded with level, revision, reviewer and note; the author sees them in the editor.
 
 **Trust** is a per-person switch, default **off**. A holder of an approving level sets it on a specific person below (trust the 16-year-old, keep checking the 7-year-old). Trust set by one holder applies to the whole level.
+
+- A user sets trust only for their **own highest level**: a publisher for the publisher level, an editor-in-chief (not publisher) for the editor-in-chief level, a section editor (neither) for the section-editor level — **per section**, in each of their sections. Trust in *Sports* skips the section-editor level only for the person's articles in *Sports*.
+- Only on a person **below** that level who writes there: the publisher on editors-in-chief and section members, an editor-in-chief on section members (not editors-in-chief), a section editor on the reporters of their section. Never on oneself.
+- **Any holder** of the level may clear a trust, whoever set it. Changing someone's roles does not remove their trust; stale entries stay visible in the account list and can be cleared. Deleting a section removes its trust entries.
+- Setting trust does not move pending submissions (see step 3).
+- *Limitation:* an editor-in-chief who is also the only section editor of a section cannot trust for the section-editor level there (own highest level only), so reporters there always wait for that level. Their editor-in-chief approval settles it anyway, and their editor-in-chief trust skips the next level.
 
 Consequences:
 

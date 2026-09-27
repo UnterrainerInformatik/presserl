@@ -18,6 +18,7 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -56,7 +57,7 @@ class ApiClientTest {
                     "accounts": [$ACCOUNT] }"""
                 path == "/api/accounts" || path.endsWith("/password-reset") ->
                     """{ "account": $ACCOUNT, "password": "tiger-wolke-apfel-leiter" }"""
-                path.endsWith("/lock") || path.endsWith("/unlock") || path.endsWith("/roles") -> ACCOUNT
+                path.endsWith("/lock") || path.endsWith("/unlock") || path.endsWith("/roles") || path.endsWith("/trust") -> ACCOUNT
                 path == "/api/sections" && request.method == HttpMethod.Get || path == "/api/sections/order" ->
                     """{ "canManage": true, "sections": [$SECTION] }"""
                 path.endsWith("/members") -> """{ "assignableRoles": ["SECTION_EDITOR", "REPORTER"], "members": [$MEMBER] }"""
@@ -277,6 +278,37 @@ class ApiClientTest {
                 },
             ),
             requests.single(),
+        )
+    }
+
+    @Test
+    fun setTrustPutsLevelSectionAndValue() = runTest {
+        assertEquals("lena", api.setTrust("9a1e", "PUBLISHER", null, true).username)
+        api.setTrust("9a1e", "SECTION_EDITOR", 3, false)
+        assertEquals(
+            listOf(
+                Recorded(
+                    HttpMethod.Put,
+                    "https://news.example.org/api/accounts/9a1e/trust",
+                    "Bearer token-123",
+                    buildJsonObject {
+                        put("level", "PUBLISHER")
+                        put("sectionId", JsonNull)
+                        put("trusted", true)
+                    },
+                ),
+                Recorded(
+                    HttpMethod.Put,
+                    "https://news.example.org/api/accounts/9a1e/trust",
+                    "Bearer token-123",
+                    buildJsonObject {
+                        put("level", "SECTION_EDITOR")
+                        put("sectionId", 3)
+                        put("trusted", false)
+                    },
+                ),
+            ),
+            requests,
         )
     }
 

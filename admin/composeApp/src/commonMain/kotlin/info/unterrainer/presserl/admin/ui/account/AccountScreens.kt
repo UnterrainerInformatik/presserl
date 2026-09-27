@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,18 +46,22 @@ import info.unterrainer.presserl.admin.api.AccountListDto
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.CreatedAccountDto
 import info.unterrainer.presserl.admin.api.SectionDto
+import info.unterrainer.presserl.admin.api.TrustScopeDto
 import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.account_action_failed
 import info.unterrainer.presserl.admin.resources.account_locked
 import info.unterrainer.presserl.admin.resources.action_edit_roles
 import info.unterrainer.presserl.admin.resources.action_lock
 import info.unterrainer.presserl.admin.resources.action_reset_password
+import info.unterrainer.presserl.admin.resources.action_trust
 import info.unterrainer.presserl.admin.resources.action_unlock
 import info.unterrainer.presserl.admin.resources.cancel
 import info.unterrainer.presserl.admin.resources.confirm_lock_text
 import info.unterrainer.presserl.admin.resources.confirm_lock_title
 import info.unterrainer.presserl.admin.resources.confirm_reset_text
 import info.unterrainer.presserl.admin.resources.confirm_reset_title
+import info.unterrainer.presserl.admin.resources.confirm_trust_text
+import info.unterrainer.presserl.admin.resources.confirm_trust_title
 import info.unterrainer.presserl.admin.resources.confirm_unlock_text
 import info.unterrainer.presserl.admin.resources.confirm_unlock_title
 import info.unterrainer.presserl.admin.resources.create_account
@@ -79,10 +84,13 @@ import info.unterrainer.presserl.admin.resources.slip_heading
 import info.unterrainer.presserl.admin.resources.slip_note
 import info.unterrainer.presserl.admin.resources.slip_password
 import info.unterrainer.presserl.admin.resources.slip_username
+import info.unterrainer.presserl.admin.resources.trust_switches
+import info.unterrainer.presserl.admin.resources.trusted_by
 import info.unterrainer.presserl.admin.resources.username_hint
 import info.unterrainer.presserl.admin.ui.Banner
 import info.unterrainer.presserl.admin.ui.BackButton
 import info.unterrainer.presserl.admin.ui.LoadFailed
+import info.unterrainer.presserl.admin.ui.approvalLevelLabel
 import info.unterrainer.presserl.admin.ui.attempt
 import info.unterrainer.presserl.admin.ui.roleText
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
@@ -130,7 +138,7 @@ fun AccountListScreen(
 @Composable
 private fun AccountList(api: ApiClient, view: AccountsView, onEditRoles: (AccountDto) -> Unit, onReset: (CreatedAccountDto) -> Unit) {
     val scope = rememberCoroutineScope()
-    val model = remember { AccountListModel(scope, view.accounts.accounts, api::resetPassword, api::lock, api::unlock) }
+    val model = remember { AccountListModel(scope, view.accounts.accounts, api::resetPassword, api::lock, api::unlock, api::setTrust) }
     val state by model.state.collectAsState()
     val sectionNames = view.sections.associate { it.id to it.name }
 
@@ -145,33 +153,66 @@ private fun AccountList(api: ApiClient, view: AccountsView, onEditRoles: (Accoun
         state.error?.let { Banner(stringResource(Res.string.account_action_failed, it)) }
         LazyColumn {
             items(state.accounts, key = { it.id }) { account ->
-                AccountRow(account, sectionNames, enabled = !state.busy, onAction = {
-                    if (it == AccountAction.EDIT_ROLES) onEditRoles(account) else model.request(account, it)
-                })
+                AccountRow(
+                    account,
+                    sectionNames,
+                    enabled = !state.busy,
+                    onAction = { if (it == AccountAction.EDIT_ROLES) onEditRoles(account) else model.request(account, it) },
+                    onTrust = { scope, on -> model.requestTrust(account, scope, on) },
+                )
                 HorizontalDivider()
             }
         }
     }
 
-    state.pending?.let { pending -> ConfirmAction(pending, onConfirm = model::confirm, onCancel = model::cancel) }
+    state.pending?.let { pending -> ConfirmPending(pending, sectionNames, onConfirm = model::confirm, onCancel = model::cancel) }
 }
 
-/** Asks before an account action, naming the account. */
+/** Asks before an account action or before turning trust on, naming the account. */
 @Composable
-private fun ConfirmAction(pending: PendingAction, onConfirm: () -> Unit, onCancel: () -> Unit) {
-    val (title, text) = when (pending.action) {
-        AccountAction.RESET_PASSWORD -> Res.string.confirm_reset_title to Res.string.confirm_reset_text
-        AccountAction.LOCK -> Res.string.confirm_lock_title to Res.string.confirm_lock_text
-        AccountAction.UNLOCK -> Res.string.confirm_unlock_title to Res.string.confirm_unlock_text
-        AccountAction.EDIT_ROLES -> return
+private fun ConfirmPending(pending: Pending, sectionNames: Map<Long, String>, onConfirm: () -> Unit, onCancel: () -> Unit) {
+    when (pending) {
+        is PendingTrust -> ConfirmDialog(
+            title = stringResource(Res.string.confirm_trust_title),
+            text = stringResource(Res.string.confirm_trust_text, pending.account.username, trustText(pending.scope, sectionNames)),
+            confirmText = stringResource(Res.string.action_trust),
+            onConfirm = onConfirm,
+            onCancel = onCancel,
+        )
+        is PendingAction -> {
+            val (title, text) = when (pending.action) {
+                AccountAction.RESET_PASSWORD -> Res.string.confirm_reset_title to Res.string.confirm_reset_text
+                AccountAction.LOCK -> Res.string.confirm_lock_title to Res.string.confirm_lock_text
+                AccountAction.UNLOCK -> Res.string.confirm_unlock_title to Res.string.confirm_unlock_text
+                AccountAction.EDIT_ROLES -> return
+            }
+            ConfirmDialog(
+                title = stringResource(title),
+                text = stringResource(text, pending.account.username),
+                confirmText = actionText(pending.action),
+                onConfirm = onConfirm,
+                onCancel = onCancel,
+            )
+        }
     }
+}
+
+@Composable
+private fun ConfirmDialog(title: String, text: String, confirmText: String, onConfirm: () -> Unit, onCancel: () -> Unit) {
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text(stringResource(title)) },
-        text = { Text(stringResource(text, pending.account.username)) },
-        confirmButton = { Button(onClick = onConfirm) { Text(actionText(pending.action)) } },
+        title = { Text(title) },
+        text = { Text(text) },
+        confirmButton = { Button(onClick = onConfirm) { Text(confirmText) } },
         dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(Res.string.cancel)) } },
     )
+}
+
+/** The level of a trust entry as its role label, for `SECTION_EDITOR` with the section name ("Ressortleiter · Sport"). */
+@Composable
+private fun trustText(scope: TrustScopeDto, sectionNames: Map<Long, String>): String {
+    val level = approvalLevelLabel(scope.level)?.let { stringResource(it) } ?: scope.level
+    return scope.sectionId?.let { "$level · ${sectionNames[it] ?: "#$it"}" } ?: level
 }
 
 @Composable
@@ -185,7 +226,13 @@ private fun actionText(action: AccountAction): String = stringResource(
 )
 
 @Composable
-private fun AccountRow(account: AccountDto, sectionNames: Map<Long, String>, enabled: Boolean, onAction: (AccountAction) -> Unit) {
+private fun AccountRow(
+    account: AccountDto,
+    sectionNames: Map<Long, String>,
+    enabled: Boolean,
+    onAction: (AccountAction) -> Unit,
+    onTrust: (TrustScopeDto, Boolean) -> Unit,
+) {
     Column(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(vertical = 12.dp, horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         val title = listOfNotNull(account.username, stringResource(Res.string.account_locked).takeIf { !account.enabled })
         Text(title.joinToString(" · "), style = MaterialTheme.typography.titleMedium)
@@ -196,6 +243,30 @@ private fun AccountRow(account: AccountDto, sectionNames: Map<Long, String>, ena
             if (roles.isEmpty()) stringResource(Res.string.no_roles) else roles.joinToString(", "),
         ).filter { it.isNotEmpty() }
         Text(details.joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+        val trusts = account.knownTrusts().map { trustText(it, sectionNames) }
+        if (trusts.isNotEmpty()) {
+            Text(stringResource(Res.string.trusted_by, trusts.joinToString(", ")), style = MaterialTheme.typography.bodyMedium)
+        }
+        val switches = account.trustSwitches()
+        if (switches.isNotEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(Res.string.trust_switches), style = MaterialTheme.typography.bodyMedium)
+                switches.forEach { switch ->
+                    Row(
+                        Modifier.heightIn(min = 44.dp).toggleable(
+                            value = switch.on,
+                            enabled = enabled,
+                            role = Role.Switch,
+                            onValueChange = { onTrust(switch.scope, it) },
+                        ),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Switch(checked = switch.on, onCheckedChange = null, enabled = enabled)
+                        Text(trustText(switch.scope, sectionNames), Modifier.padding(start = 8.dp))
+                    }
+                }
+            }
+        }
         val actions = account.actions()
         if (actions.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

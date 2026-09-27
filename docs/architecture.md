@@ -84,7 +84,7 @@ One newspaper per server; a second newspaper is a second deployment.
 - **Newspaper** — singleton: name, subtitle, visibility, settings (JSON, overrides only)
 - **Section** — name (unique ignoring case), slug (derived once from the name, stable for reader URLs), colour (palette key `red` | `orange` | `yellow` | `green` | `teal` | `blue` | `purple` | `pink`, mapped to `--presserl-section-<key>` by the theme), position, settings (JSON, overrides only)
 - **SectionRole** — user (Keycloak id = token `sub`) × section × role (`SECTION_EDITOR` | `REPORTER`), at most one role per user and section. Newspaper-wide roles (`PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`) are Keycloak groups, not rows.
-- **Trust** — approving level × trusted user (+ who set it). One row skips that level for that user.
+- **Trust** — approving level × trusted user × section (section only for the section-editor level, the other levels are newspaper-wide), plus who set it and when; at most one row per user, level and section; deleted with its section. One row skips that level for that user's articles (in that section).
 - **Article** — section (exactly one, `NOT NULL` in the database; the section belongs to the article, not to a revision, so moving an article creates no revision; a section with articles cannot be deleted), author (token `sub` plus username/display-name snapshot for the byline), status (`DRAFT` | `SUBMITTED` | `PUBLISHED` | `OFFLINE`; `SUBMITTED` = never published and waiting for approval), pending approval level (`SECTION_EDITOR` | `EDITOR_IN_CHIEF` | `PUBLISHER`, `NULL` while no submission is pending; published and offline articles keep their status while it is set), live revision (by number, `NULL` until the first publication), first publication time, emergency-brake lock (only `OFFLINE` articles; set when a publisher takes the article offline, cleared when it goes online or a publisher unlocks it), optimistic-lock version; later: lead image
 - **ArticleRevision** — numbered per article (`1, 2, …`), holds the content: kicker, headline, subheadline, lead (plain text) and body (**body format v1**: structured JSON of blocks — paragraph, subhead, quote, bullet list — with inline runs whose only mark is bold; validated server-side against an allowlist, never raw HTML). The latest revision is the **working revision**: saves overwrite it until it is published; after that the next save with changed content starts a new revision. Publishing makes the latest revision the article's live revision, which stays unchanged until the next publication. Taking offline keeps the live revision reference.
 - **ArticleReview** — one approval or rejection: decision, the level the article waited for, the reviewed revision, reviewer (token `sub` plus username/display-name snapshot), note (rejections only, feedback to the author), time; deleted with the article
@@ -164,12 +164,12 @@ POST   /api/accounts/{id}/password-reset  anyone above the person, never a publi
 POST   /api/accounts/{id}/lock            publisher; never a publisher, never oneself (implemented)
 POST   /api/accounts/{id}/unlock          publisher; never a publisher, never oneself (implemented)
 PUT    /api/accounts/{id}/roles           anyone above the person, never oneself; changed roles at or below mine, within my scope (implemented)
-PUT    /api/accounts/{id}/trust           set/clear trust for my level
+PUT    /api/accounts/{id}/trust           set/clear trust at my own highest level on someone below; clear any entry of my level (implemented)
 POST   /api/media                         reporter+ (size/type limit)
 GET    /api/me                            my roles, section roles and allowed actions (implemented)
 ```
 
-Article and account responses and `GET /api/me` carry `allowedActions`; clients render buttons from it and never re-implement the approval chain or the account rules. The approval chain follows roles and the emergency-brake lock only (trust is not implemented yet); see `ai/primer/endpoints.md` for the binding contract of the implemented endpoints.
+Article and account responses and `GET /api/me` carry `allowedActions`; clients render buttons from it and never re-implement the approval chain or the account rules. The approval chain follows roles, trust and the emergency-brake lock; see `ai/primer/endpoints.md` for the binding contract of the implemented endpoints.
 
 ## Views
 

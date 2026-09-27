@@ -155,7 +155,7 @@ public class AccountService {
                 throw e;
             }
             return new AccountDto(id, request.username(), request.firstName(), request.lastName(), request.roles(),
-                    List.of(), true, List.of());
+                    List.of(), true, List.of(), List.of(), List.of());
         });
         return new CreatedAccountDto(account, password);
     }
@@ -339,7 +339,8 @@ public class AccountService {
 
     private static AccountDto account(UserRepresentation user, List<NewspaperRole> roles) {
         return new AccountDto(user.getId(), user.getUsername(), orEmpty(user.getFirstName()),
-                orEmpty(user.getLastName()), roles, List.of(), Boolean.TRUE.equals(user.isEnabled()), List.of());
+                orEmpty(user.getLastName()), roles, List.of(), Boolean.TRUE.equals(user.isEnabled()), List.of(),
+                List.of(), List.of());
     }
 
     private static String orEmpty(String value) {

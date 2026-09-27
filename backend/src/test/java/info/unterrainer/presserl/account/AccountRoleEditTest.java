@@ -33,7 +33,8 @@ class AccountRoleEditTest {
             Map.of(SPORT, SectionRole.SECTION_EDITOR));
 
     private static final AccountDto SPORT_REPORTER = new AccountDto("rep", "rep", "Rep", "",
-            List.of(NewspaperRole.READER), List.of(sectionRole(SPORT, SectionRole.REPORTER)), true, List.of());
+            List.of(NewspaperRole.READER), List.of(sectionRole(SPORT, SectionRole.REPORTER)), true, List.of(), List.of(),
+            List.of());
 
     @Test
     void sectionEditorKeepsUnchangedReaderRole() {

@@ -59,6 +59,17 @@ public final class TestSupport {
     }
 
     /**
+     * Deletes every trust entry (section entries also go with their sections).
+     */
+    public static void deleteTrust(DataSource dataSource) {
+        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+            statement.executeUpdate("DELETE FROM trust");
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
      * Waits until {@code /q/health/ready} is UP, i.e. the publisher bootstrap has completed.
      */
     public static void awaitReady() {

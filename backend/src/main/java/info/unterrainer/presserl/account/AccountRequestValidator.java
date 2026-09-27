@@ -12,18 +12,21 @@ import java.util.regex.Pattern;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import info.unterrainer.presserl.api.FieldError;
+import info.unterrainer.presserl.article.ApprovalLevel;
 import info.unterrainer.presserl.auth.NewspaperRole;
 import info.unterrainer.presserl.section.SectionRole;
 import info.unterrainer.presserl.section.SectionRoleDto;
+import info.unterrainer.presserl.trust.TrustScope;
 
 /**
- * Reads a {@code POST /api/accounts} or {@code PUT /api/accounts/{id}/roles} body strictly and
- * reports all violations together: names (trimmed, at most {@value #NAME_MAX} characters, no
+ * Reads a {@code POST /api/accounts}, {@code PUT /api/accounts/{id}/roles} or
+ * {@code PUT /api/accounts/{id}/trust} body strictly and reports all violations together. Account
+ * and role bodies: names (trimmed, at most {@value #NAME_MAX} characters, no
  * control characters, first name required), username (lower-case words joined by {@code -},
  * {@value UsernameDeriver#MIN_LENGTH} to {@value UsernameDeriver#MAX_LENGTH} characters, not a
  * service-account name), roles (known roles; duplicates collapsed), section roles (a list of
  * {@code sectionId} and a known {@code role}, each section once), at least one role of either kind
- * and no unknown fields.
+ * and no unknown fields. Trust bodies: see {@link #validateTrust}.
  */
 public final class AccountRequestValidator {
 
@@ -33,6 +36,7 @@ public final class AccountRequestValidator {
     private static final Set<String> FIELDS = Set.of("firstName", "lastName", "username", "roles", "sectionRoles");
     private static final Set<String> ROLE_FIELDS = Set.of("roles", "sectionRoles");
     private static final Set<String> SECTION_ROLE_FIELDS = Set.of("sectionId", "role");
+    private static final Set<String> TRUST_FIELDS = Set.of("level", "sectionId", "trusted");
 
     private AccountRequestValidator() {
     }
@@ -65,6 +69,78 @@ public final class AccountRequestValidator {
         List<SectionRoleDto> sectionRoles = sectionRoles(json, true, errors);
         failOnViolations(roles, sectionRoles, errors);
         return new EditRolesRequest(roles, sectionRoles);
+    }
+
+    /**
+     * A {@code PUT /api/accounts/{id}/trust} body: a known {@code level}, a {@code sectionId} of an
+     * existing section for {@code SECTION_EDITOR} and {@code null} or absent otherwise, a boolean
+     * {@code trusted} and no unknown fields.
+     *
+     * @param sectionIds the ids of all sections
+     * @throws AccountException with status {@code 400} listing every violation
+     */
+    public static SetTrustRequest validateTrust(JsonNode json, List<Long> sectionIds) {
+        List<FieldError> errors = unknownFields(json, TRUST_FIELDS);
+        ApprovalLevel level = level(json, errors);
+        Long sectionId = trustSection(json, level, sectionIds, errors);
+        JsonNode trusted = json.get("trusted");
+        if (trusted == null || trusted.isNull()) {
+            errors.add(new FieldError("trusted", "is required"));
+        } else if (!trusted.isBoolean()) {
+            errors.add(new FieldError("trusted", "must be a boolean"));
+        }
+        if (!errors.isEmpty()) {
+            throw AccountException.invalid(errors);
+        }
+        return new SetTrustRequest(new TrustScope(level, sectionId), trusted.asBoolean());
+    }
+
+    private static ApprovalLevel level(JsonNode json, List<FieldError> errors) {
+        JsonNode node = json.get("level");
+        if (node == null || node.isNull()) {
+            errors.add(new FieldError("level", "is required"));
+            return null;
+        }
+        ApprovalLevel level = node.isTextual() ? Arrays.stream(ApprovalLevel.values())
+                .filter(l -> l.name().equals(node.asText())).findFirst().orElse(null) : null;
+        if (level == null) {
+            errors.add(new FieldError("level", "unknown level " + node + "; allowed: "
+                    + Arrays.toString(ApprovalLevel.values())));
+        }
+        return level;
+    }
+
+    /**
+     * The section of a trust body; {@code null} when absent, invalid or not allowed for
+     * {@code level}.
+     */
+    private static Long trustSection(JsonNode json, ApprovalLevel level, List<Long> sectionIds,
+            List<FieldError> errors) {
+        JsonNode node = json.get("sectionId");
+        boolean absent = node == null || node.isNull();
+        if (level == ApprovalLevel.SECTION_EDITOR && absent) {
+            errors.add(new FieldError("sectionId", "is required for " + level));
+            return null;
+        }
+        if (absent) {
+            return null;
+        }
+        if (!node.isIntegralNumber() || !node.canConvertToLong()) {
+            errors.add(new FieldError("sectionId", "must be a number"));
+            return null;
+        }
+        if (level == null) {
+            return null;
+        }
+        if (level != ApprovalLevel.SECTION_EDITOR) {
+            errors.add(new FieldError("sectionId", "must be null for " + level));
+            return null;
+        }
+        if (!sectionIds.contains(node.asLong())) {
+            errors.add(new FieldError("sectionId", "unknown section " + node.asLong()));
+            return null;
+        }
+        return node.asLong();
     }
 
     /**

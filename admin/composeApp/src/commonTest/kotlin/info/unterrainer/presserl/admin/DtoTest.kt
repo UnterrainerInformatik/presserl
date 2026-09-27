@@ -19,9 +19,13 @@ import info.unterrainer.presserl.admin.api.SectionDto
 import info.unterrainer.presserl.admin.api.SectionListDto
 import info.unterrainer.presserl.admin.api.SectionRefDto
 import info.unterrainer.presserl.admin.api.SectionRoleDto
+import info.unterrainer.presserl.admin.api.TrustScopeDto
 import info.unterrainer.presserl.admin.api.json
 import info.unterrainer.presserl.admin.ui.account.AccountAction
+import info.unterrainer.presserl.admin.ui.account.TrustSwitch
 import info.unterrainer.presserl.admin.ui.account.actions
+import info.unterrainer.presserl.admin.ui.account.knownTrusts
+import info.unterrainer.presserl.admin.ui.account.trustSwitches
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
@@ -279,6 +283,34 @@ class DtoTest {
         assertEquals(emptyList(), dto.accounts[0].allowedActions)
         assertEquals(listOf("EDIT_ROLES", "RESET_PASSWORD", "UNLOCK"), dto.accounts[1].allowedActions)
         assertEquals(listOf(AccountAction.EDIT_ROLES, AccountAction.RESET_PASSWORD, AccountAction.UNLOCK), dto.accounts[1].actions())
+        assertEquals(emptyList(), dto.accounts[0].trusts)
+        assertEquals(emptyList(), dto.accounts[0].trustScopes)
+    }
+
+    @Test
+    fun accountWithTrust() {
+        val dto = json.decodeFromString<AccountDto>(
+            """
+            { "id": "5f0c", "username": "reader", "firstName": "Reader", "lastName": "", "roles": ["READER"],
+              "sectionRoles": [{ "sectionId": 1, "role": "REPORTER" }], "enabled": true,
+              "trusts": [{ "level": "PUBLISHER", "sectionId": null }, { "level": "SECTION_EDITOR", "sectionId": 1 }],
+              "trustScopes": [{ "level": "EDITOR_IN_CHIEF", "sectionId": null }, { "level": "OMBUDSMAN", "sectionId": null }],
+              "allowedActions": ["EDIT_ROLES"] }
+            """,
+        )
+
+        assertEquals(listOf(TrustScopeDto("PUBLISHER", null), TrustScopeDto("SECTION_EDITOR", 1)), dto.trusts)
+        assertEquals(listOf(TrustScopeDto("EDITOR_IN_CHIEF", null), TrustScopeDto("OMBUDSMAN", null)), dto.trustScopes)
+        assertEquals(listOf(TrustSwitch(TrustScopeDto("EDITOR_IN_CHIEF", null), on = false)), dto.trustSwitches())
+    }
+
+    @Test
+    fun trustSwitchIsOnWhenTheEntryExists() {
+        val scope = TrustScopeDto("SECTION_EDITOR", 3)
+        val account = AccountDto("x", "x", "", "", emptyList(), true, trusts = listOf(scope, TrustScopeDto("OMBUDSMAN")),
+            trustScopes = listOf(scope))
+        assertEquals(listOf(TrustSwitch(scope, on = true)), account.trustSwitches())
+        assertEquals(listOf(scope), account.knownTrusts())
     }
 
     @Test
