@@ -29,7 +29,9 @@ The chain of an article SHALL consist of the levels above the author's level tha
 level SHALL be staffed when at least one account other than the author holds its role:
 `SECTION_EDITOR` of the article's section for the section-editor level, the newspaper-wide
 `EDITOR_IN_CHIEF` or `PUBLISHER` role for the other levels. Locked accounts SHALL count as
-holders. A level that is not staffed SHALL be skipped.
+holders. A level that is not staffed SHALL be skipped. While the article is locked by the
+emergency brake (see articles), the `PUBLISHER` level SHALL belong to the chain of every author
+below `PUBLISHER`, whether it is staffed or not.
 
 #### Scenario: Section without section editor
 - **WHEN** `reader` is `REPORTER` in `Kultur`, nobody is `SECTION_EDITOR` in `Kultur`, and `reader` submits an article in `Kultur`
@@ -46,6 +48,14 @@ holders. A level that is not staffed SHALL be skipped.
 #### Scenario: Editor-in-chief's chain
 - **WHEN** `chief` holds `EDITOR_IN_CHIEF` but not `PUBLISHER` and another account holds `PUBLISHER`
 - **THEN** the chain of `chief`'s article is `PUBLISHER`
+
+#### Scenario: Locked article with an unstaffed publisher level
+- **WHEN** an article of an editor-in-chief is locked and no account other than its author holds `PUBLISHER`
+- **THEN** the chain of the article is `PUBLISHER`
+
+#### Scenario: Locked article of a publisher
+- **WHEN** an article of the publisher is locked
+- **THEN** its chain is empty and the publisher can publish it directly
 
 ### Requirement: Submitting an article
 `POST /api/articles/{id}/submit` SHALL start a submission when the requesting user is the author,
@@ -97,11 +107,11 @@ approval level for an article SHALL be `PUBLISHER` if they hold `PUBLISHER`, els
 `EDITOR_IN_CHIEF` if they hold `EDITOR_IN_CHIEF`, else `SECTION_EDITOR` if they are
 `SECTION_EDITOR` of the article's section; other users have none. An approval SHALL settle every
 level up to and including the approver's approval level. The article SHALL then wait for the
-lowest level of the chain above the approver's approval level that is staffed at that moment, or,
-when none remains, SHALL be published: the latest revision becomes live, the status becomes
-`PUBLISHED`, `pendingLevel` becomes `null`, and the revision and first publication timestamps are
-set as for publishing. Users not allowed SHALL receive `403`; an article without a pending
-submission SHALL be answered with `409`.
+lowest level of its chain above the approver's approval level, determined at that moment
+(staffing and lock), or, when none remains, SHALL be published: the latest revision becomes live,
+the status becomes `PUBLISHED`, `pendingLevel` becomes `null`, the lock ends, and the revision and
+first publication timestamps are set as for publishing. Users not allowed SHALL receive `403`; an
+article without a pending submission SHALL be answered with `409`.
 
 #### Scenario: Section editor approves
 - **WHEN** a reporter's article in `Sport` waits for `SECTION_EDITOR` and `nogroups`, `SECTION_EDITOR` in `Sport`, approves it
@@ -138,6 +148,10 @@ submission SHALL be answered with `409`.
 #### Scenario: Nothing to approve
 - **WHEN** the publisher approves a `DRAFT`
 - **THEN** the response is `409`
+
+#### Scenario: Locked article back online
+- **WHEN** the publisher took a reporter's article in `Sport` offline, the reporter submits it, `nogroups` as `SECTION_EDITOR` and `chief` approve it, and then the publisher approves it
+- **THEN** after `chief`'s approval it waits for `PUBLISHER` and is still `OFFLINE`, and after the publisher's approval it is `PUBLISHED` with `locked` `false`
 
 ### Requirement: Rejecting an article
 `POST /api/articles/{id}/reject` SHALL be allowed to the same users as approving and SHALL require

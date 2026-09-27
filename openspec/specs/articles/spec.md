@@ -120,7 +120,7 @@ unchanged by later saves until the next publish.
 ### Requirement: Optimistic concurrency on save
 A save SHALL carry the article `version` the client last received. If it differs from the
 stored version, the save SHALL be rejected with `409` and change nothing. Every successful save,
-publish, take-offline, submit, approve, reject and withdraw SHALL increase the version.
+publish, take-offline, unlock, submit, approve, reject and withdraw SHALL increase the version.
 
 #### Scenario: Stale save from a second tab
 - **WHEN** two clients load an article with version `3`, the first saves successfully and the second then saves with version `3`
@@ -185,9 +185,10 @@ including an author whose chain is not empty, who has to submit instead — SHAL
 ### Requirement: Taking an article offline
 The author, the section editors of the article's section, any `EDITOR_IN_CHIEF` and any
 `PUBLISHER` SHALL be able to take a `PUBLISHED` article offline without approval; its status
-becomes `OFFLINE` and it keeps its live revision reference. A pending submission SHALL stay pending;
-approving it later puts the article back online with its latest revision. Taking offline an article
-that is not `PUBLISHED` SHALL be answered with `409`; any other user SHALL receive `403`.
+becomes `OFFLINE` and it keeps its live revision reference. When the user holds `PUBLISHER`, the
+article SHALL additionally become locked (see emergency-brake lock). A pending submission SHALL stay
+pending; approving it later puts the article back online with its latest revision. Taking offline
+an article that is not `PUBLISHED` SHALL be answered with `409`; any other user SHALL receive `403`.
 
 #### Scenario: Editor-in-chief takes the publisher's article offline
 - **WHEN** an editor-in-chief takes a published article of the publisher offline
@@ -205,12 +206,53 @@ that is not `PUBLISHED` SHALL be answered with `409`; any other user SHALL recei
 - **WHEN** a published article whose changes wait for `PUBLISHER` is taken offline
 - **THEN** `status` is `OFFLINE` and `pendingLevel` stays `PUBLISHER`
 
+### Requirement: Emergency-brake lock
+An article taken offline by a user holding `PUBLISHER` SHALL be **locked**. Article and article
+summary representations SHALL carry `locked` (`true` for a locked article, otherwise `false`). Only
+an `OFFLINE` article SHALL be locked. The lock SHALL end when the article goes online (published
+directly or by a final approval) and when a publisher unlocks it. While an article is locked, its
+chain SHALL end with the `PUBLISHER` level (see approval-chain), so only a publisher can put it back
+online.
+
+`POST /api/articles/{id}/unlock` SHALL let a user holding `PUBLISHER` lift the lock without any
+other change: the article stays `OFFLINE`, keeps its live revision and a pending submission keeps
+its `pendingLevel`. Any other user SHALL receive `403`; an article that is not locked SHALL be
+answered with `409`.
+
+#### Scenario: Publisher pulls the brake
+- **WHEN** the publisher takes `chief`'s published article offline
+- **THEN** the response is `200` with `status` `OFFLINE` and `locked` `true`
+
+#### Scenario: Taking offline by others does not lock
+- **WHEN** `chief`, who does not hold `PUBLISHER`, takes a reporter's published article offline
+- **THEN** the response is `200` with `status` `OFFLINE` and `locked` `false`
+
+#### Scenario: Unlocked article
+- **WHEN** a writer fetches a draft
+- **THEN** `locked` is `false`
+
+#### Scenario: Publisher unlocks
+- **WHEN** the publisher unlocks a locked article of `chief`
+- **THEN** the response is `200` with `status` `OFFLINE`, `locked` `false` and the live revision unchanged
+
+#### Scenario: Only publishers unlock
+- **WHEN** `chief` unlocks a locked article
+- **THEN** the response is `403` and the article stays locked
+
+#### Scenario: Nothing to unlock
+- **WHEN** the publisher unlocks an `OFFLINE` article that is not locked
+- **THEN** the response is `409`
+
+#### Scenario: Publisher-author puts their locked article back online
+- **WHEN** the publisher took their own published article offline and publishes it again
+- **THEN** the response is `200` with `status` `PUBLISHED` and `locked` `false`
+
 ### Requirement: Server-computed allowed actions
 Every article representation SHALL carry `allowedActions`, the subset of `EDIT`, `SUBMIT`,
-`PUBLISH`, `WITHDRAW`, `APPROVE`, `REJECT`, `TAKE_OFFLINE` and `DELETE` (in this order) that the
-requesting user may perform on the article in its current state under the rules above and those of
-the approval chain. Clients SHALL be able to rely on an action being accepted (apart from content
-validation, a missing headline, a missing note and concurrency) exactly when it is listed.
+`PUBLISH`, `WITHDRAW`, `APPROVE`, `REJECT`, `TAKE_OFFLINE`, `UNLOCK` and `DELETE` (in this order)
+that the requesting user may perform on the article in its current state under the rules above and
+those of the approval chain. Clients SHALL be able to rely on an action being accepted (apart from
+content validation, a missing headline, a missing note and concurrency) exactly when it is listed.
 
 #### Scenario: Solo publisher on own draft
 - **WHEN** the publisher fetches their own draft
@@ -239,6 +281,14 @@ validation, a missing headline, a missing note and concurrency) exactly when it 
 #### Scenario: Section editor on a published article of their section
 - **WHEN** a section editor of `Sport` fetches the publisher's published article in `Sport`
 - **THEN** `allowedActions` is `["TAKE_OFFLINE"]`
+
+#### Scenario: Publisher on a locked article
+- **WHEN** the publisher fetches a locked article of `chief` without a pending submission
+- **THEN** `allowedActions` is `["UNLOCK"]`
+
+#### Scenario: Author on their locked article
+- **WHEN** `chief` fetches their locked article without a pending submission
+- **THEN** `allowedActions` is `["EDIT", "SUBMIT"]`
 
 ### Requirement: Listing and reading articles
 `GET /api/articles` SHALL return summaries of the articles visible to the requesting user, newest
@@ -278,8 +328,8 @@ an unknown number SHALL be answered with `404`.
 Publishers and editors-in-chief SHALL see every article. Any other writer SHALL see the articles
 they authored and, in every section where they are `SECTION_EDITOR`, all articles of that section.
 Every endpoint under `/api/articles/{id}` (reading, revisions, reviews, saving, deleting,
-publishing, taking offline, submitting, approving, rejecting, withdrawing) SHALL answer `404` for
-an article the requesting user does not see, without revealing whether it exists.
+publishing, taking offline, unlocking, submitting, approving, rejecting, withdrawing) SHALL answer
+`404` for an article the requesting user does not see, without revealing whether it exists.
 
 #### Scenario: Section editor lists their section
 - **WHEN** `nogroups` is `SECTION_EDITOR` in `Sport`, `reader` is `REPORTER` in `Sport` and `Kultur`, `reader` has one draft in `Sport` and one in `Kultur`, and `nogroups` calls `GET /api/articles`
@@ -295,6 +345,10 @@ an article the requesting user does not see, without revealing whether it exists
 
 #### Scenario: Approving an invisible article
 - **WHEN** a reporter calls `POST /api/articles/{id}/approve` on another reporter's submitted article
+- **THEN** the response is `404`
+
+#### Scenario: Unlocking an invisible article
+- **WHEN** a reporter calls `POST /api/articles/{id}/unlock` on another reporter's locked article
 - **THEN** the response is `404`
 
 ### Requirement: Every article belongs to a section

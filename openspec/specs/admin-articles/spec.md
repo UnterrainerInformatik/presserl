@@ -13,7 +13,8 @@ SHALL offer a second list "All articles" (`GET /api/articles`), which contains t
 server makes visible to the user. Each entry SHALL show headline (or a placeholder for an empty
 headline), section (name with its colour marker), status, author and time of last change, newest
 change first as returned by the server. An entry with a `pendingLevel` SHALL additionally show
-that it waits for approval by that level. Selecting an entry SHALL open the article; an entry whose
+that it waits for approval by that level; an entry with `locked` `true` SHALL additionally show
+that it is locked by a publisher. Selecting an entry SHALL open the article; an entry whose
 `allowedActions` lack `EDIT` SHALL open read-only. Users holding a section role but no
 newspaper-wide writer role SHALL get the same lists.
 
@@ -32,6 +33,10 @@ newspaper-wide writer role SHALL get the same lists.
 #### Scenario: Waiting article in the list
 - **WHEN** the section editor of `Sport` opens "All articles" while a reporter's article in `Sport` waits for `SECTION_EDITOR`
 - **THEN** its entry shows that it waits for approval by the section editor
+
+#### Scenario: Locked article in the list
+- **WHEN** `chief` opens "My articles" while the publisher has taken one of `chief`'s articles offline
+- **THEN** its entry shows that it is locked by a publisher
 
 ### Requirement: Create an article
 The lists SHALL offer "New article", which creates an empty article (`POST /api/articles`
@@ -91,15 +96,16 @@ made since the article was opened. Undone changes SHALL be autosaved like any ot
 - **THEN** the paragraph is back at its position with its content and bold runs
 
 ### Requirement: Actions follow allowedActions
-The editor SHALL show Publish, Submit, Withdraw, Approve, Reject, Take offline and Delete exactly
-when the article's `allowedActions` contain `PUBLISH`, `SUBMIT`, `WITHDRAW`, `APPROVE`, `REJECT`,
-`TAKE_OFFLINE` and `DELETE` respectively, and SHALL be editable exactly when they contain `EDIT`.
-Publish, Submit and Approve are primary actions (bottom right). Publishing and submitting SHALL
-first save pending changes. Deleting SHALL ask for confirmation in an in-app dialog and return to
-the list. Rejecting SHALL open an in-app dialog asking for a note, SHALL NOT send an empty note and
-SHALL show the server's message when it rejects the note. After an action the editor SHALL show
-the returned article state. While the article has a `pendingLevel`, the editor SHALL show that it
-waits for approval by that level.
+The editor SHALL show Publish, Submit, Withdraw, Approve, Reject, Take offline, Unlock and Delete
+exactly when the article's `allowedActions` contain `PUBLISH`, `SUBMIT`, `WITHDRAW`, `APPROVE`,
+`REJECT`, `TAKE_OFFLINE`, `UNLOCK` and `DELETE` respectively, and SHALL be editable exactly when
+they contain `EDIT`. Publish, Submit and Approve are primary actions (bottom right). Publishing and
+submitting SHALL first save pending changes. Deleting SHALL ask for confirmation in an in-app dialog
+and return to the list. Rejecting SHALL open an in-app dialog asking for a note, SHALL NOT send an
+empty note and SHALL show the server's message when it rejects the note. After an action the editor
+SHALL show the returned article state. While the article has a `pendingLevel`, the editor SHALL
+show that it waits for approval by that level; while it is `locked`, the editor SHALL show that a
+publisher locked it and only a publisher can put it back online.
 
 #### Scenario: Solo publisher publishes a draft
 - **WHEN** the publisher publishes their own draft with a headline
@@ -128,6 +134,10 @@ waits for approval by that level.
 #### Scenario: Reject needs a note
 - **WHEN** an approver chooses Reject and leaves the note empty
 - **THEN** the dialog cannot be confirmed
+
+#### Scenario: Publisher pulls the brake and unlocks
+- **WHEN** the publisher opens `chief`'s published article and chooses Take offline
+- **THEN** the editor shows that the article is locked and offers Unlock; after choosing Unlock the lock notice and Unlock disappear
 
 ### Requirement: Reviews in the editor
 The editor SHALL show the article's reviews (`GET /api/articles/{id}/reviews`) with decision,
