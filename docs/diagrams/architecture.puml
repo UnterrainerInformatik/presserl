@@ -17,7 +17,7 @@ node "deploy/ (docker compose)" {
   component "presserl\nQuarkus REST (reactive)\nQute reader\nstatic admin bundle (/admin)\nHibernate Reactive + Panache\nquarkus-oidc" as srv
   folder "theme/\ncustom.css, fonts, logo" as theme
   database "PostgreSQL\n(volume presserl-db)" as db
-  folder "media/\n(volume)" as media
+  database "rustfs (S3-compatible)\n(volume presserl-media)\nno published port" as media
 }
 
 reader --> html
@@ -33,5 +33,5 @@ admin --> kc : OIDC login (PKCE)\nCSP connect-src: issuer origin
 srv --> kc : service account\n(users, groups)
 srv ..> kc : JWKS / token validation
 srv --> db : reactive PG client\n(Flyway via JDBC at startup)
-srv --> media : images (EXIF stripped)
+srv --> media : S3 API: re-encoded images\n(no metadata)
 @enduml

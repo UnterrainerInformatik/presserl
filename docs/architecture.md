@@ -10,10 +10,11 @@
 | Reader | Server-rendered HTML from **Qute** templates inside the backend — front page, sections, articles, print views; design tokens and fork theme |
 | Administration app | **Compose Multiplatform** (Kotlin, Gradle), **Wasm web target** first, Android/iOS later from the same code base; OIDC auth code + PKCE via a small in-house browser flow behind an `AuthClient` interface (M0 spike: the KMP OIDC library's web flow is popup-only) |
 | Database | **PostgreSQL** |
+| Media store | **RustFS** (S3-compatible, Apache-2.0) in the reference deployment, reached only by the backend through the plain S3 API (Quarkiverse `quarkus-amazon-s3`, URL-connection client, path-style); any S3-compatible store works by configuration. Images are decoded and re-encoded with ImageIO + TwelveMonkeys (JPEG, WebP), EXIF orientation read with `metadata-extractor` |
 | Identity | **Keycloak provided by the operator** (usually shared): a dedicated realm imported from `deploy/keycloak/presserl-realm.json`; newspaper-wide roles as groups; public client `presserl-admin` (PKCE, audience `presserl-backend`, `groups` claim); confidential client `presserl-backend` whose **service account** manages users and groups (`manage-users`, `view-users`, `query-users`, `query-groups`) |
-| Development | **Quarkus Dev Services** start PostgreSQL and Keycloak automatically — `quarkus dev` needs no configuration |
+| Development | **Quarkus Dev Services** start PostgreSQL and Keycloak automatically, RustFS via Compose Dev Services (`backend/compose-devservices.yml`) — `quarkus dev` needs no configuration |
 | CI/CD | UnterrainerInformatik workflows (`docker-build-workflow`, `deploy-workflow`, `bump-semver-workflow`); the admin Wasm bundle is built with Gradle and packaged into the backend image. CI builds and ships images only (bump → image build → staging dispatch on push to `master`); it runs no tests — the backend (`./mvnw verify`) and admin (`./gradlew check`) suites run locally before every push |
-| Operations | docker compose: `presserl` (API + reader + static admin bundle) and `postgres` only. The TLS-terminating reverse proxy (Traefik via labels, or Caddy) and Keycloak are the operator's; `deploy/INSTALL.md` shows how to attach them |
+| Operations | docker compose: `presserl` (API + reader + static admin bundle), `postgres` and `rustfs` (media, no published port) only. The TLS-terminating reverse proxy (Traefik via labels, or Caddy) and Keycloak are the operator's; `deploy/INSTALL.md` shows how to attach them |
 
 Java toolchain: JDK 21 (`maven.compiler.release=21`, Temurin 21 in the image; see `ai/memory/reference_machine_jdk.md` — Lombok constraints).
 
@@ -28,7 +29,7 @@ presserl/                     # monorepo (upstream)
 ├── deploy/                   # reference deployment and templates
 │   ├── INSTALL.md            # step-by-step installation guide
 │   ├── compose.yaml
-│   ├── .env.example          # mandatory values only: hostname, DB password, OIDC issuer + secrets, first publisher
+│   ├── .env.example          # mandatory values only: hostname, DB password, OIDC issuer + secrets, first publisher, media store keys
 │   ├── keycloak/presserl-realm.json   # realm template for the operator's Keycloak (hostname placeholder)
 │   └── theme/                # template; overrides the default reader theme
 │       ├── custom.css
@@ -64,7 +65,11 @@ The database layers store only overrides, never copies of defaults. The backend 
 | `presserl.section.default` | `General` (i18n) | any | deployment |
 | `presserl.editor.level` | `standard` | `starter`, `profi` | deployment, newspaper, per user |
 | `presserl.reader.text-size` | `m` | `s`, `l`, `xl` | deployment, newspaper, per reader |
-| `presserl.media.max-size` | `10M` | any | deployment |
+| `presserl.media.max-size` | `10M` | up to `60M` (startup fails above) | deployment |
+| `presserl.media.max-concurrent-processing` | `2` | any ≥ 1 | deployment |
+| `presserl.media.s3.endpoint` | `http://rustfs:9000` | any S3-compatible endpoint | deployment |
+| `presserl.media.s3.region` | `us-east-1` | any | deployment |
+| `presserl.media.s3.bucket` | `presserl-media` | any (created on start if missing) | deployment |
 | `presserl.theme.dir` | `/deployments/theme` | any directory | deployment |
 | `presserl.reader.cookie-secure` | `true` (`false` in dev/test) | `false` | deployment |
 
@@ -83,6 +88,10 @@ Deployment-only values (no defaults, set in `.env`):
 | `PRESSERL_PUBLISHER_USERNAME` / `PRESSERL_PUBLISHER_PASSWORD` | **Bootstrap:** on first start, if no publisher exists, the backend creates this account in the `publisher` group; it holds all roles |
 | `PRESSERL_HOSTNAME`, `PRESSERL_DB_PASSWORD` | public DNS name (proxy rule, realm redirect URIs); database password |
 | `PRESSERL_OIDC_ISSUER`, `PRESSERL_OIDC_BACKEND_SECRET`, `PRESSERL_OIDC_READER_SECRET`, `PRESSERL_OIDC_ADMIN_CLIENT_ID` | the realm in the operator's Keycloak; secrets of `presserl-backend` and `presserl-reader` (`PRESSERL_OIDC_READER_CLIENT_ID` optional, default `presserl-reader`) |
+| `PRESSERL_MEDIA_S3_ACCESS_KEY` / `PRESSERL_MEDIA_S3_SECRET_KEY` | credentials of the media store; the compose file starts `rustfs` with them |
+
+`presserl.media.max-size` is reported as the newspaper setting `media.max-size`. The HTTP body limit
+is 64M for `POST /api/media` and 10M for every other path.
 
 ## Data model (MVP)
 
@@ -96,7 +105,7 @@ One newspaper per server; a second newspaper is a second deployment.
 - **ArticleRevision** — numbered per article (`1, 2, …`), holds the content: kicker, headline, subheadline, lead (plain text) and body (**body format v1**: structured JSON of blocks — paragraph, subhead, quote, bullet list — with inline runs whose only mark is bold; validated server-side against an allowlist, never raw HTML). The latest revision is the **working revision**: saves overwrite it until it is published; after that the next save with changed content starts a new revision. Publishing makes the latest revision the article's live revision, which stays unchanged until the next publication. Taking offline keeps the live revision reference.
 - **ArticleReview** — one approval or rejection: decision, the level the article waited for, the reviewed revision, reviewer (token `sub` plus username/display-name snapshot), note (rejections only, feedback to the author), time; deleted with the article
 - **Issue** — number and publication date; groups articles; basis for the issue print view
-- **Media** — upload, EXIF-stripped, resized (thumbnail / web / print)
+- **Media** — one uploaded image after re-encoding: object key in the media store (`media/<uuid>.<jpg|png>`, random, written once), content type (`image/jpeg` | `image/png`), width, height, stored size, uploader (token `sub` plus username/display-name snapshot), upload time. The bytes live only in the object store; the row is written after the object, so no row points to a missing object. Later: renditions (thumbnail / web / print), lead image of an article
 
 ## Routes
 
@@ -184,7 +193,9 @@ POST   /api/accounts/{id}/lock            publisher; never a publisher, never on
 POST   /api/accounts/{id}/unlock          publisher; never a publisher, never oneself (implemented)
 PUT    /api/accounts/{id}/roles           anyone above the person, never oneself; changed roles at or below mine, within my scope (implemented)
 PUT    /api/accounts/{id}/trust           set/clear trust at my own highest level on someone below; clear any entry of my level (implemented)
-POST   /api/media                         reporter+ (size/type limit)
+POST   /api/media                         WRITE_ARTICLES; multipart part `file`; sniffed, re-encoded, metadata stripped (implemented)
+GET    /api/media/{id}                    WRITE_ARTICLES; metadata (implemented)
+GET    /api/media/{id}/content            WRITE_ARTICLES; stored image bytes (implemented)
 GET    /api/me                            my roles, section roles and allowed actions (implemented)
 ```
 
@@ -217,6 +228,6 @@ Every reader view sets `data-view="…"` on `<main>` (e.g. `frontpage`, `article
 - Service account client limited to `manage-users`, `view-users`, `query-users`, `query-groups` in its realm (Keycloak needs the view/query roles for lookups); its secret never leaves the backend. Tokens must carry the audience `presserl-backend`, since the realm may live on a shared Keycloak
 - Every action checked server-side against groups, section roles and trust; ownership checks
 - Article bodies only as structured JSON with an allowlist — never raw HTML; strict CSP (`self` only), reader and admin bundle served from the same origin. The admin policy additionally allows `'wasm-unsafe-eval'` in `script-src`, the issuer origin in `connect-src` (Keycloak lives on another origin) and, by hash only, the style Compose injects into its shadow DOM (`csp-style-hashes.txt` in the admin bundle, checked by the admin tests)
-- Uploads: MIME sniffing, size limit, re-encoding, EXIF/GPS removal
+- Uploads: type from magic bytes only (JPEG, PNG, still WebP; declared type and name ignored), size limit (`media.max-size`), dimensions checked before decoding (≤ 50 MP, ≤ 20000 px per side), re-encoding from pixels (JPEG or PNG, ≤ 4096 px) so no EXIF/GPS/XMP/IPTC/ICC/comment survives, at most `max-concurrent-processing` images decoded at once; the media store is never exposed to browsers
 - Free choice of author name (nickname); no real-name requirement
-- Backups of PostgreSQL and the media volume via cron
+- Backups of PostgreSQL (`presserl-db`) and the media volume (`presserl-media`) via cron; see `deploy/INSTALL.md`, "Backups"

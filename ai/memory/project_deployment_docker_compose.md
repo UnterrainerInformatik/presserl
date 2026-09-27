@@ -1,13 +1,14 @@
 ---
 name: project_deployment_docker_compose
-description: Deployments run as docker compose containers (presserl + postgres only); reverse proxy/TLS and Keycloak are external, brought by the operator
+description: Deployments run as docker compose containers (presserl + postgres + rustfs); reverse proxy/TLS and Keycloak are external, brought by the operator
 metadata:
   type: project
 ---
 
 Presserl is always deployed as Docker containers orchestrated by `docker compose` — the
 reference deployment in `deploy/` and every fork such as `../presserl-deployment`. The compose
-file ships **only `presserl` and `postgres`**. We do **not** roll out a reverse proxy or a
+file ships **only `presserl`, `postgres` and `rustfs`** (S3-compatible media store, no published
+port; since `media-upload`, 2026-09-27). We do **not** roll out a reverse proxy or a
 Keycloak: the operator attaches their own. `INSTALL.md` explains how (Traefik labels; Caddy as
 an optional guide) and the repo ships a realm template to import into an existing Keycloak.
 
@@ -19,4 +20,5 @@ operators already have.
 **How to apply:** No systemd/bare-JVM/Kubernetes paths. No proxy or Keycloak container in
 `deploy/compose.yaml`; OIDC issuer, clients and secrets come from `.env`. Keycloak and the
 reader/admin live on different origins, so CSP `connect-src` must allow the configured issuer.
-Dev Services still start Keycloak locally for development. See [[project_deployment_repo]].
+Dev Services still start Keycloak locally for development. The backend talks plain S3 to the
+media store, so an operator may point `PRESSERL_MEDIA_S3_*` at another S3-compatible store. See [[project_deployment_repo]].

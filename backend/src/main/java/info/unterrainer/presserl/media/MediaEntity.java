@@ -1,0 +1,51 @@
+package info.unterrainer.presserl.media;
+
+import java.time.Instant;
+
+import io.quarkus.hibernate.reactive.panache.PanacheEntityBase;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+
+/**
+ * An uploaded, re-encoded image; the bytes live in the object store under {@link #objectKey}. The
+ * uploader is identified by the token subject; username and display name are snapshots.
+ */
+@Entity
+@Table(name = "media")
+public class MediaEntity extends PanacheEntityBase {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    public Long id;
+
+    @Column(name = "object_key", columnDefinition = "text", nullable = false, unique = true)
+    public String objectKey;
+
+    @Column(name = "content_type", columnDefinition = "text", nullable = false)
+    public String contentType;
+
+    @Column(nullable = false)
+    public int width;
+
+    @Column(nullable = false)
+    public int height;
+
+    @Column(name = "byte_size", nullable = false)
+    public long byteSize;
+
+    @Column(name = "uploader_sub", columnDefinition = "text", nullable = false)
+    public String uploaderSub;
+
+    @Column(name = "uploader_username", columnDefinition = "text", nullable = false)
+    public String uploaderUsername;
+
+    @Column(name = "uploader_display_name", columnDefinition = "text", nullable = false)
+    public String uploaderDisplayName;
+
+    @Column(name = "created_at", nullable = false)
+    public Instant createdAt;
+}

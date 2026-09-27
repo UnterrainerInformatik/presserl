@@ -1,15 +1,21 @@
 package info.unterrainer.presserl.admin
 
 import info.unterrainer.presserl.admin.api.AccountDto
+import info.unterrainer.presserl.admin.api.ApiErrorDto
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.ArticleContent
+import info.unterrainer.presserl.admin.api.AuthorDto
 import info.unterrainer.presserl.admin.api.CreateAccountRequest
 import info.unterrainer.presserl.admin.api.EditRolesRequest
+import info.unterrainer.presserl.admin.api.MediaDto
 import info.unterrainer.presserl.admin.api.SectionRequest
 import info.unterrainer.presserl.admin.api.SectionRoleDto
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.toByteArray
+import io.ktor.client.plugins.ClientRequestException
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -25,8 +31,11 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class ApiClientTest {
 
@@ -458,7 +467,92 @@ class ApiClientTest {
         )
     }
 
+    private class Sent(val method: HttpMethod, val url: String, val authorization: String?, val contentType: String?, val body: ByteArray)
+
+    /** A client whose server answers every request with [status], [body] and [contentType], recording what was sent. */
+    private fun mediaApi(
+        sent: MutableList<Sent>,
+        status: HttpStatusCode = HttpStatusCode.OK,
+        body: ByteArray = MEDIA.encodeToByteArray(),
+        contentType: String = "application/json",
+    ) = ApiClient(
+        HttpClient(MockEngine { request ->
+            sent += Sent(
+                request.method,
+                request.url.toString(),
+                request.headers[HttpHeaders.Authorization],
+                request.body.contentType?.toString(),
+                request.body.toByteArray(),
+            )
+            respond(body, status, headersOf(HttpHeaders.ContentType, contentType))
+        }),
+        baseUrl = "https://news.example.org",
+    ) { "token-123" }
+
+    @Test
+    fun uploadMediaSendsOneFilePartNamedFile() = runTest {
+        val sent = mutableListOf<Sent>()
+        val image = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(), 1, 2, 3)
+
+        val media = mediaApi(sent, HttpStatusCode.Created).uploadMedia(image, "photo.jpg")
+
+        assertEquals(MediaDto(17, "image/jpeg", 4096, 2731, 1834211, AuthorDto("papa", "Papa"), "2026-09-27T14:03:11.402Z"), media)
+        val request = sent.single()
+        assertEquals(HttpMethod.Post, request.method)
+        assertEquals("https://news.example.org/api/media", request.url)
+        assertEquals("Bearer token-123", request.authorization)
+        assertTrue(request.contentType!!.startsWith("multipart/form-data"), request.contentType)
+        val text = request.body.decodeToString()
+        assertEquals(1, Regex("Content-Disposition").findAll(text).count(), text)
+        assertTrue(text.contains("form-data; name=\"file\""), text)
+        assertTrue(text.contains("filename=\"photo.jpg\""), text)
+        assertTrue(request.body.asList().windowed(image.size).any { it == image.asList() }, "image bytes are sent unchanged")
+    }
+
+    @Test
+    fun uploadMediaKeepsTheFileNameQuotable() = runTest {
+        val sent = mutableListOf<Sent>()
+
+        mediaApi(sent, HttpStatusCode.Created).uploadMedia(byteArrayOf(1), "my \"best\"\\photo\n.png")
+
+        assertTrue(sent.single().body.decodeToString().contains("filename=\"my bestphoto.png\""))
+    }
+
+    @Test
+    fun mediaReadsTheMetadata() = runTest {
+        val sent = mutableListOf<Sent>()
+
+        assertEquals(2731, mediaApi(sent).media(17).height)
+        assertEquals("https://news.example.org/api/media/17", sent.single().url)
+        assertEquals("Bearer token-123", sent.single().authorization)
+    }
+
+    @Test
+    fun mediaContentReturnsTheRawBytes() = runTest {
+        val sent = mutableListOf<Sent>()
+        val image = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xD9.toByte())
+
+        val content = mediaApi(sent, body = image, contentType = "image/jpeg").mediaContent(17)
+
+        assertContentEquals(image, content)
+        assertEquals("https://news.example.org/api/media/17/content", sent.single().url)
+        assertEquals("Bearer token-123", sent.single().authorization)
+    }
+
+    @Test
+    fun uploadMediaPropagatesRefusals() = runTest {
+        val error = """{ "errors": [{ "field": "file", "message": "only JPEG, PNG and WebP images are accepted" }] }"""
+        val api = mediaApi(mutableListOf(), HttpStatusCode.UnsupportedMediaType, error.encodeToByteArray())
+
+        val refused = assertFailsWith<ClientRequestException> { api.uploadMedia(byteArrayOf(1), "cat.jpg") }
+
+        assertEquals(HttpStatusCode.UnsupportedMediaType, refused.response.status)
+        assertEquals("file", refused.response.body<ApiErrorDto>().errors.single().field)
+    }
+
     private companion object {
+        const val MEDIA = """{ "id": 17, "contentType": "image/jpeg", "width": 4096, "height": 2731, "size": 1834211,
+            "uploadedBy": { "username": "papa", "displayName": "Papa" }, "uploadedAt": "2026-09-27T14:03:11.402Z" }"""
         const val SECTION = """{ "id": 1, "name": "Sport", "slug": "sport", "color": "green", "position": 0,
             "assignableRoles": ["SECTION_EDITOR", "REPORTER"], "canWrite": true }"""
         const val MEMBER = """{ "accountId": "5f0c", "username": "nogroups", "firstName": "No", "lastName": "Groups",

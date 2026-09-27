@@ -55,6 +55,21 @@ data class AuthorDto(
     val displayName: String,
 )
 
+/**
+ * `POST /api/media` and `GET /api/media/{id}`: an uploaded image as stored after re-encoding. [contentType] is
+ * `image/jpeg` or `image/png`, [size] the stored file's bytes; [uploadedAt] is an ISO-8601 string.
+ */
+@Serializable
+data class MediaDto(
+    val id: Long,
+    val contentType: String,
+    val width: Int,
+    val height: Int,
+    val size: Long,
+    val uploadedBy: AuthorDto,
+    val uploadedAt: String,
+)
+
 /** The section an article belongs to; [color] is a palette key. */
 @Serializable
 data class SectionRefDto(

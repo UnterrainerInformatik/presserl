@@ -1,0 +1,153 @@
+### Token for the publisher
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{username}}&password={{password}}
+
+> {%
+    client.global.set("accessToken", response.body.access_token);
+%}
+
+### Token for a reader
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{readerUsername}}&password={{readerPassword}}
+
+> {%
+    client.global.set("readerToken", response.body.access_token);
+%}
+
+### Upload a phone photo with EXIF GPS, camera and date (media/photo-gps.jpg, 640 x 480)
+POST {{baseUrl}}/api/media
+Authorization: Bearer {{accessToken}}
+Content-Type: multipart/form-data; boundary=PresserlBoundary
+
+--PresserlBoundary
+Content-Disposition: form-data; name="file"; filename="photo-gps.jpg"
+Content-Type: image/jpeg
+
+< ./media/photo-gps.jpg
+--PresserlBoundary--
+
+> {%
+    client.test("201 with the re-encoded JPEG's metadata", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        client.assert(response.headers.valueOf("Location").endsWith("/api/media/" + response.body.id),
+            "Location " + response.headers.valueOf("Location"));
+        client.assert(response.body.contentType === "image/jpeg", "contentType " + response.body.contentType);
+        client.assert(response.body.width === 640 && response.body.height === 480,
+            "size " + response.body.width + " x " + response.body.height);
+        client.assert(response.body.size > 0, "size " + response.body.size);
+        client.assert(response.body.uploadedBy.username === "publisher", "uploadedBy " + JSON.stringify(response.body.uploadedBy));
+    });
+    client.global.set("photoId", response.body.id);
+%}
+
+### Upload a PNG named .jpg and declared as image/jpeg (media/opaque.png, 1200 x 800, no transparency)
+POST {{baseUrl}}/api/media
+Authorization: Bearer {{accessToken}}
+Content-Type: multipart/form-data; boundary=PresserlBoundary
+
+--PresserlBoundary
+Content-Disposition: form-data; name="file"; filename="photo.jpg"
+Content-Type: image/jpeg
+
+< ./media/opaque.png
+--PresserlBoundary--
+
+> {%
+    client.test("201, detected as PNG and stored as JPEG", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        client.assert(response.body.contentType === "image/jpeg", "contentType " + response.body.contentType);
+        client.assert(response.body.width === 1200 && response.body.height === 800,
+            "size " + response.body.width + " x " + response.body.height);
+    });
+    client.global.set("pngId", response.body.id);
+%}
+
+### Read the metadata
+GET {{baseUrl}}/api/media/{{pngId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200 with the stored image's metadata", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.id === client.global.get("pngId"), "id " + response.body.id);
+        client.assert(response.body.contentType === "image/jpeg", "contentType " + response.body.contentType);
+        client.assert(response.body.uploadedAt, "uploadedAt missing");
+    });
+%}
+
+### Download the stored image
+GET {{baseUrl}}/api/media/{{photoId}}/content
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200 with the stored JPEG and immutable private caching", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.headers.valueOf("Content-Type") === "image/jpeg", "type " + response.headers.valueOf("Content-Type"));
+        client.assert(response.headers.valueOf("Content-Disposition") === "inline", "disposition");
+        client.assert(response.headers.valueOf("X-Content-Type-Options") === "nosniff", "nosniff");
+        client.assert(response.headers.valueOf("Cache-Control") === "private, max-age=31536000, immutable",
+            "cache " + response.headers.valueOf("Cache-Control"));
+        client.assert(Number(response.headers.valueOf("Content-Length")) > 0, "length");
+    });
+%}
+
+### HTML disguised as a JPEG (media/cat.jpg)
+POST {{baseUrl}}/api/media
+Authorization: Bearer {{accessToken}}
+Content-Type: multipart/form-data; boundary=PresserlBoundary
+
+--PresserlBoundary
+Content-Disposition: form-data; name="file"; filename="cat.jpg"
+Content-Type: image/jpeg
+
+< ./media/cat.jpg
+--PresserlBoundary--
+
+> {%
+    client.test("415 naming the file", () => {
+        client.assert(response.status === 415, "status " + response.status);
+        client.assert(response.body.errors[0].field === "file", JSON.stringify(response.body));
+    });
+%}
+
+### Readers may not upload
+POST {{baseUrl}}/api/media
+Authorization: Bearer {{readerToken}}
+Content-Type: multipart/form-data; boundary=PresserlBoundary
+
+--PresserlBoundary
+Content-Disposition: form-data; name="file"; filename="photo-gps.jpg"
+Content-Type: image/jpeg
+
+< ./media/photo-gps.jpg
+--PresserlBoundary--
+
+> {%
+    client.test("403", () => {
+        client.assert(response.status === 403, "status " + response.status);
+    });
+%}
+
+### Readers may not download
+GET {{baseUrl}}/api/media/{{photoId}}/content
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("403", () => {
+        client.assert(response.status === 403, "status " + response.status);
+    });
+%}
+
+### Unknown media
+GET {{baseUrl}}/api/media/999999
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("404", () => {
+        client.assert(response.status === 404, "status " + response.status);
+    });
+%}

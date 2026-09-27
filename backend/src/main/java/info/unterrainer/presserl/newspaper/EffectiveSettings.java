@@ -41,8 +41,10 @@ public record EffectiveSettings(
      * Resolves the settings; a value from the newspaper row wins over the configured one.
      * Keys that are deployment-only ({@code section.default}, {@code media.max-size}) and
      * unreadable overrides are ignored.
+     *
+     * @param mediaMaxSize {@code presserl.media.max-size} from {@code MediaConfig}
      */
-    public static EffectiveSettings resolve(NewspaperConfig config, NewspaperEntity row) {
+    public static EffectiveSettings resolve(NewspaperConfig config, String mediaMaxSize, NewspaperEntity row) {
         Map<String, Object> overrides = row == null || row.settings == null ? Map.of() : row.settings;
         Set<String> overridden = new HashSet<>();
         return new EffectiveSettings(
@@ -54,7 +56,7 @@ public record EffectiveSettings(
                 config.section().defaultName(),
                 override(overrides, EDITOR_LEVEL, EditorLevel.class, overridden).orElse(config.editor().level()),
                 override(overrides, READER_TEXT_SIZE, TextSize.class, overridden).orElse(config.reader().textSize()),
-                config.media().maxSize(),
+                mediaMaxSize,
                 overridden);
     }
 

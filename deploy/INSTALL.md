@@ -1,7 +1,8 @@
 # Installing Presserl
 
-Presserl runs as two containers under docker compose: `presserl` (API, reader and admin app in
-one image) and `postgres`. You provide the rest:
+Presserl runs as three containers under docker compose: `presserl` (API, reader and admin app in
+one image), `postgres` and `rustfs` (an S3-compatible object store for uploaded images, reachable
+only by `presserl`). You provide the rest:
 
 - **Keycloak** for logins — Presserl gets its own realm in your existing Keycloak.
 - **A TLS-terminating reverse proxy** (Traefik, Caddy, …) in front of `presserl`.
@@ -79,8 +80,10 @@ chmod 600 .env
 ```
 
 Set every value in `.env`; the comments explain each one. Choose a strong database password and
-the first publisher's username and password. All other settings have working defaults; the
-optional ones are listed at the end of the file.
+the first publisher's username and password. For the media store, choose an access key and a
+secret key (`PRESSERL_MEDIA_S3_ACCESS_KEY`, `PRESSERL_MEDIA_S3_SECRET_KEY`), for example with
+`openssl rand -hex 20`; `rustfs` is started with them and `presserl` uses them to reach it. All
+other settings have working defaults; the optional ones are listed at the end of the file.
 
 ## 4. Start
 
@@ -89,8 +92,9 @@ docker compose up -d
 docker compose ps
 ```
 
-`postgres` becomes healthy within seconds. `presserl` becomes healthy once the database is
-migrated and the first publisher exists in Keycloak. Check without the proxy:
+`postgres` and `rustfs` become healthy within seconds. `presserl` becomes healthy once the
+database is migrated, the first publisher exists in Keycloak and the media bucket is reachable
+(`presserl` creates it on its first start). Check without the proxy:
 
 ```sh
 curl http://localhost:8080/api/newspaper
@@ -195,14 +199,60 @@ docker compose up -d
 ```
 
 Database migrations run automatically at start. The database lives in the named volume
-`presserl-db` and survives `docker compose down` (but not `docker compose down -v`).
+`presserl-db`, the uploaded images in `presserl-media`; both survive `docker compose down` (but
+not `docker compose down -v`).
+
+**Updating from a version without image uploads:** that version's `compose.yaml` has no `rustfs`
+service. Before pulling the new image, copy the new `compose.yaml` over the old one and add
+`PRESSERL_MEDIA_S3_ACCESS_KEY` and `PRESSERL_MEDIA_S3_SECRET_KEY` to `.env` (see step 3).
+Without them `docker compose` refuses to start, naming the missing variable.
 
 The admin app's entry files (`index.html`, `composeApp.js`, …) are sent with
 `Cache-Control: no-cache`, so a new version takes effect on the next page load. Versions before
 that sent them as cacheable for a day: if a CDN or caching proxy sits in front of Presserl, purge
 its cache for `/admin/*` once when upgrading from such a version. Later updates need no purge.
 
-## 8. Troubleshooting
+## 8. Backups
+
+Two named volumes hold the newspaper's data; back up both, together:
+
+- `presserl-db` — the PostgreSQL database (articles, sections, settings, image records). Prefer a
+  dump while running: `docker compose exec postgres pg_dump -U presserl presserl > presserl.sql`.
+- `presserl-media` — the uploaded images (`rustfs` data). Copy it while `rustfs` is stopped, e.g.
+  `docker compose stop rustfs`, then
+  `docker run --rm -v presserl_presserl-media:/data -v "$PWD":/backup alpine tar czf /backup/presserl-media.tgz -C /data .`,
+  then `docker compose start rustfs`.
+
+Accounts live in your Keycloak and are backed up with it. The theme lives in `theme/`.
+
+### Another S3-compatible store instead of `rustfs`
+
+Presserl talks plain S3 to its media store, so it can use an existing S3-compatible store (MinIO,
+Garage, a cloud provider's object storage) instead of the bundled `rustfs`. Set in `.env`:
+
+- `PRESSERL_MEDIA_S3_ENDPOINT` — the store's URL, e.g. `https://s3.example.org`
+- `PRESSERL_MEDIA_S3_REGION` — the region, if the store requires one (default `us-east-1`)
+- `PRESSERL_MEDIA_S3_BUCKET` — the bucket (default `presserl-media`; created on start if missing
+  and the credentials allow it)
+- `PRESSERL_MEDIA_S3_ACCESS_KEY`, `PRESSERL_MEDIA_S3_SECRET_KEY` — credentials with read, write
+  and delete rights on that bucket
+
+Presserl uses path-style requests (`<endpoint>/<bucket>/<key>`). Remove `rustfs` from the start
+with a `compose.override.yaml`:
+
+```yaml
+services:
+  rustfs:
+    profiles: [disabled]
+  presserl:
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+```
+
+Backups of the images are then a matter of that store.
+
+## 9. Troubleshooting
 
 | Symptom | Cause and fix |
 |---|---|
@@ -210,6 +260,9 @@ its cache for `/admin/*` once when upgrading from such a version. Later updates 
 | `presserl` stays **unhealthy** / `/q/health/ready` reports `publisher-bootstrap` DOWN | The backend cannot create the first publisher. `docker compose logs presserl` names the cause: Keycloak unreachable from the container, wrong `PRESSERL_OIDC_BACKEND_SECRET`, or the group `publisher` missing in the realm. It retries automatically; fix the cause and wait. |
 | `presserl` exits at start naming `PRESSERL_OIDC_READER_SECRET` / `presserl.oidc.reader-secret` | The reader client secret is missing (new in this version). Import the client `presserl-reader` into the realm if it is missing (partial import as in step 2a.5), copy its secret (step 2.3) into `.env` and start again. |
 | Keycloak shows **Invalid parameter: redirect_uri** on the reader's **Log in** link | **Valid redirect URIs** / **Valid post logout redirect URIs** of `presserl-reader` do not match `https://<hostname>/*`. Fix them in Keycloak. |
+| `presserl` stays **unhealthy** / `/q/health/ready` reports `media-store` DOWN | The backend cannot reach the media bucket. `docker compose logs presserl` names the cause: `rustfs` not running or unhealthy (`docker compose logs rustfs`), or, with another S3 store, a wrong endpoint or credentials. It retries automatically; fix the cause and wait. |
+| `presserl` exits at start naming `PRESSERL_MEDIA_S3_ACCESS_KEY` / `presserl.media.s3.access-key` | The media store credentials are missing (new in this version). Add both `PRESSERL_MEDIA_S3_*` keys to `.env` (step 3) and start again. |
 | `presserl` exits at start naming a variable | A mandatory variable in `.env` is missing or empty, or an optional one has an invalid value; the message lists the allowed values. |
 | Admin app loads but API calls answer **401** | `PRESSERL_OIDC_ISSUER` differs from the issuer in the tokens (check scheme, host and realm name), or the realm was changed so `presserl-admin` tokens no longer carry the `presserl-backend` audience. |
 | Admin app stays blank; the browser console shows **WebAssembly … unsupported MIME type 'text/html'** or a `.wasm` request answers **404** | A stale cached `composeApp.js` from the previous version references `.wasm` files the new image no longer contains. Hard-reload the page (Ctrl+Shift+R); if a CDN or caching proxy is in front, purge its cache for `/admin/*` (see step 7). |
+| Uploading an image answers **413** | The file is larger than `PRESSERL_MEDIA_MAX_SIZE` (default `10M`, at most `60M`). A reverse proxy may have a smaller body limit of its own (e.g. nginx `client_max_body_size`). |

@@ -45,7 +45,8 @@ Effective newspaper settings (code default → environment → database override
   - `subtitle`: empty string when unset.
   - `visibility`: `public` | `private`.
   - `settings` keys are the config keys without the `presserl.` prefix. `editor.level`:
-    `starter` | `standard` | `profi`; `reader.text-size`: `s` | `m` | `l` | `xl`.
+    `starter` | `standard` | `profi`; `reader.text-size`: `s` | `m` | `l` | `xl`;
+    `media.max-size`: largest accepted image upload (deployment-only, `PRESSERL_MEDIA_MAX_SIZE`).
   - `overrides`: the entries of `settings` whose value currently comes from a valid newspaper
     override (database), keyed like `settings`; `{}` when none. A key missing here uses the
     deployment value or the code default. Clients treat a missing `overrides` (older servers) as
@@ -946,6 +947,79 @@ Removes the account's role in the section.
   account, `503`.
 - **Side effects:** section role deleted; logged at INFO with section, account, role and the
   acting user.
+
+---
+
+# Media
+
+Uploaded images. Every upload is re-encoded on the server from its pixels: the stored image is a
+JPEG (quality 0.85) or, when the source has visible transparency, a PNG, in sRGB, rotated upright
+by its EXIF orientation and scaled down to at most 4096 px on the longer side (never enlarged). No
+metadata survives (EXIF incl. GPS/camera/date/orientation, XMP, IPTC, ICC, comments, thumbnails).
+Images live in an S3-compatible object store that browsers never reach; readers get no media in
+this version (lead images come later).
+
+All media endpoints require a bearer token (missing/invalid → `401`, empty body) and
+`WRITE_ARTICLES` in `allowedActions` (publisher, editor-in-chief or any section role); everyone
+else gets `403`. Refusals carry the error body (`{"errors": [{"field": …, "message": …}]}`) with
+field `file` for problems of the uploaded file and `null` otherwise.
+
+**Body limits:** the HTTP layer accepts request bodies up to 64M for `POST /api/media` only; every
+other path keeps the former 10M limit (`413`, error body with field `null`, message
+`request body larger than 10M`). A body above 64M is refused by Quarkus itself with `413` and an
+**empty body**.
+
+## `MediaDto`
+
+```json
+{ "id": 17, "contentType": "image/jpeg", "width": 4096, "height": 2731, "size": 1834211,
+  "uploadedBy": { "username": "papa", "displayName": "Papa" },
+  "uploadedAt": "2026-09-27T14:03:11.402Z" }
+```
+`contentType`: `image/jpeg` | `image/png` — the type of the stored (re-encoded) image, not of the
+upload. `width`, `height`: pixels of the stored image. `size`: bytes of the stored image.
+`uploadedBy`: username and display name at upload time (like article bylines).
+
+## `POST /api/media`
+
+Uploads one image.
+
+- **Auth:** `WRITE_ARTICLES`
+- **Body:** `multipart/form-data` with exactly one file part named `file` (the part needs a
+  `filename`). The declared part content type and the file name are ignored; the type is detected
+  from the bytes: JPEG, PNG and WebP (lossy, lossless, with or without transparency, not animated).
+- **Response `201`:** header `Location: /api/media/{id}`, body a `MediaDto`.
+- **Errors:**
+
+  | Status | When |
+  |---|---|
+  | `400` | no `file` part, more than one file, empty file (field `file`); image larger than 50 megapixels or a side longer than 20000 px (checked before decoding); damaged or undecodable image, e.g. truncated (field `file`) |
+  | `403` | no `WRITE_ARTICLES` (checked before the body) |
+  | `413` | file larger than the effective setting `media.max-size` (default `10M`, at most `60M`; field `file`); above 64M Quarkus answers `413` with an empty body |
+  | `415` | not JPEG, PNG or still WebP — e.g. GIF, HEIC, SVG, PDF, animated WebP, HTML named `.jpg` (field `file`) |
+  | `503` | object store unreachable (field `null`); no media record is left behind |
+
+- **Side effects:** the re-encoded image is written once to the object store under a random key,
+  then the media record is stored. Nothing is stored for a refused upload.
+
+## `GET /api/media/{id}`
+
+- **Auth:** `WRITE_ARTICLES`
+- **Response `200`:** a `MediaDto`.
+- **Errors:** `403`, `404` unknown id (field `null`).
+- **Side effects:** none.
+
+## `GET /api/media/{id}/content`
+
+The stored image bytes.
+
+- **Auth:** `WRITE_ARTICLES`
+- **Response `200`:** body = the stored image; headers `Content-Type` (`image/jpeg` |
+  `image/png`), `Content-Length`, `Content-Disposition: inline`,
+  `X-Content-Type-Options: nosniff`, `Cache-Control: private, max-age=31536000, immutable` (a
+  stored image never changes).
+- **Errors:** `403`, `404` unknown id (JSON error body), `503` object store unreachable.
+- **Side effects:** none.
 
 ---
 

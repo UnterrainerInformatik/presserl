@@ -3,6 +3,7 @@ package info.unterrainer.presserl.newspaper;
 import java.util.HashMap;
 import java.util.Map;
 
+import info.unterrainer.presserl.media.MediaConfig;
 import io.quarkus.hibernate.reactive.panache.common.WithSession;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Uni;
@@ -18,10 +19,13 @@ public class NewspaperSettings {
     @Inject
     NewspaperConfig config;
 
+    @Inject
+    MediaConfig media;
+
     @WithSession
     public Uni<EffectiveSettings> effective() {
         return NewspaperEntity.<NewspaperEntity>findById(NewspaperEntity.SINGLETON_ID)
-                .map(row -> EffectiveSettings.resolve(config, row));
+                .map(row -> EffectiveSettings.resolve(config, media.maxSize(), row));
     }
 
     /**
@@ -43,7 +47,7 @@ public class NewspaperSettings {
                 }
             });
             row.settings = settings;
-            return EffectiveSettings.resolve(config, row);
+            return EffectiveSettings.resolve(config, media.maxSize(), row);
         });
     }
 }

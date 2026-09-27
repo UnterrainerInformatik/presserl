@@ -1,0 +1,19 @@
+# Compose Dev Services: started by Quarkus in dev and test next to the PostgreSQL and Keycloak
+# Dev Services. RustFS is the S3-compatible media store; its mapped host port becomes
+# presserl-dev.rustfs.port, from which application.properties builds the endpoint.
+services:
+  rustfs:
+    image: rustfs/rustfs:1.0.0
+    ports:
+      - '9000'
+    environment:
+      RUSTFS_ACCESS_KEY: presserl-dev
+      RUSTFS_SECRET_KEY: presserl-dev-secret
+      RUSTFS_CONSOLE_ENABLE: 'false'
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:9000/health']
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    labels:
+      io.quarkus.devservices.compose.config_map.port.9000: presserl-dev.rustfs.port

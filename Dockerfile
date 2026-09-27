@@ -29,5 +29,6 @@ WORKDIR /deployments
 COPY --from=backend --chown=185:0 /src/backend/target/quarkus-app/ ./
 USER 185
 EXPOSE 8080
-ENV JAVA_OPTS="-XX:MaxRAMPercentage=75 -Djava.util.logging.manager=org.jboss.logmanager.LogManager"
+# Image decoding and encoding (media uploads) use AWT without a display
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=75 -Djava.awt.headless=true -Djava.util.logging.manager=org.jboss.logmanager.LogManager"
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /deployments/quarkus-run.jar"]

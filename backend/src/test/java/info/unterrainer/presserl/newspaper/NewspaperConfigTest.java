@@ -25,7 +25,7 @@ class NewspaperConfigTest {
 
     @Test
     void freshInstallationUsesCodeDefaults() {
-        EffectiveSettings settings = EffectiveSettings.resolve(config(Map.of()), null);
+        EffectiveSettings settings = EffectiveSettings.resolve(config(Map.of()), "10M", null);
 
         assertThat(settings).isEqualTo(new EffectiveSettings("My Newspaper", "", Visibility.PUBLIC, true, "General",
                 EditorLevel.STANDARD, TextSize.M, "10M", Set.of()));
@@ -41,7 +41,7 @@ class NewspaperConfigTest {
                 "PRESSERL_EDITOR_LEVEL", "profi",
                 "PRESSERL_READER_TEXT_SIZE", "xl"));
 
-        EffectiveSettings settings = EffectiveSettings.resolve(config, new NewspaperEntity());
+        EffectiveSettings settings = EffectiveSettings.resolve(config, "10M", new NewspaperEntity());
 
         assertThat(settings.name()).isEqualTo("Die Zwergenpost");
         assertThat(settings.visibility()).isEqualTo(Visibility.PRIVATE);
@@ -58,7 +58,7 @@ class NewspaperConfigTest {
                 "retract.author-can-retract", false));
 
         EffectiveSettings settings = EffectiveSettings.resolve(
-                config(Map.of("PRESSERL_NEWSPAPER_NAME", "Die Zwergenpost")), row);
+                config(Map.of("PRESSERL_NEWSPAPER_NAME", "Die Zwergenpost")), "10M", row);
 
         assertThat(settings.name()).isEqualTo("Zwergenpost Extra");
         assertThat(settings.visibility()).isEqualTo(Visibility.PRIVATE);
@@ -71,7 +71,7 @@ class NewspaperConfigTest {
         NewspaperEntity row = new NewspaperEntity();
         row.settings = new HashMap<>(Map.of("visibility", "secret", "retract.author-can-retract", "maybe"));
 
-        EffectiveSettings settings = EffectiveSettings.resolve(config(Map.of()), row);
+        EffectiveSettings settings = EffectiveSettings.resolve(config(Map.of()), "10M", row);
 
         assertThat(settings.visibility()).isEqualTo(Visibility.PUBLIC);
         assertThat(settings.authorCanRetract()).isTrue();
@@ -82,7 +82,7 @@ class NewspaperConfigTest {
         NewspaperEntity row = new NewspaperEntity();
         row.settings = new HashMap<>(Map.of("section.default", "News", "media.max-size", "1G"));
 
-        EffectiveSettings settings = EffectiveSettings.resolve(config(Map.of()), row);
+        EffectiveSettings settings = EffectiveSettings.resolve(config(Map.of()), "10M", row);
 
         assertThat(settings.sectionDefault()).isEqualTo("General");
         assertThat(settings.mediaMaxSize()).isEqualTo("10M");
@@ -94,7 +94,8 @@ class NewspaperConfigTest {
         row.settings = new HashMap<>(Map.of("visibility", "private", "reader.text-size", "XL",
                 "retract.author-can-retract", false));
 
-        EffectiveSettings settings = EffectiveSettings.resolve(config(Map.of("PRESSERL_READER_TEXT_SIZE", "l")), row);
+        EffectiveSettings settings = EffectiveSettings.resolve(
+                config(Map.of("PRESSERL_READER_TEXT_SIZE", "l")), "10M", row);
 
         assertThat(settings.overridden()).containsExactlyInAnyOrder("visibility", "reader.text-size",
                 "retract.author-can-retract");
@@ -110,7 +111,7 @@ class NewspaperConfigTest {
         row.settings = new HashMap<>(Map.of("reader.text-size", "huge", "editor.level", "profi",
                 "retract.author-can-retract", "maybe", "media.max-size", "1G"));
 
-        EffectiveSettings settings = EffectiveSettings.resolve(config(Map.of()), row);
+        EffectiveSettings settings = EffectiveSettings.resolve(config(Map.of()), "10M", row);
 
         assertThat(settings.overridesMap()).containsExactly(Map.entry("editor.level", "profi"));
     }
@@ -134,7 +135,7 @@ class NewspaperConfigTest {
 
     @Test
     void settingsMapUsesSettingNamesInDocumentedOrder() {
-        EffectiveSettings settings = EffectiveSettings.resolve(config(Map.of()), null);
+        EffectiveSettings settings = EffectiveSettings.resolve(config(Map.of()), "10M", null);
 
         assertThat(settings.settingsMap()).containsExactly(
                 Map.entry("retract.author-can-retract", true),

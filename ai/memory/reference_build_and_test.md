@@ -10,6 +10,12 @@ Verified 2026-09-26 on Gerald's machine (JDK 21, Docker running) unless marked o
 - **Backend dev:** `cd backend && ./mvnw quarkus:dev` → http://localhost:8080; Dev Services start
   PostgreSQL and Keycloak (fixed port 8180, realm `presserl` from `src/main/resources/dev/`,
   admin console `admin`/`admin`, publisher `publisher`/`publisher`). No manual setup.
+- **RustFS in dev/test (verified 2026-09-27):** `backend/compose-devservices.yml` (Compose Dev
+  Services) starts `rustfs/rustfs:1.0.0` for `quarkus:dev` and every `@QuarkusTest` run (project
+  `quarkus-devservices-backend`, own random-suffixed project for tests); its mapped host port lands
+  in `presserl-dev.rustfs.port`, from which `%dev,test.presserl.media.s3.endpoint` is built.
+  Credentials `presserl-dev` / `presserl-dev-secret`, bucket `presserl-media` created by the backend.
+  Needs `docker compose` (v2) on the PATH; stopped together with dev mode / the tests.
 - **Backend tests:** `cd backend && ./mvnw verify` (needs Docker for Dev Services). Single class:
   `./mvnw test -Dtest=AdminDeliveryTest`. Surefire XML in `target/surefire-reports/` — check the
   file timestamp; stale reports from earlier runs stay there. `@QuarkusTest` binds port 8081 —

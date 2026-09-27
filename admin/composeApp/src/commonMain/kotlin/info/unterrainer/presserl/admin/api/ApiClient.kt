@@ -5,6 +5,8 @@ import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.forms.formData
+import io.ktor.client.request.forms.submitFormWithBinaryData
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
@@ -12,6 +14,8 @@ import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.Serializable
@@ -225,7 +229,36 @@ class ApiClient(
     suspend fun removeMember(sectionId: Long, accountId: String) {
         http.delete("$baseUrl/api/sections/$sectionId/members/$accountId") { bearerAuth(accessToken()) }
     }
+
+    /**
+     * Uploads an image as the multipart part `file`. The server detects the type from the bytes (JPEG, PNG, WebP),
+     * re-encodes it without metadata and answers the stored image; `413` above `media.max-size`, `415` for other
+     * types, `400` for damaged or oversized images.
+     */
+    suspend fun uploadMedia(bytes: ByteArray, fileName: String): MediaDto =
+        http.submitFormWithBinaryData(
+            "$baseUrl/api/media",
+            formData {
+                append(
+                    "file",
+                    bytes,
+                    Headers.build {
+                        append(HttpHeaders.ContentType, ContentType.Application.OctetStream.toString())
+                        append(HttpHeaders.ContentDisposition, "filename=\"${fileName.quotable()}\"")
+                    },
+                )
+            },
+        ) { bearerAuth(accessToken()) }.body()
+
+    suspend fun media(id: Long): MediaDto = http.get("$baseUrl/api/media/$id") { bearerAuth(accessToken()) }.body()
+
+    /** The stored image bytes (`image/jpeg` or `image/png`, see [MediaDto.contentType]). */
+    suspend fun mediaContent(id: Long): ByteArray =
+        http.get("$baseUrl/api/media/$id/content") { bearerAuth(accessToken()) }.body()
 }
+
+/** A file name safe inside a quoted `Content-Disposition` parameter. */
+private fun String.quotable(): String = filter { it >= ' ' && it != '"' && it != '\\' }.ifEmpty { "upload" }
 
 /** Body of `POST /api/articles/{id}/reject`. */
 @Serializable

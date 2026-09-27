@@ -6,8 +6,10 @@ change — never tick it off.
 Milestones from `docs/vision.md`; details in `docs/`.
 
 ## M5 — Images
-Media upload with MIME sniffing, size limit, re-encoding, EXIF/GPS stripping, renditions
-(thumbnail/web/print); lead images and captions.
+Upload, sniffing, re-encoding and EXIF/GPS stripping are done (`media-upload`). Still open:
+- `media-renditions` — renditions (thumbnail / web / print) derived from the stored master.
+- `article-lead-image` — lead image and caption per article, upload UI in the editor, delivery to
+  readers.
 
 ## M6 — Print
 Issues; reader print views for a single article and a whole issue (`@page` A4, columns,

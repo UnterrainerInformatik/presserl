@@ -12,7 +12,8 @@ import io.smallrye.config.WithName;
 
 /**
  * Newspaper settings, configuration layers 1 (code default) and 2 (deployment environment).
- * {@code PRESSERL_NEWSPAPER_NAME} maps to {@code presserl.newspaper.name} and so on.
+ * {@code PRESSERL_NEWSPAPER_NAME} maps to {@code presserl.newspaper.name} and so on. The
+ * deployment-only setting {@code media.max-size} lives in {@code MediaConfig}.
  */
 @ConfigMapping(prefix = "presserl")
 public interface NewspaperConfig {
@@ -26,8 +27,6 @@ public interface NewspaperConfig {
     Editor editor();
 
     Reader reader();
-
-    Media media();
 
     interface Newspaper {
 
@@ -68,12 +67,5 @@ public interface NewspaperConfig {
         @WithDefault("m")
         @WithConverter(TextSizeConverter.class)
         TextSize textSize();
-    }
-
-    interface Media {
-
-        @WithName("max-size")
-        @WithDefault("10M")
-        String maxSize();
     }
 }
