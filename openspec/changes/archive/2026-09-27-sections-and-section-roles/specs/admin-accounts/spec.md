@@ -1,11 +1,4 @@
-# admin-accounts Specification
-
-## Purpose
-
-Lets publishers, editors-in-chief and section editors create accounts in the administration app
-and hand them over on a printed account slip, on top of the `/api/accounts` endpoints.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Accounts screen entry point
 The admin app header SHALL offer "Accounts" to users holding `PUBLISHER` or `EDITOR_IN_CHIEF` or
@@ -68,30 +61,3 @@ the form SHALL keep the input.
 #### Scenario: Section editor creates a reporter
 - **WHEN** a user who is `SECTION_EDITOR` in `Sport` only opens "New account" and chooses "Redakteur" for `Sport`
 - **THEN** the form shows no newspaper role choices, offers only `Sport`, and "Create" is possible once first name and username are set
-
-### Requirement: Printable account slip
-After a successful creation the app SHALL show the account slip with the newspaper name, the web
-address of the reader, the username and the generated password, together with a note that the
-password is shown only now. "Print" SHALL open the browser's print dialog for the slip alone, laid
-out to fit on one A4 page without the app's navigation. "Done" SHALL return to the account list,
-which then contains the new account; the password SHALL NOT be shown anywhere else.
-
-#### Scenario: Slip after creation
-- **WHEN** the publisher creates the account `lena`
-- **THEN** the slip shows the newspaper name, the reader address, `lena` and the four-word password
-
-#### Scenario: Print the slip
-- **WHEN** the publisher chooses "Print" on the slip
-- **THEN** the print preview shows only the slip's content on one page
-
-#### Scenario: Back to the list
-- **WHEN** the publisher chooses "Done"
-- **THEN** the account list is shown including `lena`, without any password
-
-### Requirement: Account texts are localized
-All texts of the accounts screens and the slip SHALL come from the German and English resources
-of the admin app, following the app's language choice.
-
-#### Scenario: English slip
-- **WHEN** a user whose browser prefers English creates an account
-- **THEN** the slip's labels read "Username" and "Password"

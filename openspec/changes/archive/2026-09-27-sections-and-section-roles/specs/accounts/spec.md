@@ -1,12 +1,4 @@
-# accounts Specification
-
-## Purpose
-
-Lets publishers, editors-in-chief and section editors see and create newspaper accounts through
-the backend, which manages the Keycloak users and groups, so nobody needs the Keycloak admin
-console. Section editors create accounts for their own sections only.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Account endpoints require an administering role
 The account endpoints under `/api/accounts` SHALL be available to users holding `PUBLISHER` or
@@ -53,45 +45,6 @@ may assign (`assignableRoles`).
 #### Scenario: Assignable roles of an editor-in-chief
 - **WHEN** an editor-in-chief who is not a publisher calls `GET /api/accounts`
 - **THEN** `assignableRoles` is `["EDITOR_IN_CHIEF", "READER"]`
-
-### Requirement: Username derived from the first name
-`GET /api/accounts/username-suggestion?firstName=<name>` SHALL return a username that is not yet
-taken, derived from the first name as follows: lower case; `ä`→`ae`, `ö`→`oe`, `ü`→`ue`, `ß`→`ss`;
-other letters with diacritics reduced to their base letter; every run of characters outside
-`a-z0-9` replaced by a single `-`; leading and trailing `-` removed; cut to 32 characters. An empty
-result SHALL become `user`. When the result is at least 3 characters long and taken, the system
-SHALL append `-2`, `-3`, … and return the first free one (shortening the base so the whole stays
-within 32 characters). When the result is shorter than 3 characters, the system SHALL never return
-it unchanged but append `-1`, `-2`, `-3`, … and return the first free one. A suggestion SHALL
-always satisfy the username rules of `POST /api/accounts`.
-
-#### Scenario: Umlaut and space
-- **WHEN** the publisher asks for a suggestion for `Jürgen Maria`
-- **THEN** the response is `{"username": "juergen-maria"}`
-
-#### Scenario: Collision
-- **WHEN** users `anna` and `anna-2` exist and the publisher asks for a suggestion for `Anna`
-- **THEN** the response is `{"username": "anna-3"}`
-
-#### Scenario: Short first name
-- **WHEN** no user `li-1` exists and the publisher asks for a suggestion for `Li`
-- **THEN** the response is `{"username": "li-1"}`
-
-#### Scenario: Short first name with collision
-- **WHEN** user `li-1` exists and no user `li-2` exists and the publisher asks for a suggestion for `Li`
-- **THEN** the response is `{"username": "li-2"}`
-
-#### Scenario: Three characters are enough
-- **WHEN** no user `max` exists and the publisher asks for a suggestion for `Max`
-- **THEN** the response is `{"username": "max"}`
-
-#### Scenario: Nothing usable left
-- **WHEN** the publisher asks for a suggestion for `李` and no user `user` exists
-- **THEN** the response is `{"username": "user"}`
-
-#### Scenario: Missing first name
-- **WHEN** the publisher asks for a suggestion without `firstName` or with a blank one
-- **THEN** the response is `400` naming the field `firstName`
 
 ### Requirement: Create an account
 `POST /api/accounts` with `firstName`, optional `lastName`, `username`, `roles` and optional
@@ -146,19 +99,7 @@ case) SHALL be answered with `409` naming the field `username`.
 - **WHEN** the publisher posts an account with `sectionRoles` `[{"sectionId": 999, "role": "REPORTER"}]` and no section 999 exists
 - **THEN** the response is `400` with an error for the field `sectionRoles`, and no user is created
 
-### Requirement: Newspaper roles are assigned at or below the own level
-A publisher SHALL be allowed to assign `PUBLISHER`, `EDITOR_IN_CHIEF` and `READER`; an
-editor-in-chief SHALL be allowed to assign `EDITOR_IN_CHIEF` and `READER`. A request containing a
-role the requesting user may not assign SHALL be answered with `403` and an error body naming the
-field `roles`, and no user SHALL be created.
-
-#### Scenario: Editor-in-chief tries to create a publisher
-- **WHEN** an editor-in-chief who is not a publisher posts an account with `roles` `["PUBLISHER"]`
-- **THEN** the response is `403` naming the field `roles`, and no user is created
-
-#### Scenario: Editor-in-chief creates a reader
-- **WHEN** an editor-in-chief posts an account with `roles` `["READER"]`
-- **THEN** the response is `201`
+## ADDED Requirements
 
 ### Requirement: Section roles of a new account are assigned within the own scope
 Section roles given when creating an account SHALL follow the scope rule for section roles: a
@@ -178,25 +119,3 @@ user SHALL be created.
 #### Scenario: Section editor assigns a newspaper role
 - **WHEN** `nogroups` is `SECTION_EDITOR` in `Sport` and posts an account with `roles` `["READER"]`
 - **THEN** the response is `403` naming the field `roles`, and no user is created
-
-### Requirement: Default password is a four-word pass-phrase
-The generated default password SHALL consist of four words chosen independently and uniformly
-with a cryptographically secure random source from a curated list of at least 1000 distinct,
-kid-friendly German words, joined by `-`. Every word of the list SHALL be 3 to 8 characters long
-and consist of the letters `a-z` only.
-
-#### Scenario: Shape of the password
-- **WHEN** an account is created
-- **THEN** its password matches `^[a-z]{3,8}(-[a-z]{3,8}){3}$` and each of the four words is on the word list
-
-#### Scenario: Passwords differ
-- **WHEN** two accounts are created one after the other
-- **THEN** their passwords differ
-
-### Requirement: Unavailable Keycloak is reported
-When Keycloak is unreachable or refuses the backend's service account during an account request,
-the system SHALL answer `503` with an error body stating that the account service is unavailable.
-
-#### Scenario: Keycloak down
-- **WHEN** the publisher calls `GET /api/accounts` while Keycloak is unreachable
-- **THEN** the response is `503` with an error body
