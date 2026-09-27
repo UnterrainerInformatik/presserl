@@ -1,7 +1,7 @@
 package info.unterrainer.presserl.admin.ui
 
 /** Header entries of the logged-in user, in display order. */
-enum class NavEntry { ARTICLES, SECTIONS, ACCOUNTS }
+enum class NavEntry { ARTICLES, SECTIONS, ACCOUNTS, NEWSPAPER }
 
 /** Newspaper-wide actions of `GET /api/me` the app knows; any other value is ignored. */
 object NewspaperAction {
@@ -9,6 +9,7 @@ object NewspaperAction {
     const val MANAGE_SECTIONS = "MANAGE_SECTIONS"
     const val ASSIGN_SECTION_ROLES = "ASSIGN_SECTION_ROLES"
     const val ADMINISTER_ACCOUNTS = "ADMINISTER_ACCOUNTS"
+    const val CONFIGURE_NEWSPAPER = "CONFIGURE_NEWSPAPER"
 }
 
 /**
@@ -22,6 +23,7 @@ fun navEntries(allowedActions: List<String>): List<NavEntry> {
             add(NavEntry.SECTIONS)
         }
         if (NewspaperAction.ADMINISTER_ACCOUNTS in allowedActions) add(NavEntry.ACCOUNTS)
+        if (NewspaperAction.CONFIGURE_NEWSPAPER in allowedActions) add(NavEntry.NEWSPAPER)
     }
     return if (entries.size < 2) emptyList() else entries
 }

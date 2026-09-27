@@ -8,8 +8,8 @@ Hierarchy: **Publisher > Editor-in-chief > Section editor > Reporter > Reader.**
 
 | Role | Enum | German UI label | Stored in | Scope | Typically | Adds to the role below |
 |---|---|---|---|---|---|---|
-| **Publisher** | `PUBLISHER` | Herausgeber | Keycloak group `publisher` | newspaper + technology | parents / administrator | administration (create and lock accounts, reset passwords, theme, backups), **emergency brake**, final approval level |
-| **Editor-in-chief** | `EDITOR_IN_CHIEF` | Chefredakteur | Keycloak group `editor-in-chief` | whole newspaper | the child who owns the newspaper | creates sections, approves section editors' articles, stands in for sections without a section editor |
+| **Publisher** | `PUBLISHER` | Herausgeber | Keycloak group `publisher` | newspaper + technology | parents / administrator | administration (create and lock accounts, reset passwords, theme, newspaper settings, backups), **emergency brake**, final approval level |
+| **Editor-in-chief** | `EDITOR_IN_CHIEF` | Chefredakteur | Keycloak group `editor-in-chief` | whole newspaper | the child who owns the newspaper | creates sections, approves section editors' articles, stands in for sections without a section editor, newspaper settings (e.g. the reader's default text size) |
 | **Section editor** | `SECTION_EDITOR` | Ressortleiter | Presserl DB (per section) | 1..n sections | an older sibling / friend | approves the reporters of their sections |
 | **Reporter** | `REPORTER` | Redakteur | Presserl DB (per section) | 1..n sections | friends, siblings | writes, submits, takes own articles offline |
 | **Reader** | `READER` | Leser | Keycloak group `reader` | newspaper | family, friends | reads a private newspaper |

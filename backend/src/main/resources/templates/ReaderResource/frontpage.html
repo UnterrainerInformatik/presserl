@@ -1,19 +1,17 @@
 {#include layout/reader}
-{#masthead name=name subtitle=subtitle linked=false viewerName=viewerName /}
 <main data-view="frontpage">
+  {#masthead page=page linked=false /}
   {#if loginRequired}
   <p class="note">{msg:privateNote} <a href="/login">{msg:login}</a></p>
   {#else if noAccess}
   <p class="note">{msg:noAccessNote}</p>
   {#else if leadStory}
-  {#story article=leadStory cls="story story--lead" /}
-  {#if stories}
   <div class="stories">
+    {#story article=leadStory cls="lead-article" /}
     {#for other in stories}
-    {#story article=other cls="story" /}
+    {#story article=other cls="article-card" /}
     {/for}
   </div>
-  {/if}
   {#else}
   <p class="note">{msg:emptyNote}</p>
   {/if}

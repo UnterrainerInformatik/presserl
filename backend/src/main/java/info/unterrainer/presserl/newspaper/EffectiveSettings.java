@@ -1,13 +1,17 @@
 package info.unterrainer.presserl.newspaper;
 
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.jboss.logging.Logger;
 
 /**
  * The effective newspaper settings after resolving code default, deployment and newspaper layers.
+ *
+ * @param overridden the setting names whose value comes from a valid newspaper override
  */
 public record EffectiveSettings(
         String name,
@@ -17,7 +21,8 @@ public record EffectiveSettings(
         String sectionDefault,
         EditorLevel editorLevel,
         TextSize readerTextSize,
-        String mediaMaxSize) {
+        String mediaMaxSize,
+        Set<String> overridden) {
 
     public static final String VISIBILITY = "visibility";
     public static final String RETRACT_AUTHOR_CAN_RETRACT = "retract.author-can-retract";
@@ -28,6 +33,10 @@ public record EffectiveSettings(
 
     private static final Logger LOG = Logger.getLogger(EffectiveSettings.class);
 
+    public EffectiveSettings {
+        overridden = Set.copyOf(overridden);
+    }
+
     /**
      * Resolves the settings; a value from the newspaper row wins over the configured one.
      * Keys that are deployment-only ({@code section.default}, {@code media.max-size}) and
@@ -35,15 +44,18 @@ public record EffectiveSettings(
      */
     public static EffectiveSettings resolve(NewspaperConfig config, NewspaperEntity row) {
         Map<String, Object> overrides = row == null || row.settings == null ? Map.of() : row.settings;
+        Set<String> overridden = new HashSet<>();
         return new EffectiveSettings(
                 row != null && row.name != null ? row.name : config.newspaper().name(),
                 row != null && row.subtitle != null ? row.subtitle : config.newspaper().subtitle().orElse(""),
-                override(overrides, VISIBILITY, Visibility.class).orElse(config.newspaper().visibility()),
-                booleanOverride(overrides, RETRACT_AUTHOR_CAN_RETRACT).orElse(config.retract().authorCanRetract()),
+                override(overrides, VISIBILITY, Visibility.class, overridden).orElse(config.newspaper().visibility()),
+                booleanOverride(overrides, RETRACT_AUTHOR_CAN_RETRACT, overridden)
+                        .orElse(config.retract().authorCanRetract()),
                 config.section().defaultName(),
-                override(overrides, EDITOR_LEVEL, EditorLevel.class).orElse(config.editor().level()),
-                override(overrides, READER_TEXT_SIZE, TextSize.class).orElse(config.reader().textSize()),
-                config.media().maxSize());
+                override(overrides, EDITOR_LEVEL, EditorLevel.class, overridden).orElse(config.editor().level()),
+                override(overrides, READER_TEXT_SIZE, TextSize.class, overridden).orElse(config.reader().textSize()),
+                config.media().maxSize(),
+                overridden);
     }
 
     /**
@@ -59,8 +71,17 @@ public record EffectiveSettings(
         return map;
     }
 
+    /**
+     * The entries of {@link #settingsMap()} whose value comes from a valid newspaper override.
+     */
+    public Map<String, Object> overridesMap() {
+        Map<String, Object> map = settingsMap();
+        map.keySet().retainAll(overridden);
+        return map;
+    }
+
     private static <E extends Enum<E> & SettingValue> Optional<E> override(
-            Map<String, Object> overrides, String key, Class<E> type) {
+            Map<String, Object> overrides, String key, Class<E> type, Set<String> overridden) {
         Object value = overrides.get(key);
         if (value == null) {
             return Optional.empty();
@@ -69,13 +90,17 @@ public record EffectiveSettings(
         if (parsed.isEmpty()) {
             LOG.warnf("Ignoring newspaper override %s=%s; allowed values: %s", key, value,
                     SettingValueConverter.allowedValues(type));
+        } else {
+            overridden.add(key);
         }
         return parsed;
     }
 
-    private static Optional<Boolean> booleanOverride(Map<String, Object> overrides, String key) {
+    private static Optional<Boolean> booleanOverride(Map<String, Object> overrides, String key,
+            Set<String> overridden) {
         Object value = overrides.get(key);
         if (value instanceof Boolean b) {
+            overridden.add(key);
             return Optional.of(b);
         }
         if (value != null) {

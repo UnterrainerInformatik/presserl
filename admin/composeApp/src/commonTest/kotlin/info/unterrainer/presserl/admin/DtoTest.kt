@@ -64,6 +64,25 @@ class DtoTest {
         assertEquals("public", dto.visibility)
         assertEquals(true, dto.settings.getValue("retract.author-can-retract").jsonPrimitive.boolean)
         assertEquals("10M", dto.settings.getValue("media.max-size").jsonPrimitive.content)
+        // older servers send no overrides
+        assertEquals(emptyMap(), dto.overrides)
+    }
+
+    @Test
+    fun newspaperWithOverrides() {
+        val dto = json.decodeFromString<NewspaperDto>(
+            """
+            {
+              "name": "My Newspaper",
+              "subtitle": "",
+              "visibility": "public",
+              "settings": { "reader.text-size": "l" },
+              "overrides": { "reader.text-size": "l" }
+            }
+            """,
+        )
+
+        assertEquals("l", dto.overrides.getValue("reader.text-size").jsonPrimitive.content)
     }
 
     @Test

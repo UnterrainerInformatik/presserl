@@ -6,6 +6,7 @@ import java.util.Optional;
 import info.unterrainer.presserl.article.ArticleEntity;
 import info.unterrainer.presserl.article.ArticleRevisionEntity;
 import info.unterrainer.presserl.article.ArticleStatus;
+import info.unterrainer.presserl.section.SectionEntity;
 import io.quarkus.hibernate.reactive.panache.Panache;
 import io.quarkus.hibernate.reactive.panache.common.WithSession;
 import io.smallrye.mutiny.Uni;
@@ -18,8 +19,9 @@ import jakarta.enterprise.context.ApplicationScoped;
 @ApplicationScoped
 public class ReaderArticles {
 
-    private static final String LIVE_PUBLISHED = "select a, r from ArticleEntity a, ArticleRevisionEntity r "
-            + "where r.articleId = a.id and r.number = a.liveRevision and a.status = :status";
+    private static final String LIVE_PUBLISHED = "select a, r, s from ArticleEntity a, ArticleRevisionEntity r, "
+            + "SectionEntity s where r.articleId = a.id and r.number = a.liveRevision and s.id = a.sectionId "
+            + "and a.status = :status";
 
     /**
      * The published articles, newest first publication first.
@@ -47,7 +49,16 @@ public class ReaderArticles {
                 .map(rows -> rows.stream().findFirst().map(ReaderArticles::toArticle));
     }
 
+    /**
+     * Every section in position order, for the section bar.
+     */
+    @WithSession
+    public Uni<List<ReaderSection>> sections() {
+        return SectionEntity.<SectionEntity>list("order by position, id")
+                .map(sections -> sections.stream().map(ReaderSection::of).toList());
+    }
+
     private static ReaderArticle toArticle(Object[] row) {
-        return ReaderArticle.of((ArticleEntity) row[0], (ArticleRevisionEntity) row[1]);
+        return ReaderArticle.of((ArticleEntity) row[0], (ArticleRevisionEntity) row[1], (SectionEntity) row[2]);
     }
 }

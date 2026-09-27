@@ -1,13 +1,17 @@
 <header class="masthead">
+  <div class="masthead__tools">
+    {#if page.viewerName}
+    <p class="masthead__viewer">{msg:loggedInAs(page.viewerName)} · <a href="/logout">{msg:logout}</a></p>
+    {/if}
+    {#textSizeSwitch page=page /}
+  </div>
   {#if linked}
-  <p class="masthead__name"><a href="/">{name}</a></p>
+  <p class="masthead__name"><a href="/">{page.name}</a></p>
   {#else}
-  <h1 class="masthead__name">{name}</h1>
+  <h1 class="masthead__name">{page.name}</h1>
   {/if}
-  {#if subtitle}
-  <p class="masthead__subtitle">{subtitle}</p>
-  {/if}
-  {#if viewerName}
-  <p class="masthead__viewer">{msg:loggedInAs(viewerName)} · <a href="/logout">{msg:logout}</a></p>
+  {#if page.subtitle}
+  <p class="masthead__subtitle">{page.subtitle}</p>
   {/if}
 </header>
+{#sectionBar sections=page.sections /}

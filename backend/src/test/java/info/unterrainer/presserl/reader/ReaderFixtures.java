@@ -37,12 +37,46 @@ final class ReaderFixtures {
     }
 
     /**
+     * A published article by {@code Anna} in {@code sectionId}.
+     */
+    long publishedIn(long sectionId, String headline, Instant publishedAt) {
+        long id = article(sectionId, "PUBLISHED", "anna", "Anna", 1, publishedAt);
+        revision(id, 1, "", headline, "", "", EMPTY_BODY, publishedAt);
+        return id;
+    }
+
+    /**
+     * A section at {@code position} with palette colour {@code color}.
+     */
+    long section(String name, String color, int position) {
+        String sql = "INSERT INTO section (name, slug, color, position, created_at) VALUES (?, ?, ?, ?, now()) "
+                + "RETURNING id";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, name);
+            statement.setString(2, name.toLowerCase());
+            statement.setString(3, color);
+            statement.setInt(4, position);
+            try (ResultSet result = statement.executeQuery()) {
+                result.next();
+                return result.getLong(1);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
      * An article in the first section by position ({@link #sectionId()}); {@code liveRevision} and
      * {@code publishedAt} may be {@code null}. A {@code SUBMITTED} article waits for
      * {@code SECTION_EDITOR}, as the database requires.
      */
     long article(String status, String username, String displayName, Integer liveRevision, Instant publishedAt) {
-        long sectionId = sectionId();
+        return article(sectionId(), status, username, displayName, liveRevision, publishedAt);
+    }
+
+    private long article(long sectionId, String status, String username, String displayName, Integer liveRevision,
+            Instant publishedAt) {
         String sql = "INSERT INTO article (status, author_sub, author_username, author_display_name, live_revision, "
                 + "published_at, created_at, updated_at, section_id, pending_level) VALUES (?, ?, ?, ?, ?, ?, now(), now(), ?, ?) "
                 + "RETURNING id";

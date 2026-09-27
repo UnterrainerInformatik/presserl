@@ -65,9 +65,16 @@ The database layers store only overrides, never copies of defaults. The backend 
 | `presserl.editor.level` | `standard` | `starter`, `profi` | deployment, newspaper, per user |
 | `presserl.reader.text-size` | `m` | `s`, `l`, `xl` | deployment, newspaper, per reader |
 | `presserl.media.max-size` | `10M` | any | deployment |
-| `presserl.theme.css` | built-in theme | `/theme/custom.css` | deployment |
+| `presserl.theme.dir` | `/deployments/theme` | any directory | deployment |
+| `presserl.reader.cookie-secure` | `true` (`false` in dev/test) | `false` | deployment |
 
 Approval is not configured by keys but by roles and trust (see [roles-and-workflow.md](roles-and-workflow.md#approval-chain)).
+
+Newspaper overrides are written with `PUT /api/newspaper/settings` by users whose `allowedActions`
+contain `CONFIGURE_NEWSPAPER` (publisher, editor-in-chief); writable so far: `reader.text-size`. The
+per-reader layer of `reader.text-size` is the reader's own choice in the `presserl_text_size` cookie
+(see the reader routes). `presserl.theme.dir` is the directory served read-only at `/theme/`; when it
+contains `custom.css`, every reader page links it after the default theme.
 
 Deployment-only values (no defaults, set in `.env`):
 
@@ -104,8 +111,19 @@ GET    /articles/{id}                     article page
 GET    /issues/{id}                       issue
 GET    /print/article/{id}                print view: article
 GET    /print/issue/{id}                  print view: issue
-GET    /theme/custom.css                  fork theme (from deploy/theme/)
+POST   /text-size                         reader's text-size choice (form: size, next) → cookie, 303 back
+GET    /reader/reader.css, /reader/fonts/* default theme and its self-hosted fonts (OFL)
+GET    /theme/*                           fork theme directory (presserl.theme.dir, from deploy/theme/): allow-listed
+                                          static types, no path escapes, Cache-Control: no-cache
 ```
+
+**Theme and text size.** The default theme `reader.css` is built on public design tokens
+(`--presserl-*`), follows `prefers-color-scheme` for dark mode and uses only self-hosted fonts, so
+the CSP stays `'self'`. `/text-size` and `/theme/*` are outside the reader OIDC tenant: they need no
+session and also work for anonymous visitors of a private newspaper. `/theme/*` is a Vert.x route
+(`ThemeFiles`) that serves only regular files whose real path lies inside the theme directory.
+Every reader page renders `<html data-text-size>` from the reader's cookie, falling back to the
+newspaper's effective `reader.text-size`.
 
 **Reader login.** The reader paths (`/`, `/login`, `/logout`, `/articles/*`, later sections,
 issues and print views) belong to the OIDC tenant `reader`: a web-app tenant using the confidential
@@ -135,7 +153,8 @@ GET    /admin/                            static Compose Wasm bundle (same origi
 Draft only — the contract becomes binding in `ai/primer/endpoints.md` once an OpenSpec change implements it.
 
 ```
-GET    /api/newspaper                     name, subtitle, effective settings
+GET    /api/newspaper                     name, subtitle, effective settings, overrides        (implemented)
+PUT    /api/newspaper/settings            set/clear newspaper overrides; CONFIGURE_NEWSPAPER   (implemented)
 GET    /api/sections                      every user; canManage and assignable section roles     (implemented)
 POST   /api/sections                      editor-in-chief+                                   (implemented)
 PUT    /api/sections/{id}                 name and colour, editor-in-chief+                  (implemented)
@@ -189,7 +208,7 @@ Every reader view sets `data-view="…"` on `<main>` (e.g. `frontpage`, `article
 3. **Review queue** — "Waiting for me (n)" tab of the article lists (`GET /api/articles?awaitingMe=true`), only visible when there is something to approve (implemented)
 4. **Accounts** — create (with printable slip), reset password, lock, assign roles, trust
 5. **Sections** — create, order, colours, section roles
-6. **Settings** — newspaper name, subtitle, visibility (publisher)
+6. **Newspaper** — default reader text size (publisher, editor-in-chief; `CONFIGURE_NEWSPAPER`, implemented); later name, subtitle, visibility
 
 ## Security checklist (MVP)
 

@@ -44,4 +44,13 @@ public interface ReaderMessages {
 
     @Message("Zur Titelseite")
     String backToFrontPage();
+
+    @Message("Schriftgröße")
+    String textSizeLabel();
+
+    @Message("{#when size}{#is 's'}klein{#is 'm'}mittel{#is 'l'}groß{#is 'xl'}sehr groß{/when}")
+    String textSizeName(String size);
+
+    @Message("Ressorts")
+    String sectionsLabel();
 }

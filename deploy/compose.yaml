@@ -11,6 +11,9 @@ services:
       PRESSERL_DB_HOST: postgres
     ports:
       - "${PRESSERL_HTTP_PORT:-8080}:8080"
+    volumes:
+      # The newspaper's theme (custom.css, fonts, images), served at /theme/ - see theme/README.md
+      - ./theme:/deployments/theme:ro
     depends_on:
       postgres:
         condition: service_healthy

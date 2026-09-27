@@ -1,0 +1,24 @@
+/*
+ * Night — dark all the time, independent of the operating system's setting. Copy it over
+ * theme/custom.css. Tokens set here outside a media query win over the default theme's light and
+ * dark values alike.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --presserl-color-paper: #0f1420;
+  --presserl-color-ink: #e6e9f0;
+  --presserl-color-muted: #a9b0c0;
+  --presserl-color-accent: #ffcf5c;
+  --presserl-color-rule: #2a3142;
+
+  --presserl-section-red: #ff7b7b;
+  --presserl-section-orange: #ffa45c;
+  --presserl-section-yellow: #ffd95c;
+  --presserl-section-green: #7fd18a;
+  --presserl-section-teal: #5fd0c4;
+  --presserl-section-blue: #7fb2ff;
+  --presserl-section-purple: #c9a0ff;
+  --presserl-section-pink: #ff8fc0;
+}

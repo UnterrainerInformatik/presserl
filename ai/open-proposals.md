@@ -5,11 +5,6 @@ change — never tick it off.
 
 Milestones from `docs/vision.md`; details in `docs/`.
 
-## M4 — Look
-Reader theme built on `--presserl-*` design tokens per `docs/design-guidelines.md`,
-self-hosted fonts, `data-view` hooks, `custom.css` served from `deploy/theme/`, reader
-text-size switch, dark mode.
-
 ## M5 — Images
 Media upload with MIME sniffing, size limit, re-encoding, EXIF/GPS stripping, renditions
 (thumbnail/web/print); lead images and captions.

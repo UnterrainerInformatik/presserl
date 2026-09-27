@@ -1,0 +1,9 @@
+{#if sections}
+<nav class="section-bar" aria-label="{msg:sectionsLabel}">
+  <ul>
+    {#for section in sections}
+    <li>{#sectionTag section=section /}</li>
+    {/for}
+  </ul>
+</nav>
+{/if}

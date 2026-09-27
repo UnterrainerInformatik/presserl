@@ -64,8 +64,8 @@ GET {{baseUrl}}/
 > {%
     client.test("front page lists the live revision", () => {
         client.assert(response.status === 200, "status " + response.status);
-        client.assert(response.headers.valueOf("Vary") === "Accept-Language", "Vary");
-        client.assert(response.body.includes('<html lang="de">'), "lang");
+        client.assert(response.headers.valueOf("Vary") === "Accept-Language, Cookie", "Vary");
+        client.assert(response.body.includes('<html lang="de" data-text-size="m">'), "lang");
         client.assert(response.body.includes('href="/articles/' + client.global.get("readerArticleId") + '"'), "link");
         client.assert(response.body.includes("&lt;b&gt;Pumpkin&lt;/b&gt; record"), "escaped headline");
         client.assert(!response.body.includes("Unpublished headline"), "unpublished changes leaked");
@@ -94,7 +94,7 @@ Accept-Language: en-GB,en;q=0.9
 
 > {%
     client.test("English chrome", () => {
-        client.assert(response.body.includes('<html lang="en">'), "lang");
+        client.assert(response.body.includes('<html lang="en" data-text-size="m">'), "lang");
         client.assert(response.body.includes("By publisher"), "byline");
         client.assert(response.body.includes("Published on "), "date wording");
     });
@@ -124,3 +124,111 @@ GET {{baseUrl}}/articles/{{readerArticleId}}
 > {%
     client.test("404 after taking offline", () => client.assert(response.status === 404, "status " + response.status));
 %}
+
+### Text-size switch: choose XL and return to the front page
+# @no-redirect
+# @no-cookie-jar
+POST {{baseUrl}}/text-size
+Content-Type: application/x-www-form-urlencoded
+
+size=xl&next=/
+
+> {%
+    client.test("303 home with the cookie", () => {
+        client.assert(response.status === 303, "status " + response.status);
+        client.assert(response.headers.valueOf("Location").endsWith("/"), "location " + response.headers.valueOf("Location"));
+        const cookie = response.headers.valueOf("Set-Cookie");
+        client.assert(cookie.includes("presserl_text_size=xl") && cookie.includes("HttpOnly")
+            && cookie.toLowerCase().includes("samesite=lax"), "cookie " + cookie);
+    });
+%}
+
+### The reader's own size wins
+# @no-cookie-jar
+GET {{baseUrl}}/
+Cookie: presserl_text_size=xl
+
+> {%
+    client.test("data-text-size xl, XL pressed", () => {
+        client.assert(response.body.includes('data-text-size="xl"'), "no data-text-size xl");
+        client.assert(response.body.includes('value="xl" aria-pressed="true"'), "XL not pressed");
+    });
+%}
+
+### Open redirect is refused
+# @no-redirect
+# @no-cookie-jar
+POST {{baseUrl}}/text-size
+Content-Type: application/x-www-form-urlencoded
+
+size=l&next=https://evil.example/
+
+> {%
+    client.test("303 to / instead", () => {
+        client.assert(response.status === 303, "status " + response.status);
+        client.assert(!response.headers.valueOf("Location").includes("evil"), "location " + response.headers.valueOf("Location"));
+    });
+%}
+
+### Unknown size sets no cookie
+# @no-redirect
+# @no-cookie-jar
+POST {{baseUrl}}/text-size
+Content-Type: application/x-www-form-urlencoded
+
+size=huge&next=/
+
+> {%
+    client.test("303 without cookie", () => {
+        client.assert(response.status === 303, "status " + response.status);
+        client.assert(!response.headers.valueOf("Set-Cookie"), "cookie " + response.headers.valueOf("Set-Cookie"));
+    });
+%}
+
+### Fork theme: needs quarkus:dev started with -Dpresserl.theme.dir=../deploy/theme
+GET {{baseUrl}}/theme/custom.css
+
+> {%
+    client.test("custom.css served and revalidated", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.headers.valueOf("Content-Type").startsWith("text/css"), "type " + response.headers.valueOf("Content-Type"));
+        client.assert(response.headers.valueOf("Cache-Control") === "no-cache", "cache " + response.headers.valueOf("Cache-Control"));
+    });
+%}
+
+### The front page links custom.css after the default theme
+# @no-cookie-jar
+GET {{baseUrl}}/
+
+> {%
+    client.test("custom.css linked last", () => {
+        const body = response.body;
+        const own = body.indexOf('href="/theme/custom.css"');
+        client.assert(own > body.indexOf('href="/reader/reader.css"') && own > 0, "custom.css not linked after reader.css");
+    });
+%}
+
+### Path escape out of the theme directory
+GET {{baseUrl}}/theme/%2e%2e/%2e%2e/pom.xml
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### Files of other types are not served
+GET {{baseUrl}}/theme/README.md
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### Default theme font
+GET {{baseUrl}}/reader/fonts/atkinson-hyperlegible-latin-400-normal.woff2
+
+> {%
+    client.test("woff2", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.headers.valueOf("Content-Type") === "font/woff2", "type " + response.headers.valueOf("Content-Type"));
+    });
+%}
+

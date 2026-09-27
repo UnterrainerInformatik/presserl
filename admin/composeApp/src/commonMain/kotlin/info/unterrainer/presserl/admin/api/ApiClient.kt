@@ -16,7 +16,9 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 val json = Json { ignoreUnknownKeys = true }
 
@@ -39,6 +41,17 @@ class ApiClient(
     suspend fun clientConfig(): ClientConfigDto = http.get("$baseUrl/api/client-config").body()
 
     suspend fun newspaper(): NewspaperDto = http.get("$baseUrl/api/newspaper").body()
+
+    /**
+     * Sets the newspaper overrides in [changes] (setting name to value); a `null` value is sent as JSON `null` and
+     * removes the override. Answers the settings after the change.
+     */
+    suspend fun updateNewspaperSettings(changes: Map<String, String?>): NewspaperDto =
+        http.put("$baseUrl/api/newspaper/settings") {
+            bearerAuth(accessToken())
+            contentType(ContentType.Application.Json)
+            setBody(JsonObject(changes.mapValues { (_, value) -> value?.let(::JsonPrimitive) ?: JsonNull }))
+        }.body()
 
     suspend fun me(): MeDto = http.get("$baseUrl/api/me") { bearerAuth(accessToken()) }.body()
 

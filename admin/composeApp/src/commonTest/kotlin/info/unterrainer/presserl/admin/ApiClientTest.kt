@@ -46,6 +46,8 @@ class ApiClientTest {
             val path = request.url.encodedPath
             val body = when {
                 path == "/api/me" -> """{ "username": "papa", "displayName": "Papa", "roles": ["PUBLISHER"] }"""
+                path.startsWith("/api/newspaper") -> """{ "name": "N", "subtitle": "", "visibility": "public",
+                    "settings": { "reader.text-size": "m" }, "overrides": {} }"""
                 path == "/api/articles" && request.method == HttpMethod.Get -> "[$SUMMARY]"
                 path.endsWith("/reviews") -> "[$REVIEW]"
                 path.endsWith("/revisions") -> """[{ "number": 1, "headline": "H", "createdAt": "t", "updatedAt": "t", "live": false }]"""
@@ -80,6 +82,23 @@ class ApiClientTest {
         val request = requests.single()
         assertEquals("https://news.example.org/api/me", request.url)
         assertEquals("Bearer token-123", request.authorization)
+    }
+
+    @Test
+    fun updateNewspaperSettingsPutsValuesAndExplicitNulls() = runTest {
+        assertEquals("m", api.updateNewspaperSettings(mapOf("reader.text-size" to null)).settings.getValue("reader.text-size")
+            .let { (it as JsonPrimitive).content })
+        api.updateNewspaperSettings(mapOf("reader.text-size" to "l"))
+
+        assertEquals(
+            listOf(
+                Recorded(HttpMethod.Put, "https://news.example.org/api/newspaper/settings", "Bearer token-123",
+                    buildJsonObject { put("reader.text-size", JsonNull) }),
+                Recorded(HttpMethod.Put, "https://news.example.org/api/newspaper/settings", "Bearer token-123",
+                    buildJsonObject { put("reader.text-size", "l") }),
+            ),
+            requests,
+        )
     }
 
     @Test

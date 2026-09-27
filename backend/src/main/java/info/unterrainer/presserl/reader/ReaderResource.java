@@ -11,6 +11,7 @@ import org.jboss.resteasy.reactive.RestResponse.Status;
 
 import info.unterrainer.presserl.newspaper.EffectiveSettings;
 import info.unterrainer.presserl.newspaper.NewspaperSettings;
+import info.unterrainer.presserl.newspaper.TextSize;
 import info.unterrainer.presserl.newspaper.Visibility;
 import info.unterrainer.presserl.reader.BodyRenderer.Block;
 import info.unterrainer.presserl.reader.ReaderViewer.Access;
@@ -19,6 +20,7 @@ import io.quarkus.qute.TemplateInstance;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.CookieParam;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -27,6 +29,7 @@ import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.UriInfo;
 
 /**
  * Server-rendered reader pages. Texts follow the preferred language (English when preferred,
@@ -36,6 +39,10 @@ import jakarta.ws.rs.core.MediaType;
  * private newspaper is readable for visitors holding a newspaper role; anonymous visitors are sent to
  * {@code /login}, logged-in visitors without a role get a no-access note and {@code 404}. The decision
  * is made per request against the effective visibility. Private and personal pages are not cached.
+ * <p>
+ * Every page renders the effective text size (the reader's cookie, else the newspaper's
+ * {@code reader.text-size}), links the fork's {@code custom.css} when present and shows the section bar
+ * whenever it shows content.
  */
 @Path("/")
 @Produces(MediaType.TEXT_HTML + ";charset=UTF-8")
@@ -49,13 +56,12 @@ public class ReaderResource {
 
     @CheckedTemplate
     static class Templates {
-        static native TemplateInstance frontpage(String lang, String name, String subtitle, String viewerName,
-                boolean loginRequired, boolean noAccess, ReaderArticle leadStory, List<ReaderArticle> stories);
+        static native TemplateInstance frontpage(ReaderPage page, boolean loginRequired, boolean noAccess,
+                ReaderArticle leadStory, List<ReaderArticle> stories);
 
-        static native TemplateInstance article(String lang, String name, String subtitle, String viewerName,
-                ReaderArticle article, List<Block> blocks);
+        static native TemplateInstance article(ReaderPage page, ReaderArticle article, List<Block> blocks);
 
-        static native TemplateInstance notFound(String lang, String name, String subtitle, String viewerName);
+        static native TemplateInstance notFound(ReaderPage page);
     }
 
     @Inject
@@ -67,20 +73,28 @@ public class ReaderResource {
     @Inject
     SecurityIdentity identity;
 
+    @Inject
+    ThemeFiles theme;
+
     @GET
-    public Uni<RestResponse<String>> frontpage(@Context HttpHeaders headers) {
+    public Uni<RestResponse<String>> frontpage(@Context HttpHeaders headers, @Context UriInfo uri,
+            @CookieParam(TextSizeResource.COOKIE) String textSize) {
         Locale locale = locale(headers);
         ReaderViewer viewer = ReaderViewer.of(identity);
         return settings.effective().flatMap(s -> {
             boolean privateNewspaper = s.visibility() == Visibility.PRIVATE;
             boolean readable = !privateNewspaper || viewer.access() == Access.ENTITLED;
-            Uni<List<ReaderArticle>> listed = readable
-                    ? articles.frontPage(FRONT_PAGE_LIMIT)
-                    : Uni.createFrom().item(List.of());
-            return listed.flatMap(list -> render(Templates.frontpage(locale.getLanguage(), s.name(), s.subtitle(),
-                    viewer.displayName(), !readable && !viewer.loggedIn(), !readable && viewer.loggedIn(),
-                    list.isEmpty() ? null : list.get(0), list.isEmpty() ? List.of() : list.subList(1, list.size())),
-                    locale, Status.OK, noStore(s, viewer)));
+            ReaderPage page = page(locale, s, viewer, textSize, uri);
+            if (!readable) {
+                return render(Templates.frontpage(page, !viewer.loggedIn(), viewer.loggedIn(), null, List.of()),
+                        locale, Status.OK, noStore(s, viewer));
+            }
+            // one after the other: both queries use the request's reactive session
+            return articles.frontPage(FRONT_PAGE_LIMIT).flatMap(list -> articles.sections().flatMap(sections -> render(
+                    Templates.frontpage(page.withSections(sections), false, false,
+                            list.isEmpty() ? null : list.get(0),
+                            list.isEmpty() ? List.of() : list.subList(1, list.size())),
+                    locale, Status.OK, noStore(s, viewer))));
         });
     }
 
@@ -91,7 +105,8 @@ public class ReaderResource {
      */
     @GET
     @Path("articles/{id}")
-    public Uni<RestResponse<String>> article(@PathParam("id") String id, @Context HttpHeaders headers) {
+    public Uni<RestResponse<String>> article(@PathParam("id") String id, @Context HttpHeaders headers,
+            @Context UriInfo uri, @CookieParam(TextSizeResource.COOKIE) String textSize) {
         Locale locale = locale(headers);
         ReaderViewer viewer = ReaderViewer.of(identity);
         return settings.effective().flatMap(s -> {
@@ -100,15 +115,22 @@ public class ReaderResource {
                 return Uni.createFrom().item(redirect(LoginTarget.loginForArticle(id)));
             }
             boolean readable = !privateNewspaper || viewer.access() == Access.ENTITLED;
-            Uni<Optional<ReaderArticle>> found = !readable || !id.matches("\\d{1,18}")
-                    ? Uni.createFrom().item(Optional.empty())
-                    : articles.article(Long.parseLong(id));
+            ReaderPage page = page(locale, s, viewer, textSize, uri);
             boolean noStore = noStore(s, viewer);
-            return found.flatMap(article -> article
-                    .map(a -> render(Templates.article(locale.getLanguage(), s.name(), s.subtitle(),
-                            viewer.displayName(), a, BodyRenderer.blocks(a.body())), locale, Status.OK, noStore))
-                    .orElseGet(() -> render(Templates.notFound(locale.getLanguage(), s.name(), s.subtitle(),
-                            viewer.displayName()), locale, Status.NOT_FOUND, noStore)));
+            if (!readable) {
+                return render(Templates.notFound(page), locale, Status.NOT_FOUND, noStore);
+            }
+            Uni<Optional<ReaderArticle>> found = id.matches("\\d{1,18}")
+                    ? articles.article(Long.parseLong(id))
+                    : Uni.createFrom().item(Optional.empty());
+            // one after the other: both queries use the request's reactive session
+            return found.flatMap(article -> articles.sections().flatMap(sections -> {
+                ReaderPage withBar = page.withSections(sections);
+                return article
+                        .map(a -> render(Templates.article(withBar, a, BodyRenderer.blocks(a.body())), locale,
+                                Status.OK, noStore))
+                        .orElseGet(() -> render(Templates.notFound(withBar), locale, Status.NOT_FOUND, noStore));
+            }));
         });
     }
 
@@ -137,6 +159,16 @@ public class ReaderResource {
                 .build();
     }
 
+    private ReaderPage page(Locale locale, EffectiveSettings s, ReaderViewer viewer, String textSizeCookie,
+            UriInfo uri) {
+        TextSize textSize = TextSizeResource.parse(textSizeCookie).orElse(s.readerTextSize());
+        URI request = uri.getRequestUri();
+        String path = request.getRawQuery() == null ? request.getRawPath()
+                : request.getRawPath() + "?" + request.getRawQuery();
+        return new ReaderPage(locale.getLanguage(), s.name(), s.subtitle(), viewer.displayName(), textSize.value(),
+                theme.customCssPresent(), List.of(), path);
+    }
+
     private static boolean noStore(EffectiveSettings s, ReaderViewer viewer) {
         return s.visibility() == Visibility.PRIVATE || viewer.loggedIn();
     }
@@ -146,7 +178,7 @@ public class ReaderResource {
         return page.setLocale(locale).createUni()
                 .map(html -> {
                     ResponseBuilder<String> response = ResponseBuilder.create(status, html)
-                            .header(HttpHeaders.VARY, HttpHeaders.ACCEPT_LANGUAGE);
+                            .header(HttpHeaders.VARY, HttpHeaders.ACCEPT_LANGUAGE + ", " + HttpHeaders.COOKIE);
                     if (noStore) {
                         response.header(HttpHeaders.CACHE_CONTROL, PRIVATE_NO_STORE);
                     }

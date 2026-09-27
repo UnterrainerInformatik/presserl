@@ -41,6 +41,7 @@ import info.unterrainer.presserl.admin.resources.log_in_again
 import info.unterrainer.presserl.admin.resources.log_out
 import info.unterrainer.presserl.admin.resources.nav_accounts
 import info.unterrainer.presserl.admin.resources.nav_articles
+import info.unterrainer.presserl.admin.resources.nav_newspaper
 import info.unterrainer.presserl.admin.resources.nav_sections
 import info.unterrainer.presserl.admin.resources.login_failed
 import info.unterrainer.presserl.admin.resources.no_roles
@@ -53,6 +54,7 @@ import info.unterrainer.presserl.admin.ui.account.EditRolesScreen
 import info.unterrainer.presserl.admin.ui.account.NewAccountScreen
 import info.unterrainer.presserl.admin.ui.account.SlipPrinter
 import info.unterrainer.presserl.admin.ui.editor.EditorScreen
+import info.unterrainer.presserl.admin.ui.newspaper.NewspaperScreen
 import info.unterrainer.presserl.admin.ui.section.SectionFormScreen
 import info.unterrainer.presserl.admin.ui.section.SectionListScreen
 import info.unterrainer.presserl.admin.ui.section.SectionMembersScreen
@@ -86,6 +88,7 @@ sealed interface Route {
     data class EditRoles(val account: AccountDto, val assignableRoles: List<String>, val sections: List<SectionDto>) : Route
     /** Holds the generated password; leaving the slip drops it. */
     data class AccountSlip(val created: CreatedAccountDto) : Route
+    data object Newspaper : Route
 }
 
 /** [siteUrl] is the origin of the reader, used for "View in reader" and on the account slip. */
@@ -149,6 +152,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                 null -> null
                 Route.Accounts -> NavEntry.ACCOUNTS
                 Route.Sections -> NavEntry.SECTIONS
+                Route.Newspaper -> NavEntry.NEWSPAPER
                 else -> NavEntry.ARTICLES
             },
             onEntry = { entry ->
@@ -157,6 +161,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                         NavEntry.ARTICLES -> Route.ArticleList(ListTab.MINE)
                         NavEntry.SECTIONS -> Route.Sections
                         NavEntry.ACCOUNTS -> Route.Accounts
+                        NavEntry.NEWSPAPER -> Route.Newspaper
                     },
                 )
             },
@@ -228,6 +233,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                         slipPrinter,
                         onDone = { stack = listOf(Route.Accounts) },
                     )
+                    Route.Newspaper -> NewspaperScreen(api)
                 }
             }
         }
@@ -255,6 +261,7 @@ private fun Header(screen: Screen.LoggedIn, entry: NavEntry?, onEntry: (NavEntry
                 NavEntry.ARTICLES -> Res.string.nav_articles
                 NavEntry.SECTIONS -> Res.string.nav_sections
                 NavEntry.ACCOUNTS -> Res.string.nav_accounts
+                NavEntry.NEWSPAPER -> Res.string.nav_newspaper
             }
             NavButton(stringResource(label), entry == navEntry) { onEntry(navEntry) }
         }

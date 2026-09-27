@@ -56,9 +56,9 @@ class ReaderArticlesTest {
 
         String html = page("/", 200);
 
-        assertThat(html).contains("<article class=\"story story--lead\">");
+        assertThat(html).contains("<article class=\"lead-article\">");
         assertThat(html.indexOf("Newer story")).isLessThan(html.indexOf("Older story"));
-        assertThat(html.indexOf("story--lead")).isLessThan(html.indexOf("Newer story"));
+        assertThat(html.indexOf("lead-article")).isLessThan(html.indexOf("Newer story"));
         assertThat(html).contains("href=\"/articles/" + newer + "\"", "href=\"/articles/" + older + "\"");
     }
 
@@ -69,9 +69,9 @@ class ReaderArticlesTest {
                 SEPT_20);
 
         assertThat(page("/", 200)).contains(
-                "<p class=\"story__kicker\">Garden</p>",
+                "<p class=\"kicker\">Garden</p>",
                 "<a href=\"/articles/" + id + "\">Tomatoes</a>",
-                "<p class=\"story__lead\">Harvest is early.</p>",
+                "<p class=\"lead\">Harvest is early.</p>",
                 "Von Anna Bauer",
                 "<time datetime=\"2026-09-20\">20. September 2026</time>");
     }
@@ -111,7 +111,7 @@ class ReaderArticlesTest {
         assertThat(page("/", 200))
                 .contains("<h1 class=\"masthead__name\">My Newspaper</h1>")
                 .contains("Noch keine Artikel veröffentlicht.")
-                .doesNotContain("class=\"story");
+                .doesNotContain("lead-article", "article-card");
     }
 
     @Test
@@ -122,7 +122,7 @@ class ReaderArticlesTest {
 
         String html = page("/", 200);
 
-        assertThat(html.split("<article class=\"story").length - 1).isEqualTo(30);
+        assertThat(html.split("<article class=\"(lead-article|article-card)\">").length - 1).isEqualTo(30);
         assertThat(html).contains(">Story 31<", ">Story 02<").doesNotContain(">Story 01<");
     }
 
@@ -137,15 +137,15 @@ class ReaderArticlesTest {
 
         response.then().statusCode(200)
                 .header("Content-Type", "text/html;charset=UTF-8")
-                .header("Vary", "Accept-Language");
+                .header("Vary", "Accept-Language, Cookie");
         assertThat(response.asString()).contains(
                 "<main data-view=\"article\">",
                 "<title>Hello – My Newspaper</title>",
                 "<p class=\"masthead__name\"><a href=\"/\">My Newspaper</a></p>",
-                "<p class=\"article__kicker\">Garden</p>",
-                "<h1 class=\"article__headline\">Hello</h1>",
-                "<p class=\"article__subheadline\">A subheadline</p>",
-                "<p class=\"article__lead\">The lead.</p>",
+                "<p class=\"kicker\">Garden</p>",
+                "<h1 class=\"headline\">Hello</h1>",
+                "<p class=\"subheadline\">A subheadline</p>",
+                "<p class=\"lead\">The lead.</p>",
                 "Von Anna",
                 "Veröffentlicht am 20. September 2026")
                 .doesNotContain("Aktualisiert");
@@ -205,12 +205,12 @@ class ReaderArticlesTest {
         int paragraph = html.indexOf("<p>It started <strong>in May</strong>.</p>");
         int subhead = html.indexOf("<h2>Watering</h2>");
         int quote = html.indexOf("<blockquote><p>Every day!</p></blockquote>");
-        int list = html.indexOf("<ul>");
+        int list = html.indexOf("<ul>", html.indexOf("class=\"article__body\""));
         assertThat(paragraph).isPositive();
         assertThat(subhead).isGreaterThan(paragraph);
         assertThat(quote).isGreaterThan(subhead);
         assertThat(list).isGreaterThan(quote);
-        assertThat(html.substring(list, html.indexOf("</ul>")))
+        assertThat(html.substring(list, html.indexOf("</ul>", list)))
                 .contains("<li>Water</li>", "<li>Sun</li>")
                 .satisfies(ul -> assertThat(ul.split("<li>").length - 1).isEqualTo(2));
     }
@@ -264,7 +264,12 @@ class ReaderArticlesTest {
                     .header("Content-Type", "text/html;charset=UTF-8")
                     .body(not(containsString("Secret")))
                     .body(not(containsString("Watering")));
-            assertThat(page(path, 404)).as(path).isEqualTo(draftPage);
+            // only the text-size switch's return path differs
+            assertThat(withoutReturnPath(page(path, 404))).as(path).isEqualTo(withoutReturnPath(draftPage));
         }
+    }
+
+    private static String withoutReturnPath(String html) {
+        return html.replaceAll("name=\"next\" value=\"[^\"]*\"", "name=\"next\" value=\"\"");
     }
 }

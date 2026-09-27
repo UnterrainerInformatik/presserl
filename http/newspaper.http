@@ -8,6 +8,127 @@ Accept: application/json
         client.assert(typeof response.body.name === "string", "name");
         client.assert(["public", "private"].includes(response.body.visibility), "visibility");
         client.assert(response.body.settings["editor.level"] !== undefined, "settings");
+        client.assert(typeof response.body.overrides === "object", "overrides");
         client.assert(response.headers.valueOf("Content-Security-Policy").startsWith("default-src 'self'"), "CSP");
     });
+%}
+
+### Token for the publisher
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{username}}&password={{password}}
+
+> {%
+    client.global.set("accessToken", response.body.access_token);
+%}
+
+### Publisher sets the default reader text size
+PUT {{baseUrl}}/api/newspaper/settings
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "reader.text-size": "l" }
+
+> {%
+    client.test("200 with the override", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.settings["reader.text-size"] === "l", "settings " + JSON.stringify(response.body.settings));
+        client.assert(response.body.overrides["reader.text-size"] === "l", "overrides " + JSON.stringify(response.body.overrides));
+    });
+%}
+
+### The public endpoint answers the same
+GET {{baseUrl}}/api/newspaper
+
+> {%
+    client.test("override visible", () => {
+        client.assert(response.body.overrides["reader.text-size"] === "l", "overrides " + JSON.stringify(response.body.overrides));
+    });
+%}
+
+### The reader renders the newspaper default
+# @no-cookie-jar
+GET {{baseUrl}}/
+
+> {%
+    client.test("data-text-size l", () => {
+        client.assert(response.body.includes('data-text-size="l"'), "no data-text-size l");
+    });
+%}
+
+### An invalid value is refused
+PUT {{baseUrl}}/api/newspaper/settings
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "reader.text-size": "huge" }
+
+> {%
+    client.test("400 naming the key", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "reader.text-size", JSON.stringify(response.body));
+    });
+%}
+
+### A non-writable setting is refused, nothing is written
+PUT {{baseUrl}}/api/newspaper/settings
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "media.max-size": "50M", "reader.text-size": "s" }
+
+> {%
+    client.test("400 naming media.max-size", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors.length === 1, JSON.stringify(response.body));
+        client.assert(response.body.errors[0].field === "media.max-size", JSON.stringify(response.body));
+        client.assert(response.body.errors[0].message === "is not a writable setting", JSON.stringify(response.body));
+    });
+%}
+
+### Back to the installation default
+PUT {{baseUrl}}/api/newspaper/settings
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "reader.text-size": null }
+
+> {%
+    client.test("override cleared", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.overrides["reader.text-size"] === undefined, "overrides " + JSON.stringify(response.body.overrides));
+        client.assert(response.body.settings["reader.text-size"] === "m", "settings " + JSON.stringify(response.body.settings));
+    });
+%}
+
+### Token for a reader
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{readerUsername}}&password={{readerPassword}}
+
+> {%
+    client.global.set("readerToken", response.body.access_token);
+%}
+
+### A reader may not change the settings
+PUT {{baseUrl}}/api/newspaper/settings
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{ "reader.text-size": "l" }
+
+> {%
+    client.test("403", () => client.assert(response.status === 403, "status " + response.status));
+%}
+
+### Without a token
+PUT {{baseUrl}}/api/newspaper/settings
+Content-Type: application/json
+
+{ "reader.text-size": "l" }
+
+> {%
+    client.test("401", () => client.assert(response.status === 401, "status " + response.status));
 %}

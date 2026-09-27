@@ -3,13 +3,17 @@ package info.unterrainer.presserl.admin.api
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
-/** `GET /api/newspaper` */
+/**
+ * `GET /api/newspaper` and `PUT /api/newspaper/settings`; [overrides] holds the entries of [settings] that come from a
+ * newspaper override (absent on older servers).
+ */
 @Serializable
 data class NewspaperDto(
     val name: String,
     val subtitle: String,
     val visibility: String,
     val settings: JsonObject,
+    val overrides: JsonObject = JsonObject(emptyMap()),
 )
 
 /** `GET /api/client-config` */

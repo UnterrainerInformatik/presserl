@@ -1,10 +1,13 @@
 <!DOCTYPE html>
-<html lang="{lang}">
+<html lang="{page.lang}" data-text-size="{page.textSize}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{#insert title}{name}{/}</title>
+  <title>{#insert title}{page.name}{/}</title>
   <link rel="stylesheet" href="/reader/reader.css">
+  {#if page.customCss}
+  <link rel="stylesheet" href="/theme/custom.css">
+  {/if}
 </head>
 <body>
 {#insert}{/}

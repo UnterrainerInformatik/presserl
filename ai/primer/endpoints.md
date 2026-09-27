@@ -38,15 +38,52 @@ Effective newspaper settings (code default → environment → database override
       "editor.level": "standard",
       "reader.text-size": "m",
       "media.max-size": "10M"
-    }
+    },
+    "overrides": {}
   }
   ```
   - `subtitle`: empty string when unset.
   - `visibility`: `public` | `private`.
   - `settings` keys are the config keys without the `presserl.` prefix. `editor.level`:
     `starter` | `standard` | `profi`; `reader.text-size`: `s` | `m` | `l` | `xl`.
+  - `overrides`: the entries of `settings` whose value currently comes from a valid newspaper
+    override (database), keyed like `settings`; `{}` when none. A key missing here uses the
+    deployment value or the code default. Clients treat a missing `overrides` (older servers) as
+    `{}`.
 - **Errors:** none specific.
 - **Side effects:** none.
+
+## `PUT /api/newspaper/settings`
+
+Sets or clears newspaper overrides. Writable in this version: `reader.text-size` only.
+
+- **Auth:** bearer token; `PUBLISHER` or `EDITOR_IN_CHIEF` (`allowedActions` contains
+  `CONFIGURE_NEWSPAPER`)
+- **Body:** JSON object of setting name → value. A value stores the override; `null` removes it,
+  so the deployment value (`PRESSERL_READER_TEXT_SIZE`) or the code default applies again. Keys not
+  in the body stay unchanged; `{}` changes nothing. All or nothing: nothing is written when any key
+  is refused.
+  ```json
+  { "reader.text-size": "l" }
+  ```
+  ```json
+  { "reader.text-size": null }
+  ```
+- **Response `200`:** the same body as `GET /api/newspaper` after the change, e.g.
+  ```json
+  { "name": "My Newspaper", "subtitle": "", "visibility": "public",
+    "settings": { "retract.author-can-retract": true, "section.default": "General",
+                  "editor.level": "standard", "reader.text-size": "l", "media.max-size": "10M" },
+    "overrides": { "reader.text-size": "l" } }
+  ```
+- **Errors:**
+  - `400` `{"errors": [...]}` naming every offending key as `field`: a value outside the allowed
+    set or not a string (`"must be one of s, m, l, xl"`), an unknown or non-writable key
+    (`"is not a writable setting"`); `field` `null` when the body is not a JSON object.
+  - `401` (empty body) without a valid token; `403` (empty body) without `PUBLISHER` or
+    `EDITOR_IN_CHIEF`.
+- **Side effects:** updates `newspaper.settings`; the reader uses the new `reader.text-size` for
+  visitors without their own choice from the next page load.
 
 ## `GET /api/client-config`
 
@@ -80,6 +117,12 @@ The logged-in user as seen by the backend.
     "sectionRoles": [ { "sectionId": 1, "sectionName": "Sport", "role": "SECTION_EDITOR" } ],
     "allowedActions": ["WRITE_ARTICLES", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS"] }
   ```
+  The bootstrapped publisher:
+  ```json
+  { "username": "publisher", "displayName": "publisher", "roles": ["PUBLISHER"], "sectionRoles": [],
+    "allowedActions": ["WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS",
+                       "CONFIGURE_NEWSPAPER"] }
+  ```
   - `username`: `preferred_username` claim, falling back to `sub`.
   - `displayName`: `name` claim, falling back to `username`.
   - `roles`: newspaper roles from the `groups` claim in the order `PUBLISHER`,
@@ -98,6 +141,7 @@ The logged-in user as seen by the backend.
     | `MANAGE_SECTIONS` | `PUBLISHER` or `EDITOR_IN_CHIEF` | creating, changing, reordering and deleting sections |
     | `ASSIGN_SECTION_ROLES` | `PUBLISHER`, `EDITOR_IN_CHIEF`, or `SECTION_EDITOR` in any section | section members of at least one section |
     | `ADMINISTER_ACCOUNTS` | `PUBLISHER`, `EDITOR_IN_CHIEF`, or `SECTION_EDITOR` in any section | listing and creating accounts |
+    | `CONFIGURE_NEWSPAPER` | `PUBLISHER` or `EDITOR_IN_CHIEF` | changing the newspaper settings (`PUT /api/newspaper/settings`) |
 - **Errors:** `401` (empty body) without a valid token.
 - **Side effects:** none.
 
@@ -902,3 +946,38 @@ Removes the account's role in the section.
   account, `503`.
 - **Side effects:** section role deleted; logged at INFO with section, account, role and the
   acting user.
+
+---
+
+# Reader routes (not part of `/api`)
+
+Server-rendered reader pages and their helpers; no bearer token, noted here because the admin
+app and forks rely on them.
+
+## `POST /text-size`
+
+The reader's text-size switch (a plain HTML form, no JavaScript).
+
+- **Auth:** none (also for anonymous visitors of a private newspaper)
+- **Body:** `application/x-www-form-urlencoded`: `size` (`s` | `m` | `l` | `xl`, case ignored),
+  `next` (path of the page to return to)
+- **Response:** `303 See Other` to `next` when it is a same-origin path (starts with a single
+  `/`), to `/` otherwise; `Cache-Control: no-store`. For an allowed size it sets the cookie
+  `presserl_text_size=<size>; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax` (+ `Secure` in
+  production, `presserl.reader.cookie-secure`); an unknown or missing size sets no cookie.
+- **Effect:** every reader page renders `<html data-text-size>` from a valid cookie, otherwise
+  from the newspaper's effective `reader.text-size`.
+
+## `GET /theme/<path>`
+
+Read-only files of the fork's theme directory (`presserl.theme.dir`, default
+`/deployments/theme`).
+
+- **Auth:** none
+- **Response `200`:** the file with its content type; only `css`, `woff2`, `woff`, `ttf`, `otf`,
+  `png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `ico`. `Cache-Control: no-cache`,
+  `Last-Modified`; `304` for a matching `If-Modified-Since`.
+- **Errors:** `404` (empty body) for every other type, a missing file, a directory and any path
+  resolving outside the theme directory (also via symlinks).
+- **Effect:** when `custom.css` exists, every reader page links `/theme/custom.css` after
+  `/reader/reader.css`.

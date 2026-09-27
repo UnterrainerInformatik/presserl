@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
@@ -27,7 +28,8 @@ class NewspaperConfigTest {
         EffectiveSettings settings = EffectiveSettings.resolve(config(Map.of()), null);
 
         assertThat(settings).isEqualTo(new EffectiveSettings("My Newspaper", "", Visibility.PUBLIC, true, "General",
-                EditorLevel.STANDARD, TextSize.M, "10M"));
+                EditorLevel.STANDARD, TextSize.M, "10M", Set.of()));
+        assertThat(settings.overridesMap()).isEmpty();
     }
 
     @Test
@@ -84,6 +86,33 @@ class NewspaperConfigTest {
 
         assertThat(settings.sectionDefault()).isEqualTo("General");
         assertThat(settings.mediaMaxSize()).isEqualTo("10M");
+    }
+
+    @Test
+    void validOverridesAreRecordedAndListedWithTheirEffectiveValue() {
+        NewspaperEntity row = new NewspaperEntity();
+        row.settings = new HashMap<>(Map.of("visibility", "private", "reader.text-size", "XL",
+                "retract.author-can-retract", false));
+
+        EffectiveSettings settings = EffectiveSettings.resolve(config(Map.of("PRESSERL_READER_TEXT_SIZE", "l")), row);
+
+        assertThat(settings.overridden()).containsExactlyInAnyOrder("visibility", "reader.text-size",
+                "retract.author-can-retract");
+        // visibility is not part of settings, so it is no entry of overrides
+        assertThat(settings.overridesMap()).containsExactly(
+                Map.entry("retract.author-can-retract", false),
+                Map.entry("reader.text-size", "xl"));
+    }
+
+    @Test
+    void invalidAndDeploymentOnlyOverridesAreNotListed() {
+        NewspaperEntity row = new NewspaperEntity();
+        row.settings = new HashMap<>(Map.of("reader.text-size", "huge", "editor.level", "profi",
+                "retract.author-can-retract", "maybe", "media.max-size", "1G"));
+
+        EffectiveSettings settings = EffectiveSettings.resolve(config(Map.of()), row);
+
+        assertThat(settings.overridesMap()).containsExactly(Map.entry("editor.level", "profi"));
     }
 
     @Test

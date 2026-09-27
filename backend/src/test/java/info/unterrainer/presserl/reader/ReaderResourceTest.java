@@ -37,7 +37,7 @@ class ReaderResourceTest {
         given().get("/").then()
                 .statusCode(200)
                 .header("Content-Type", "text/html;charset=UTF-8")
-                .header("Vary", "Accept-Language")
+                .header("Vary", "Accept-Language, Cookie")
                 .body(containsString("<h1 class=\"masthead__name\">My Newspaper</h1>"))
                 .body(containsString("<main data-view=\"frontpage\">"));
     }
@@ -69,7 +69,7 @@ class ReaderResourceTest {
         emptyNewspaper();
 
         assertThat(given().header("Accept-Language", "de-AT,de;q=0.9").get("/").asString())
-                .contains("<html lang=\"de\">", "Noch keine Artikel veröffentlicht.");
+                .contains("<html lang=\"de\" data-text-size=\"m\">", "Noch keine Artikel veröffentlicht.");
     }
 
     @Test
@@ -77,7 +77,7 @@ class ReaderResourceTest {
         emptyNewspaper();
 
         assertThat(given().header("Accept-Language", "en-GB,en;q=0.9").get("/").asString())
-                .contains("<html lang=\"en\">", "No articles published yet.");
+                .contains("<html lang=\"en\" data-text-size=\"m\">", "No articles published yet.");
     }
 
     @Test
@@ -85,14 +85,15 @@ class ReaderResourceTest {
         emptyNewspaper();
 
         assertThat(given().header("Accept-Language", "fr-FR,en;q=0.8").get("/").asString())
-                .contains("<html lang=\"de\">", "Noch keine Artikel veröffentlicht.");
+                .contains("<html lang=\"de\" data-text-size=\"m\">", "Noch keine Artikel veröffentlicht.");
     }
 
     @Test
     void noLanguagePreferenceGetsGerman() {
         emptyNewspaper();
 
-        assertThat(given().get("/").asString()).contains("<html lang=\"de\">", "Noch keine Artikel veröffentlicht.");
+        assertThat(given().get("/").asString())
+                .contains("<html lang=\"de\" data-text-size=\"m\">", "Noch keine Artikel veröffentlicht.");
     }
 
     @Test
@@ -100,8 +101,8 @@ class ReaderResourceTest {
         long id = emptyNewspaper().published("Hello", Instant.parse("2026-09-20T12:00:00Z"));
 
         assertThat(given().header("Accept-Language", "en-US").get("/articles/" + id).asString())
-                .contains("<html lang=\"en\">", "By Anna", "Published on September 20, 2026");
+                .contains("<html lang=\"en\" data-text-size=\"m\">", "By Anna", "Published on September 20, 2026");
         assertThat(given().header("Accept-Language", "en-US").get("/articles/abc").asString())
-                .contains("<html lang=\"en\">", "Page not found", "<a href=\"/\">To the front page</a>");
+                .contains("<html lang=\"en\" data-text-size=\"m\">", "Page not found", "<a href=\"/\">To the front page</a>");
     }
 }

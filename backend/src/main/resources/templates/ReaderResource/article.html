@@ -1,19 +1,20 @@
 {#include layout/reader}
-{#title}{article.headline} – {name}{/title}
-{#masthead name=name subtitle=subtitle linked=true viewerName=viewerName /}
+{#title}{article.headline} – {page.name}{/title}
 <main data-view="article">
+  {#masthead page=page linked=true /}
   <article class="article">
+    {#sectionTag section=article.section /}
     {#if article.kicker}
-    <p class="article__kicker">{article.kicker}</p>
+    <p class="kicker">{article.kicker}</p>
     {/if}
-    <h1 class="article__headline">{article.headline}</h1>
+    <h1 class="headline">{article.headline}</h1>
     {#if article.subheadline}
-    <p class="article__subheadline">{article.subheadline}</p>
+    <p class="subheadline">{article.subheadline}</p>
     {/if}
     {#if article.lead}
-    <p class="article__lead">{article.lead}</p>
+    <p class="lead">{article.lead}</p>
     {/if}
-    <p class="article__meta">{msg:byline(article.byline)} · <time datetime="{article.publishedAt.isoDate}">{msg:published(article.publishedAt.longDate)}</time>{#if article.updated} · <time datetime="{article.revisedAt.isoDate}">{msg:updated(article.revisedAt.longDate)}</time>{/if}</p>
+    <p class="byline">{msg:byline(article.byline)} · <time datetime="{article.publishedAt.isoDate}">{msg:published(article.publishedAt.longDate)}</time>{#if article.updated} · <time datetime="{article.revisedAt.isoDate}">{msg:updated(article.revisedAt.longDate)}</time>{/if}</p>
     <div class="article__body">
       {#for block in blocks}
       {#when block.type}

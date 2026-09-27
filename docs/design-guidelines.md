@@ -18,11 +18,11 @@ Sections 1, 2, 4 and 5 apply to the **reader** (server-rendered HTML, Qute). Sec
 
 | Rule | Value | Rationale |
 |---|---|---|
-| Body size | default 19 px; reader switch S/M/L/XL (17/19/22/26 px) | BDA: 16–19 px. Younger readers benefit from larger type and shorter lines; for 10–11-year-olds the effect reverses → switchable instead of fixed |
+| Body size | default 19 px; reader switch S/M/L/XL (17/19/22/26 px) on every page, without JavaScript (a form posts to `/text-size`, the choice lives in a cookie for a year); the newspaper's default is set in the admin app | BDA: 16–19 px. Younger readers benefit from larger type and shorter lines; for 10–11-year-olds the effect reverses → switchable instead of fixed |
 | Line length | max. 60–70 characters (`max-width: 65ch`) | BDA |
 | Line height | 1.5 | BDA, children's reading research |
 | Letter spacing | slightly increased (`0.02em`, `0.04em` at XL) | children rate increased letter spacing as easiest to read |
-| Body face | sans-serif with unambiguous shapes (I/l/1, a/ɑ): **Atkinson Hyperlegible** (default) or **Andika** (beginning readers) — both OFL, self-hosted | BDA recommends sans-serif; no external font CDNs |
+| Body face | sans-serif with unambiguous shapes (I/l/1, a/ɑ): **Atkinson Hyperlegible** (default) or **Andika** (beginning readers) — both OFL, shipped as WOFF2 under `/reader/fonts/` with their licence texts; a face is only downloaded when used | BDA recommends sans-serif; no external font CDNs |
 | Headline face | serif / display allowed (large enough) | newspaper character |
 | Alignment | left-aligned, no justification, no automatic hyphenation | justification creates rivers; hyphenation slows beginning readers |
 | Emphasis | bold, not italics; no ALL CAPS in body text | BDA |
@@ -72,13 +72,21 @@ All levels:
     --presserl-font-body: "Atkinson Hyperlegible", sans-serif;
     --presserl-font-headline: "Playfair Display", serif;
     --presserl-color-paper: #fbf8f1;
-    --presserl-color-ink: #1d1d1b;
-    --presserl-color-accent: #b3261e;
+    --presserl-color-ink: #1d1b18;
+    --presserl-color-muted: #5b5650;
+    --presserl-color-accent: #a8321d;
+    --presserl-color-rule: #d9d2c3;
     --presserl-text-size: 19px;
+    --presserl-letter-spacing: 0.02em;
     --presserl-measure: 65ch;
     --presserl-grid-columns: 12;
+    --presserl-section-red: #c62828;   /* … one per palette key: red, orange, yellow, green, teal, blue, purple, pink */
   }
   ```
+
+  Dark mode redefines only the colour tokens inside `@media (prefers-color-scheme: dark)`. The server
+  renders the effective text size as `<html data-text-size="s|m|l|xl">`; the theme maps it to
+  `--presserl-text-size`, and all other sizes are relative to it.
 
 - `deploy/theme/` is mounted into the `presserl` container and served by the reader at `/theme/`; `custom.css` is loaded **after** the default theme and may override tokens or whole views:
 
@@ -88,9 +96,10 @@ All levels:
   @media print { [data-view="print-issue"] { --presserl-grid-columns: 3; } }
   ```
 
-- Public, stable styling API: tokens, `data-view` attributes and documented classes (`.masthead`, `.lead-article`, `.article-card`, `.byline`, `.kicker`, `.section-bar`, …). Everything else is internal and may change.
+- Public, stable styling API: tokens, `data-view` attributes (`frontpage`, `article`, `not-found`) and these documented classes: `.masthead`, `.masthead__name`, `.masthead__subtitle`, `.section-bar`, `.section-tag` (with `data-section-color="<key>"`), `.text-size-switch`, `.lead-article`, `.article-card`, `.kicker`, `.headline`, `.subheadline`, `.lead`, `.byline`, `.article`, `.article__body`, `.note`. Everything else (other classes, tokens prefixed `--presserl-_`) is internal and may change.
+- Front page: a grid of `--presserl-grid-columns` columns (12) on wide screens, 6 on tablets, 1 on phones; the lead story spans the full width, the other stories are equal cards separated by thin rules. A section bar below the masthead lists the sections with their colour markers; stories and articles show their section the same way.
 - Custom fonts and images go into `deploy/theme/fonts/` and `deploy/theme/` — same origin, CSP stays `self`.
-- Upstream ships 2–3 example themes (*Classic*, *Colourful* for younger kids, *Night*) as templates to copy.
+- Upstream ships the example themes *Classic*, *Colourful* (for younger kids) and *Night* in `deploy/theme/examples/` as templates to copy; `deploy/theme/custom.css` is a comment-only starter. Changes apply on the next page load (`Cache-Control: no-cache`).
 
 ## 6. Account slip (printable)
 

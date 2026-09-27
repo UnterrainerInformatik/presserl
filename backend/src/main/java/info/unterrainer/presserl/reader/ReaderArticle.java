@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import info.unterrainer.presserl.article.ArticleEntity;
 import info.unterrainer.presserl.article.ArticleRevisionEntity;
+import info.unterrainer.presserl.section.SectionEntity;
 
 /**
  * A published article as the reader shows it: the content of its live revision only.
@@ -15,6 +16,7 @@ import info.unterrainer.presserl.article.ArticleRevisionEntity;
  * @param byline      the author's display name, or the username when that is empty
  * @param publishedAt first publication of the article
  * @param revisedAt   when the live revision was published
+ * @param section     the article's section
  */
 public record ReaderArticle(
         long id,
@@ -25,12 +27,13 @@ public record ReaderArticle(
         JsonNode body,
         String byline,
         Instant publishedAt,
-        Instant revisedAt) {
+        Instant revisedAt,
+        ReaderSection section) {
 
-    static ReaderArticle of(ArticleEntity article, ArticleRevisionEntity live) {
+    static ReaderArticle of(ArticleEntity article, ArticleRevisionEntity live, SectionEntity section) {
         String byline = article.authorDisplayName.isBlank() ? article.authorUsername : article.authorDisplayName;
         return new ReaderArticle(article.id, live.kicker, live.headline, live.subheadline, live.lead, live.body,
-                byline, article.publishedAt, live.publishedAt);
+                byline, article.publishedAt, live.publishedAt, ReaderSection.of(section));
     }
 
     /**

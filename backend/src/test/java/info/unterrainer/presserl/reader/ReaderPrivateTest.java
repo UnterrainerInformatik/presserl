@@ -54,7 +54,19 @@ class ReaderPrivateTest {
         assertThat(response.asString())
                 .contains("<h1 class=\"masthead__name\">My Newspaper</h1>", "Diese Zeitung ist privat.",
                         "<a href=\"/login\">Anmelden</a>")
-                .doesNotContain("Private headline", "class=\"story", "/articles/", "/logout");
+                .doesNotContain("Private headline", "lead-article", "article-card", "/articles/", "/logout",
+                        "section-bar", "section-tag");
+    }
+
+    @Test
+    void anonymousVisitorChoosesATextSize() {
+        Response response = given().redirects().follow(false).formParam("size", "xl").formParam("next", "/")
+                .post("/text-size");
+
+        assertThat(response.statusCode()).isEqualTo(303);
+        assertThat(response.cookie("presserl_text_size")).isEqualTo("xl");
+        assertThat(given().cookie("presserl_text_size", "xl").get("/").asString())
+                .contains("data-text-size=\"xl\"", "class=\"text-size-switch\"", "Diese Zeitung ist privat.");
     }
 
     @Test

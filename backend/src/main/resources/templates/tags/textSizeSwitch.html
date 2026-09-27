@@ -1,0 +1,7 @@
+<form class="text-size-switch" method="post" action="/text-size" aria-labelledby="text-size-label">
+  <span class="text-size-switch__label" id="text-size-label">{msg:textSizeLabel}</span>
+  <input type="hidden" name="next" value="{page.path}">
+  {#for choice in page.textSizes}
+  <button type="submit" name="size" value="{choice.value}" aria-pressed="{choice.current}" title="{msg:textSizeName(choice.value)}">{choice.label}</button>
+  {/for}
+</form>

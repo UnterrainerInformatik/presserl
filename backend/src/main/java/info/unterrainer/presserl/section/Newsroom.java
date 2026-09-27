@@ -62,6 +62,13 @@ public record Newsroom(CurrentUser user, Map<Long, SectionRole> sectionRoles) {
     }
 
     /**
+     * Administrators change the newspaper settings.
+     */
+    public boolean mayConfigureNewspaper() {
+        return isAdministrator();
+    }
+
+    /**
      * Administrators and every holder of a section role may use the article endpoints.
      */
     public boolean isWriter() {
@@ -100,6 +107,9 @@ public record Newsroom(CurrentUser user, Map<Long, SectionRole> sectionRoles) {
         }
         if (mayAdministerAccounts()) {
             actions.add(NewspaperAction.ADMINISTER_ACCOUNTS);
+        }
+        if (mayConfigureNewspaper()) {
+            actions.add(NewspaperAction.CONFIGURE_NEWSPAPER);
         }
         return List.copyOf(actions);
     }

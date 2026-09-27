@@ -1,0 +1,46 @@
+/*
+ * Classic — the built-in default theme written out, as a starting point for your own colours
+ * and fonts. Copy it over theme/custom.css and change what you like.
+ */
+
+:root {
+  --presserl-font-body: "Atkinson Hyperlegible", "Verdana", sans-serif;
+  --presserl-font-headline: "Playfair Display", "Georgia", serif;
+
+  --presserl-color-paper: #fbf8f1;
+  --presserl-color-ink: #1d1b18;
+  --presserl-color-muted: #5b5650;
+  --presserl-color-accent: #a8321d;
+  --presserl-color-rule: #d9d2c3;
+
+  --presserl-measure: 65ch;
+  --presserl-grid-columns: 12;
+
+  --presserl-section-red: #c62828;
+  --presserl-section-orange: #bf5a00;
+  --presserl-section-yellow: #9a7400;
+  --presserl-section-green: #2e7d32;
+  --presserl-section-teal: #00786b;
+  --presserl-section-blue: #1565c0;
+  --presserl-section-purple: #7b1fa2;
+  --presserl-section-pink: #c2185b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --presserl-color-paper: #1b1a17;
+    --presserl-color-ink: #ece7dc;
+    --presserl-color-muted: #b5ad9f;
+    --presserl-color-accent: #ff9277;
+    --presserl-color-rule: #403c35;
+
+    --presserl-section-red: #ef6b6b;
+    --presserl-section-orange: #f39a4a;
+    --presserl-section-yellow: #e3c24a;
+    --presserl-section-green: #6cc070;
+    --presserl-section-teal: #4db6ac;
+    --presserl-section-blue: #6ea8f0;
+    --presserl-section-purple: #c08be0;
+    --presserl-section-pink: #f06ba0;
+  }
+}

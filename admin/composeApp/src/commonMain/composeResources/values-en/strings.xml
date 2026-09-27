@@ -152,4 +152,15 @@
     <string name="action_trust">Trust</string>
     <string name="confirm_trust_title">Trust this account?</string>
     <string name="confirm_trust_text">Articles by “%1$s” will no longer wait for %2$s.</string>
+    <string name="nav_newspaper">Newspaper</string>
+    <string name="newspaper_settings_title">Newspaper</string>
+    <string name="newspaper_text_size">Text size in the reader</string>
+    <string name="newspaper_text_size_hint">Applies to everyone who has not chosen a text size of their own. Every reader can change it on the page.</string>
+    <string name="text_size_default">Installation default</string>
+    <string name="text_size_s">S – small (%1$d px)</string>
+    <string name="text_size_m">M – medium (%1$d px)</string>
+    <string name="text_size_l">L – large (%1$d px)</string>
+    <string name="text_size_xl">XL – extra large (%1$d px)</string>
+    <string name="newspaper_text_size_effective">The reader now uses: %1$s</string>
+    <string name="newspaper_save_failed">Not saved: %1$s</string>
 </resources>

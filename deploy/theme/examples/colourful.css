@@ -1,0 +1,50 @@
+/*
+ * Colourful — for younger readers: Andika as body face (made for beginning readers), a brighter
+ * accent, rounder cards and headlines in the body face. Copy it over theme/custom.css.
+ */
+
+:root {
+  --presserl-font-body: "Andika", "Verdana", sans-serif;
+  --presserl-font-headline: "Andika", "Verdana", sans-serif;
+
+  --presserl-color-paper: #fffaf0;
+  --presserl-color-ink: #1f2433;
+  --presserl-color-muted: #565b6b;
+  --presserl-color-accent: #0a66c2;
+  --presserl-color-rule: #e6dcc8;
+
+  --presserl-letter-spacing: 0.03em;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --presserl-color-paper: #1a1d29;
+    --presserl-color-ink: #f1f3f8;
+    --presserl-color-muted: #b7bccb;
+    --presserl-color-accent: #7cc0ff;
+    --presserl-color-rule: #363b4d;
+  }
+}
+
+.masthead {
+  border-bottom: 6px solid var(--presserl-color-accent);
+}
+
+.article-card {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 2px solid var(--presserl-color-rule);
+  border-radius: 1rem;
+}
+
+.lead-article {
+  padding: 1.25rem;
+  border: 2px solid var(--presserl-color-accent);
+  border-radius: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.section-tag::before {
+  width: 1em;
+  height: 1em;
+}

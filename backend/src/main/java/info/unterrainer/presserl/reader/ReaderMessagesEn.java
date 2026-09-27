@@ -56,4 +56,16 @@ public interface ReaderMessagesEn extends ReaderMessages {
     @Override
     @Message("To the front page")
     String backToFrontPage();
+
+    @Override
+    @Message("Text size")
+    String textSizeLabel();
+
+    @Override
+    @Message("{#when size}{#is 's'}small{#is 'm'}medium{#is 'l'}large{#is 'xl'}extra large{/when}")
+    String textSizeName(String size);
+
+    @Override
+    @Message("Sections")
+    String sectionsLabel();
 }

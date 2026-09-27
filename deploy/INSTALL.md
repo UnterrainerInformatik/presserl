@@ -166,6 +166,25 @@ may read as well. A reader logs in via the front page's **Log in** link and sees
 **Log out** link at the top of every page. Accounts without one of these groups can log in, but
 see a note that they have no access.
 
+### Theme
+
+The look of the reader lives in `theme/` next to `compose.yaml`, mounted read-only into the
+container and served at `https://<hostname>/theme/`. Edit `theme/custom.css`: it is loaded after
+the built-in default theme, and its comments list every token (fonts, colours, text size,
+columns, section colours), the `data-view` values and the stable class names you can use. To
+start from a ready-made look, copy an example over it:
+
+```sh
+cp theme/examples/night.css theme/custom.css    # or classic.css, colourful.css
+```
+
+Own fonts go into `theme/fonts/`, images anywhere in `theme/`; reference them relative to
+`custom.css`. A changed theme applies on the next page load — no restart. Details in
+`theme/README.md`.
+
+The default text size of the reader (S/M/L/XL) is set by a publisher or editor-in-chief in the
+admin app under **Newspaper**; every reader can still choose their own size on the page.
+
 ## 7. Updating
 
 Set the new version in `.env` (`PRESSERL_IMAGE=gufalcon/presserl:<tag>`), then:

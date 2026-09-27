@@ -1,7 +1,7 @@
 {#include layout/reader}
-{#title}{msg:notFoundTitle} – {name}{/title}
-{#masthead name=name subtitle=subtitle linked=true viewerName=viewerName /}
+{#title}{msg:notFoundTitle} – {page.name}{/title}
 <main data-view="not-found">
+  {#masthead page=page linked=true /}
   <h1>{msg:notFoundTitle}</h1>
   <p>{msg:notFoundText}</p>
   <p><a href="/">{msg:backToFrontPage}</a></p>

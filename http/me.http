@@ -21,7 +21,8 @@ Accept: application/json
         client.assert(Array.isArray(response.body.sectionRoles), "sectionRoles " + JSON.stringify(response.body.sectionRoles));
     });
     client.test("publisher may do everything", () => {
-        const expected = ["WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS"];
+        const expected = ["WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS",
+            "CONFIGURE_NEWSPAPER"];
         client.assert(JSON.stringify(response.body.allowedActions) === JSON.stringify(expected),
             "allowedActions " + JSON.stringify(response.body.allowedActions));
     });

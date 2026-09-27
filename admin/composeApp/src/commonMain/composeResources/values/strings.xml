@@ -152,4 +152,15 @@
     <string name="action_trust">Vertrauen</string>
     <string name="confirm_trust_title">Vertrauen aussprechen?</string>
     <string name="confirm_trust_text">Artikel von „%1$s“ warten dann nicht mehr auf %2$s.</string>
+    <string name="nav_newspaper">Zeitung</string>
+    <string name="newspaper_settings_title">Zeitung</string>
+    <string name="newspaper_text_size">Schriftgröße im Leser</string>
+    <string name="newspaper_text_size_hint">Gilt für alle, die keine eigene Schriftgröße gewählt haben. Jeder Leser kann sie auf der Seite selbst ändern.</string>
+    <string name="text_size_default">Voreinstellung der Installation</string>
+    <string name="text_size_s">S – klein (%1$d px)</string>
+    <string name="text_size_m">M – mittel (%1$d px)</string>
+    <string name="text_size_l">L – groß (%1$d px)</string>
+    <string name="text_size_xl">XL – sehr groß (%1$d px)</string>
+    <string name="newspaper_text_size_effective">Im Leser gilt jetzt: %1$s</string>
+    <string name="newspaper_save_failed">Nicht gespeichert: %1$s</string>
 </resources>
