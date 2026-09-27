@@ -42,12 +42,22 @@ class ApiClient(
 
     suspend fun me(): MeDto = http.get("$baseUrl/api/me") { bearerAuth(accessToken()) }.body()
 
-    /** Articles, newest change first; [status] filters by status, [mine] to the user's own articles. */
-    suspend fun articles(status: String? = null, mine: Boolean = false): List<ArticleSummaryDto> =
+    /**
+     * Articles, newest change first; [status] filters by status, [mine] to the user's own articles,
+     * [pending] to articles waiting for approval, [awaitingMe] to those the user may approve now.
+     */
+    suspend fun articles(
+        status: String? = null,
+        mine: Boolean = false,
+        pending: Boolean = false,
+        awaitingMe: Boolean = false,
+    ): List<ArticleSummaryDto> =
         http.get("$baseUrl/api/articles") {
             bearerAuth(accessToken())
             status?.let { parameter("status", it) }
             if (mine) parameter("mine", true)
+            if (pending) parameter("pending", true)
+            if (awaitingMe) parameter("awaitingMe", true)
         }.body()
 
     suspend fun article(id: Long): ArticleDto = http.get("$baseUrl/api/articles/$id") { bearerAuth(accessToken()) }.body()

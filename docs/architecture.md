@@ -144,7 +144,7 @@ DELETE /api/sections/{id}                 editor-in-chief+; only without article
 GET    /api/sections/{id}/members         who may assign section roles there                 (implemented)
 PUT    /api/sections/{id}/members/{acc}   assign/replace a section role, within my scope     (implemented)
 DELETE /api/sections/{id}/members/{acc}   remove a section role, within my scope             (implemented)
-GET    /api/articles?status=…&mine=true&pending=true   visible articles: all for editor-in-chief+, own and own sections' for section editors, own for reporters (implemented)
+GET    /api/articles?status=…&mine=true&pending=true&awaitingMe=true   visible articles: all for editor-in-chief+, own and own sections' for section editors, own for reporters (implemented)
 GET    /api/articles/{id}                 visible articles only, else 404                    (implemented)
 POST   /api/articles                      reporter+ in a section they may write in           (implemented)
 PUT    /api/articles/{id}                 author with write access to the section; overwrites the working revision, or starts a new one after a publication; optional move to another section (implemented)
@@ -158,7 +158,6 @@ POST   /api/articles/{id}/offline         take offline: author, section editor, 
 POST   /api/articles/{id}/unlock          publisher: lift the emergency-brake lock, the article stays offline
 GET    /api/articles/{id}/revisions       revision history                                   (implemented)
 GET    /api/articles/{id}/revisions/{n}   one revision                                       (implemented)
-GET    /api/review-queue                  what I have to approve (empty for solo)
 GET    /api/accounts                      section editor+; all accounts with their section roles (implemented)
 POST   /api/accounts                      create account (roles and section roles ≤ mine, within my scope) → username + pass-phrase for the slip (implemented)
 POST   /api/accounts/{id}/password-reset  anyone above the person, never a publisher, never oneself → new pass-phrase for the slip (implemented)
@@ -187,7 +186,7 @@ Every reader view sets `data-view="…"` on `<main>` (e.g. `frontpage`, `article
 
 1. **My articles** — cards by status, big "New article" button
 2. **Editor** — age levels; preview opens the article in the reader
-3. **Review queue** — only visible when there is something to approve
+3. **Review queue** — "Waiting for me (n)" tab of the article lists (`GET /api/articles?awaitingMe=true`), only visible when there is something to approve (implemented)
 4. **Accounts** — create (with printable slip), reset password, lock, assign roles, trust
 5. **Sections** — create, order, colours, section roles
 6. **Settings** — newspaper name, subtitle, visibility (publisher)

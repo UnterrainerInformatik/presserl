@@ -22,6 +22,7 @@
     <string name="action_failed">That did not work: %1$s</string>
     <string name="tab_mine">My articles</string>
     <string name="tab_all">All articles</string>
+    <string name="tab_queue">Waiting for me (%1$d)</string>
     <string name="new_article">New article</string>
     <string name="no_articles">There are no articles here yet.</string>
     <string name="no_headline">(no headline yet)</string>

@@ -44,12 +44,14 @@ public class ArticleService {
      * Summaries of the articles visible to the user with their latest revision and section, newest
      * change first, in one query.
      *
-     * @param status  only articles in this status, if not {@code null}
-     * @param mine    only articles authored by the user
-     * @param pending only articles with a pending submission
+     * @param status     only articles in this status, if not {@code null}
+     * @param mine       only articles authored by the user
+     * @param pending    only articles with a pending submission
+     * @param excludeOwn only articles authored by someone else
      */
     @WithSession
-    public Uni<List<ArticleView>> list(Newsroom newsroom, ArticleStatus status, boolean mine, boolean pending) {
+    public Uni<List<ArticleView>> list(Newsroom newsroom, ArticleStatus status, boolean mine, boolean pending,
+            boolean excludeOwn) {
         List<Long> editedSections = newsroom.sectionRoles().entrySet().stream()
                 .filter(entry -> entry.getValue() == SectionRole.SECTION_EDITOR)
                 .map(Map.Entry::getKey)
@@ -67,6 +69,9 @@ public class ArticleService {
         if (pending) {
             hql.append(" and a.pendingLevel is not null");
         }
+        if (excludeOwn) {
+            hql.append(" and a.authorSub <> :viewer");
+        }
         if (restricted) {
             hql.append(editedSections.isEmpty() ? " and a.authorSub = :viewer"
                     : " and (a.authorSub = :viewer or a.sectionId in :editedSections)");
@@ -80,8 +85,10 @@ public class ArticleService {
             if (mine) {
                 query.setParameter("sub", newsroom.user().sub());
             }
-            if (restricted) {
+            if (restricted || excludeOwn) {
                 query.setParameter("viewer", newsroom.user().sub());
+            }
+            if (restricted) {
                 if (!editedSections.isEmpty()) {
                     query.setParameter("editedSections", editedSections);
                 }

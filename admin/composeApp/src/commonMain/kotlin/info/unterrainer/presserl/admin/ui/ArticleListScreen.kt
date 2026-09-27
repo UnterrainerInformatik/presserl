@@ -21,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,31 +37,73 @@ import info.unterrainer.presserl.admin.resources.no_articles
 import info.unterrainer.presserl.admin.resources.no_headline
 import info.unterrainer.presserl.admin.resources.tab_all
 import info.unterrainer.presserl.admin.resources.tab_mine
+import info.unterrainer.presserl.admin.resources.tab_queue
 import info.unterrainer.presserl.admin.resources.unpublished_changes
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
-enum class ListTab { MINE, ALL }
+enum class ListTab { MINE, ALL, QUEUE }
 
+/** The tabs offered: [ListTab.QUEUE] only while the last queue response ([queue], `null` before the first) is non-empty. */
+fun visibleTabs(queue: List<ArticleSummaryDto>?): List<ListTab> =
+    if (queue.isNullOrEmpty()) listOf(ListTab.MINE, ListTab.ALL) else ListTab.entries
+
+/** The tab to show once [queue] arrived: [ListTab.MINE] instead of a queue that became empty, otherwise [tab]. */
+fun tabAfterQueue(tab: ListTab, queue: List<ArticleSummaryDto>): ListTab =
+    if (tab == ListTab.QUEUE && queue.isEmpty()) ListTab.MINE else tab
+
+/**
+ * The article lists. The review queue (`awaitingMe`) is fetched on every entry and reload whatever
+ * [tab] is selected and handed to [onQueue]; [queue] is the last response, kept by the caller so
+ * the tab survives a visit to the editor. With [ListTab.QUEUE] selected it is also the list shown.
+ */
 @Composable
-fun ArticleListScreen(api: ApiClient, tab: ListTab, onTab: (ListTab) -> Unit, onOpen: (Long) -> Unit) {
+fun ArticleListScreen(
+    api: ApiClient,
+    tab: ListTab,
+    queue: List<ArticleSummaryDto>?,
+    onQueue: (List<ArticleSummaryDto>) -> Unit,
+    onTab: (ListTab) -> Unit,
+    onOpen: (Long) -> Unit,
+) {
     val scope = rememberCoroutineScope()
     var articles by remember(tab) { mutableStateOf<List<ArticleSummaryDto>?>(null) }
     var error by remember(tab) { mutableStateOf<String?>(null) }
+    // whether this entry's queue response arrived; until then a selected queue shows "loading"
+    var queueLoaded by remember { mutableStateOf(false) }
+    var queueError by remember { mutableStateOf<String?>(null) }
     var loads by remember { mutableStateOf(0) }
     var creating by remember { mutableStateOf(false) }
+    val currentTab by rememberUpdatedState(tab)
 
+    LaunchedEffect(loads) {
+        queueError = null
+        attempt({ queueError = it }) { api.articles(awaitingMe = true) }?.let { fetched ->
+            onQueue(fetched)
+            queueLoaded = true
+            val next = tabAfterQueue(currentTab, fetched)
+            if (next != currentTab) onTab(next)
+        }
+    }
     LaunchedEffect(tab, loads) {
+        if (tab == ListTab.QUEUE) return@LaunchedEffect
         error = null
         articles = attempt({ error = it }) { api.articles(mine = tab == ListTab.MINE) }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            PrimaryTabRow(selectedTabIndex = tab.ordinal, modifier = Modifier.weight(1f)) {
-                Tab(selected = tab == ListTab.MINE, onClick = { onTab(ListTab.MINE) }, text = { Text(stringResource(Res.string.tab_mine)) })
-                Tab(selected = tab == ListTab.ALL, onClick = { onTab(ListTab.ALL) }, text = { Text(stringResource(Res.string.tab_all)) })
+            val tabs = visibleTabs(queue)
+            PrimaryTabRow(selectedTabIndex = tabs.indexOf(tab).coerceAtLeast(0), modifier = Modifier.weight(1f)) {
+                tabs.forEach { entry ->
+                    val label = when (entry) {
+                        ListTab.MINE -> stringResource(Res.string.tab_mine)
+                        ListTab.ALL -> stringResource(Res.string.tab_all)
+                        ListTab.QUEUE -> stringResource(Res.string.tab_queue, queue.orEmpty().size)
+                    }
+                    Tab(selected = tab == entry, onClick = { onTab(entry) }, text = { Text(label) })
+                }
             }
             Button(
                 enabled = !creating,
@@ -73,9 +116,10 @@ fun ArticleListScreen(api: ApiClient, tab: ListTab, onTab: (ListTab) -> Unit, on
                 },
             ) { Text(stringResource(Res.string.new_article)) }
         }
-        val current = articles
+        val current = if (tab == ListTab.QUEUE) queue.takeIf { queueLoaded } else articles
+        val failure = if (tab == ListTab.QUEUE) queueError else error
         when {
-            error != null -> LoadFailed(error!!, onReload = { loads++ })
+            failure != null -> LoadFailed(failure, onReload = { loads++ })
             current == null -> Text(stringResource(Res.string.loading))
             current.isEmpty() -> Text(stringResource(Res.string.no_articles))
             else -> LazyColumn {

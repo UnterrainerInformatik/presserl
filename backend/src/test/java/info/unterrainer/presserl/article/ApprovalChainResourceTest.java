@@ -641,6 +641,69 @@ class ApprovalChainResourceTest {
         as(publisher).get("/api/articles").then().statusCode(200).body("id.size()", equalTo(3));
     }
 
+    // --- awaitingMe
+
+    private static ValidatableResponse awaiting(String token, String filters) {
+        return as(token).get("/api/articles?awaitingMe=true" + filters).then().statusCode(200);
+    }
+
+    @Test
+    void articlesAwaitingTheSectionEditor() {
+        long sport = staffedSport();
+        long reporters = create(reader, in(sport, "Goal"));
+        submit(reader, reporters).statusCode(200).body("pendingLevel", equalTo("SECTION_EDITOR"));
+        long chiefs = create(chief, in(sport, "Editorial"));
+        submit(chief, chiefs).statusCode(200).body("pendingLevel", equalTo("PUBLISHER"));
+
+        awaiting(nogroups, "").body("id", contains((int) reporters))
+                .body("allowedActions[0]", hasItem("APPROVE"));
+    }
+
+    @Test
+    void ownSubmissionIsNotAwaitingTheAuthor() {
+        long kultur = section("Kultur");
+        assign(kultur, "reader", "REPORTER");
+        long own = create(chief, in(kultur, "Editorial"));
+        submit(chief, own).statusCode(200).body("pendingLevel", equalTo("PUBLISHER"));
+        long reporters = create(reader, in(kultur, "Theatre"));
+        submit(reader, reporters).statusCode(200).body("pendingLevel", equalTo("EDITOR_IN_CHIEF"));
+
+        awaiting(chief, "").body("id", contains((int) reporters));
+        awaiting(chief, "&mine=true").body("$", empty());
+    }
+
+    @Test
+    void higherLevelSeesLowerPendingLevels() {
+        long sport = staffedSport();
+        long waitingDraft = create(reader, in(sport, "Waiting"));
+        submit(reader, waitingDraft).statusCode(200).body("pendingLevel", equalTo("SECTION_EDITOR"));
+        long published = publishedByChief(sport, "First");
+        save(chief, published, in(sport, "Second")).statusCode(200);
+        submit(chief, published).statusCode(200).body("pendingLevel", equalTo("PUBLISHER"));
+        create(reader, in(sport, "Not submitted"));
+
+        awaiting(publisher, "").body("id", containsInAnyOrder((int) waitingDraft, (int) published));
+        awaiting(publisher, "&status=PUBLISHED").body("id", contains((int) published));
+        awaiting(publisher, "&status=DRAFT").body("$", empty());
+        awaiting(publisher, "&pending=true").body("id.size()", equalTo(2));
+    }
+
+    @Test
+    void reporterAwaitsNothing() {
+        long id = create(reader, in(staffedSport(), "Goal"));
+        submit(reader, id).statusCode(200);
+        awaiting(reader, "").body("$", empty());
+    }
+
+    @Test
+    void soloPublisherAwaitsNothing() {
+        long sport = section("Sport");
+        create(publisher, in(sport, "Draft"));
+        long published = create(publisher, in(sport, "Online"));
+        action(publisher, published, "publish").statusCode(200);
+        awaiting(publisher, "").body("$", empty());
+    }
+
     @Test
     void listEntriesCarryTheChainActions() {
         long id = create(reader, in(staffedSport(), "Goal"));

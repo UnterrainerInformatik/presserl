@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.AccountDto
+import info.unterrainer.presserl.admin.api.ArticleSummaryDto
 import info.unterrainer.presserl.admin.api.CreatedAccountDto
 import info.unterrainer.presserl.admin.api.MeDto
 import info.unterrainer.presserl.admin.api.NewspaperDto
@@ -136,6 +137,8 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
     var stack by remember {
         mutableStateOf(if (screen.mayWriteArticles) listOf<Route>(Route.ArticleList(ListTab.MINE)) else emptyList())
     }
+    // the last review-queue response, kept while the editor is open (design D3/D4)
+    var queue by remember { mutableStateOf<List<ArticleSummaryDto>?>(null) }
     val push = { route: Route -> stack = stack + route }
     val back = { stack = stack.dropLast(1) }
 
@@ -167,6 +170,8 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                     is Route.ArticleList -> ArticleListScreen(
                         api,
                         route.tab,
+                        queue,
+                        onQueue = { queue = it },
                         onTab = { stack = stack.dropLast(1) + Route.ArticleList(it) },
                         onOpen = { push(Route.Editor(it)) },
                     )

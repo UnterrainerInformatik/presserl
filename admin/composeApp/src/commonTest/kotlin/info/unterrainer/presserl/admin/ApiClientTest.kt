@@ -102,6 +102,21 @@ class ApiClientTest {
     }
 
     @Test
+    fun listArticlesAwaitingMe() = runTest {
+        api.articles(awaitingMe = true)
+        api.articles(pending = true)
+        api.articles(mine = false, pending = false, awaitingMe = false)
+        assertEquals(
+            listOf(
+                "https://news.example.org/api/articles?awaitingMe=true",
+                "https://news.example.org/api/articles?pending=true",
+                "https://news.example.org/api/articles",
+            ),
+            requests.map { it.url },
+        )
+    }
+
+    @Test
     fun getArticle() = runTest {
         assertEquals("The pumpkin is huge", api.article(42).headline)
         assertEquals(HttpMethod.Get to "https://news.example.org/api/articles/42", requests.single().let { it.method to it.url })

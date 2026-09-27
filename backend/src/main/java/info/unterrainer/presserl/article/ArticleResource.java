@@ -50,13 +50,20 @@ public class ArticleResource {
     @Inject
     StaffingService staffing;
 
+    /**
+     * {@code awaitingMe} keeps only the articles the user may approve now: the query narrows to
+     * pending articles of other authors, {@link ArticlePolicy} decides via {@code APPROVE}.
+     */
     @GET
     public Uni<List<ArticleSummaryDto>> list(@QueryParam("status") String status, @QueryParam("mine") boolean mine,
-            @QueryParam("pending") boolean pending) {
-        return writer().flatMap(newsroom -> service.list(newsroom, status(status), mine, pending)
+            @QueryParam("pending") boolean pending, @QueryParam("awaitingMe") boolean awaitingMe) {
+        return writer().flatMap(newsroom -> service.list(newsroom, status(status), mine, pending || awaitingMe,
+                awaitingMe)
                 .flatMap(views -> staffing.forArticles(newsroom, views.stream().map(ArticleView::article).toList())
                         .map(staffed -> views.stream()
                                 .map(view -> ArticleSummaryDto.of(view, newsroom, staffed))
+                                .filter(summary -> !awaitingMe
+                                        || summary.allowedActions().contains(ArticleAction.APPROVE))
                                 .toList())));
     }
 

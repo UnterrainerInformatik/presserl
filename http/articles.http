@@ -521,6 +521,29 @@ Authorization: Bearer {{nogroupsToken}}
     });
 %}
 
+### Chain: the article awaits the section editor
+GET {{baseUrl}}/api/articles?awaitingMe=true
+Authorization: Bearer {{nogroupsToken}}
+
+> {%
+    client.test("200 with the waiting article, every entry approvable", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.some(a => a.id === client.global.get("chainId")), JSON.stringify(response.body.map(a => a.id)));
+        client.assert(response.body.every(a => a.allowedActions.includes("APPROVE")), "only approvable articles");
+    });
+%}
+
+### Chain: nothing awaits the reporter, not even their own submission
+GET {{baseUrl}}/api/articles?awaitingMe=true
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("200 empty", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.length === 0, JSON.stringify(response.body.map(a => a.id)));
+    });
+%}
+
 ### Chain: section editor approves, it waits for the editor-in-chief
 POST {{baseUrl}}/api/articles/{{chainId}}/approve
 Authorization: Bearer {{nogroupsToken}}

@@ -11,7 +11,6 @@ Still open:
 - **Trust switches** per person and level (a holder of an approving level trusts a person below;
   applies to the whole level) — one more skip predicate in `ApprovalChain.next`, storage, endpoints,
   admin UI.
-- **Review queue** — "waiting for me" view in the admin app (on top of `pending=true`), counts.
 
 ## M4 — Look
 Reader theme built on `--presserl-*` design tokens per `docs/design-guidelines.md`,

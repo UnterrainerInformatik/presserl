@@ -281,7 +281,10 @@ pagination yet.
 - **Auth:** writer
 - **Query:** `status` (optional, `DRAFT` | `SUBMITTED` | `PUBLISHED` | `OFFLINE`), `mine`
   (optional, `true` → only articles the requesting user authored), `pending` (optional, `true` →
-  only articles with a pending submission); filters combine
+  only articles with a pending submission), `awaitingMe` (optional, `true` → only articles whose
+  `allowedActions` for the requesting user contain `APPROVE`, i.e. the review queue: never the
+  user's own articles, empty for reporters and a solo newspaper); filters combine
+  (`mine=true&awaitingMe=true` is always empty)
 - **Response `200`:** array of `ArticleSummaryDto`
   ```json
   [ { "id": 42, "status": "DRAFT", "author": { "username": "papa", "displayName": "Papa" },
