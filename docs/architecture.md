@@ -32,18 +32,29 @@ presserl/                     # monorepo (upstream)
 │   ├── .env.example          # mandatory values only: hostname, DB password, OIDC issuer + secrets, first publisher, media store keys
 │   ├── keycloak/presserl-realm.json   # realm template for the operator's Keycloak (hostname placeholder)
 │   └── theme/                # template; overrides the default reader theme
-│       ├── custom.css
-│       ├── logo.svg
+│       ├── custom.css        # starter: lists tokens, data-view values and stable classes
+│       ├── README.md
+│       ├── examples/
 │       └── fonts/
 ├── http/                     # .http files for the REST API
 ├── docs/
 ├── openspec/
 └── ai/
 
-../presserl-deployment/       # the real fork: name, .env, theme — nothing else
+../presserl-deployment/       # staging: presserl.unterrainer.info (LAN/VPN only)
+../alexpresse/                # first public fork: alexpresse.net (fork of presserl-deployment)
 ```
 
-A fork copies the templates from `deploy/`, sets name, `.env` and theme, and runs the upstream container images. Updates are an image-tag bump. `../presserl-deployment` is maintained alongside this repository; changes to it are recorded in this repository's OpenSpec changes.
+A fork copies the templates from `deploy/`, sets name, `.env` and theme, and runs the upstream container images. Both deployment repositories are maintained alongside this repository; changes to them are recorded in this repository's OpenSpec changes.
+
+- **Staging** — `../presserl-deployment` (GitHub `UnterrainerInformatik/presserl-deployment`) serves
+  `presserl.unterrainer.info`, reachable from LAN/VPN only. Upstream's pipeline dispatches to it after
+  every image build, so staging always runs the newest image.
+- **First fork** — `../alexpresse` (GitHub `guFalcon/alexpresse`, remote `upstream` =
+  `presserl-deployment`) serves the family newspaper *Alex-Presse* at `alexpresse.net`. Upstream does
+  not dispatch to it. It is updated by merging `upstream` (`git pull upstream master`) and pushing,
+  which redeploys the latest release tag, or by a manual workflow run. A release therefore runs on
+  staging first and reaches the public newspaper only when it is merged into the fork.
 
 ## Configuration
 

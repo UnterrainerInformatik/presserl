@@ -162,6 +162,22 @@ class ReaderIssuesTest {
     }
 
     @Test
+    void issueViewsCarryTheDocumentedHooks() {
+        long alpha = published("Alpha");
+        long two = fixtures.issue(2, true, null);
+        fixtures.inIssue(two, alpha);
+
+        String archive = get("/issues").asString();
+        String issue = get("/issues/" + two).asString();
+
+        assertThat(archive).contains("<main data-view=\"issues\">", "<ul class=\"issue-list\">",
+                "<li class=\"issue-list__item\">", "<a class=\"issue-list__label\" href=\"/issues/%d\">".formatted(two),
+                "<p class=\"issue-list__headline\">Alpha</p>");
+        assertThat(issue).contains("<main data-view=\"issue\">", "<p class=\"masthead__issue\">",
+                "<div class=\"stories\">");
+    }
+
+    @Test
     void emptyArchiveShowsANote() {
         fixtures.issue(1, false, null);
 

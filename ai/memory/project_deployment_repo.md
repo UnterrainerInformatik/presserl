@@ -1,17 +1,29 @@
 ---
 name: project_deployment_repo
-description: The real fork lives at ../presserl-deployment (name, .env, theme only) and is maintained by Claude
+description: Two deployment repos, no code: ../presserl-deployment = staging (auto-deployed), ../alexpresse = first public fork alexpresse.net (merged from upstream); both maintained by Claude
 metadata:
   type: project
 ---
 
-`../presserl-deployment` (next to this monorepo) is the first real Presserl deployment: it
-copies the templates from `deploy/`, sets newspaper name, `.env` and `theme/`, and runs the
-upstream container images. It contains no code. Created in M0, goes live in M7.
+Two deployment repositories sit next to this monorepo. Each copies the templates from `deploy/`,
+sets newspaper name, `.env` and `theme/`, and runs the upstream container images. Neither
+contains code.
 
-**Why:** Decided 2026-09-26 (`revise-product-plan`, D6): the fork is kept separate so upstream
-stays generic, and Claude maintains it too.
+- `../presserl-deployment` (GitHub `UnterrainerInformatik/presserl-deployment`) — **staging**,
+  `presserl.unterrainer.info` on babylon5, Traefik entrypoints LAN/VPN only. Upstream's
+  `dispatch-staging` job redeploys it after every image build.
+- `../alexpresse` (GitHub `guFalcon/alexpresse`, remote `upstream` = presserl-deployment) —
+  **first public fork**, the family newspaper *Alex-Presse* at `alexpresse.net` /
+  `www.alexpresse.net`, realm `alexpresse` on `auth.unterrainer.info`. Upstream does **not**
+  dispatch to it: it is updated by `git pull upstream master` + push (redeploys the latest
+  release tag) or a manual workflow run. It carries its own theme (OÖN-inspired look).
 
-**How to apply:** Changes to the deployment repo are planned and recorded in this monorepo's
-OpenSpec changes — no separate spec tree there. Keep it minimal; anything reusable belongs in
-`deploy/` upstream. Secrets stay out of git (`.env` is not committed). See [[project_vision]].
+**Why:** Decided 2026-09-26 (`revise-product-plan`, D6) that forks stay separate so upstream stays
+generic. On 2026-09-28 (`first-fork-alexpresse`, D1) the topology was recorded: staging gets every
+image, the public newspaper only what Gerald merges — a natural promotion step.
+
+**How to apply:** Changes to either repo are planned and recorded in this monorepo's OpenSpec
+changes — no separate spec tree there. Keep them minimal; anything reusable belongs in `deploy/`
+upstream. Secrets stay out of git (`.env` is not committed). Every push to either repo redeploys a
+live site — ask Gerald first, each time. See [[project_vision]] and
+[[project_deployment_docker_compose]].

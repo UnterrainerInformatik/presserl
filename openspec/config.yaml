@@ -9,7 +9,9 @@ context: |
                   first, Android/iOS later. Talks to /api with bearer tokens.
                   Tests: Kotlin (kotlin.test, Compose UI tests where useful).
     - deploy/   : reference deployment + templates (INSTALL.md, compose, realm, .env.example, theme).
-                  The real fork lives in ../presserl-deployment (name, .env, theme only).
+                  Staging deployment: ../presserl-deployment (presserl.unterrainer.info, LAN/VPN).
+                  First public fork: ../alexpresse (alexpresse.net), a fork of the staging repo.
+                  Deployment repos hold name, .env and theme only.
     - http/     : .http request files that exercise the backend REST API.
     - ai/       : memory, primer (ai/primer/endpoints.md = REST contract), open proposals.
   All repo content (code, comments, logs, docs, commits, OpenSpec artifacts) is English.

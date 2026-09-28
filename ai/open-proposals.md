@@ -5,10 +5,6 @@ change — never tick it off.
 
 Milestones from `docs/vision.md`; details in `docs/`.
 
-## M7 — First fork
-`../presserl-deployment` goes live for a real family newspaper: name, `.env`, theme, upstream
-images; walk through `deploy/INSTALL.md` end to end and fix what is missing.
-
 ## M8 — Mobile & QR
 Android/iOS targets of the admin app; QR code on the account slip (server URL + one-time
 token) exchanged by the backend for a Keycloak login; store publishing (Google Play Families

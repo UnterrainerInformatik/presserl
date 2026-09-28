@@ -17,7 +17,7 @@ only by `presserl`). You provide the rest:
 - The `presserl` container must be able to reach Keycloak under its public URL (check
   hairpin NAT if Keycloak runs on the same host behind the same proxy).
 
-Copy this directory (`compose.yaml`, `.env.example`, `keycloak/`) to the host, e.g. to
+Copy this directory (`compose.yaml`, `.env.example`, `keycloak/`, `theme/`) to the host, e.g. to
 `/opt/presserl`, and run all commands from there.
 
 ## 2. Import the realm
@@ -31,8 +31,9 @@ client `presserl-backend` (used by the backend to manage users).
    ```sh
    sed -i 's/presserl\.example\.org/<hostname>/g' keycloak/presserl-realm.json
    ```
-2. In the Keycloak admin console: realm dropdown → **Create realm** → **Browse…** →
-   select `keycloak/presserl-realm.json` → **Create**.
+2. In the Keycloak admin console: **Manage realms** (left navigation; older versions: the realm
+   dropdown) → **Create realm** → **Browse…** → select `keycloak/presserl-realm.json` →
+   **Create**.
    (To use a different realm name, change `"realm"` in the file before importing; the issuer URL
    below then carries that name.)
 3. In the new realm: **Clients** → `presserl-backend` → **Credentials** → copy the
@@ -50,7 +51,8 @@ Steps 1 and 3 above stay the same; instead of step 2, do the following in that r
 
 1. **Realm settings → Login:** switch off *User registration*, *Forgot password*,
    *Remember me*, *Email as username*, *Login with email*, *Verify email* and *Edit username*;
-   switch on *Duplicate emails*. Save.
+   then switch on *Duplicate emails* (it can only be switched once *Login with email* is off).
+   Each switch is saved immediately.
 2. **Realm settings → Security defenses → Brute force detection:** mode *Lockout temporarily*,
    *Max login failures* 10, *Wait increment* 1 minute, *Max wait* 15 minutes,
    *Failure reset time* 12 hours. Save.
@@ -66,7 +68,7 @@ Steps 1 and 3 above stay the same; instead of step 2, do the following in that r
    *If a resource exists* to *Skip*, import. The result lists the groups `publisher`,
    `editor-in-chief`, `reader`, the clients `presserl-admin`, `presserl-reader`,
    `presserl-backend` and the user `service-account-presserl-backend`.
-6. **Check** under **Clients → presserl-backend → Service accounts roles** that
+6. **Check** under **Clients → presserl-backend → Service account roles** that
    `realm-management` grants `manage-users`, `view-users`, `query-users` and `query-groups`;
    assign missing ones with *Assign role → Filter by clients*.
 7. Continue with step 3 above (copy the client secrets of `presserl-backend` and
@@ -151,10 +153,22 @@ certificate and sets the forwarding headers by itself.
 - Open `https://<hostname>/` — the reader's front page with your newspaper's name.
 - Open `https://<hostname>/admin/` — you are sent to Keycloak. Log in with
   `PRESSERL_PUBLISHER_USERNAME` / `PRESSERL_PUBLISHER_PASSWORD`. Back in the admin app you see
-  the newspaper name, your name and the role `PUBLISHER`.
+  the newspaper name, your name and your role (*Publisher*; the app follows the browser
+  language, in German *Herausgeber:in*).
 
 The publisher is created only once. Changing the variables later does not change the account;
 manage it in Keycloak.
+
+### First article and first issue
+
+In the admin app, **Sections** holds the section *General*; add your own there. **Articles →
+New article** opens the editor: choose a section, write a headline, add a **Lead image** if you
+like, then **Publish**. The article appears on the reader's front page at once.
+
+A new newspaper starts with issue 1, which is not live yet: until it is, the reader shows no
+issue line and the issue archive (`/issues`) stays empty. Open **Issues → Issue 1** and switch on
+**Visible to readers (live)** — either as blog mode (one issue that keeps growing) or, after
+giving it a publication date, as your first issue; later issues are created with **New issue**.
 
 ### Private newspaper and readers
 
@@ -164,8 +178,9 @@ The reader's front page then shows only the masthead, a note that the newspaper 
 **Log in** link.
 
 Readers are Keycloak users of the Presserl realm. For each reader, in the Keycloak admin console:
-**Users** → **Create new user** (username, first and last name) → **Credentials** → set a
-password → **Groups** → **Join group** → `reader`. Members of `editor-in-chief` and `publisher`
+**Users** → **Create new user** (username, first and last name) → **Credentials** → **Set
+password** (switch off *Temporary*, otherwise the reader has to choose a new password at the
+first login) → **Groups** → **Join group** → `reader`. Members of `editor-in-chief` and `publisher`
 may read as well. A reader logs in via the front page's **Log in** link and sees their name and a
 **Log out** link at the top of every page. Accounts without one of these groups can log in, but
 see a note that they have no access.

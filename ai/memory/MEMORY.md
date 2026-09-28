@@ -13,7 +13,7 @@
 - [Evidence over speculation](feedback_evidence_over_speculation.md) — When the cause is not in the logs, add targeted diagnostic logging and wait for a reproduction instead of theorising
 - [Never edit applied DB migrations](feedback_immutable_migrations.md) — Applied Flyway/Liquibase migrations are immutable; add a correction migration
 - [Product vision in docs/](project_vision.md) — Principles, roles, approval chain, config layers, design guidelines; proposals must fit them
-- [Deployment repo](project_deployment_repo.md) — Real fork at ../presserl-deployment (name, .env, theme); maintained by Claude, planned via this repo's OpenSpec
+- [Deployment repos](project_deployment_repo.md) — ../presserl-deployment = staging (auto-deployed); ../alexpresse = first public fork alexpresse.net (merge upstream + push); ask before every push
 - [Deployment via docker compose](project_deployment_docker_compose.md) — Compose ships presserl + postgres + rustfs (media); proxy (Traefik/Caddy) and Keycloak are external
 - [Machine JDK setup](reference_machine_jdk.md) — Default JDK is 21 (Lombok-safe); backend targets release 21; JDK 26 installed but not default
 - [Build and test commands](reference_build_and_test.md) — Verified dev/test/image/.http/e2e commands for backend and admin
