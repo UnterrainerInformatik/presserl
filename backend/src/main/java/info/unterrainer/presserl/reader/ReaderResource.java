@@ -10,6 +10,7 @@ import org.jboss.resteasy.reactive.RestResponse;
 import org.jboss.resteasy.reactive.RestResponse.ResponseBuilder;
 import org.jboss.resteasy.reactive.RestResponse.Status;
 
+import info.unterrainer.presserl.account.AccountRequestValidator;
 import info.unterrainer.presserl.newspaper.EffectiveSettings;
 import info.unterrainer.presserl.newspaper.NewspaperSettings;
 import info.unterrainer.presserl.newspaper.TextSize;
@@ -228,6 +229,19 @@ public class ReaderResource {
     @Path("login")
     public RestResponse<String> login(@QueryParam("next") String next) {
         return redirect(LoginTarget.of(next));
+    }
+
+    /**
+     * The address of the QR code on the account slip ({@code /qr?u=<username>#pw=<pass-phrase>}). Lies
+     * outside the reader tenant, so it neither reads nor creates a session. Sends the visitor to the
+     * login with {@code u} as {@code login_hint} when it is a valid username; the empty fragment of the
+     * {@code Location} replaces the scanned one, so the pass-phrase does not travel on.
+     */
+    @GET
+    @Path("qr")
+    public RestResponse<String> qr(@QueryParam("u") String username) {
+        return redirect(
+                AccountRequestValidator.isUsername(username) ? "/login?login_hint=" + username + "#" : "/login#");
     }
 
     /**

@@ -45,6 +45,25 @@ html, body {
         margin: 0 0 10mm;
     }
 
+    /* QR code (address + credentials) to the right of the rows */
+    #presserl-slip figure {
+        float: right;
+        width: 35mm;
+        margin: 0 0 6mm 8mm;
+        text-align: center;
+    }
+
+    #presserl-slip figure svg {
+        display: block;
+        width: 35mm;
+        height: 35mm;
+    }
+
+    #presserl-slip figcaption {
+        font-size: 9pt;
+        margin-top: 2mm;
+    }
+
     #presserl-slip dt {
         font-size: 11pt;
         margin-top: 6mm;
@@ -63,6 +82,7 @@ html, body {
     }
 
     #presserl-slip p {
+        clear: both;
         font-size: 11pt;
         margin-top: 12mm;
     }

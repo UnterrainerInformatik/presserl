@@ -23,12 +23,11 @@ Hierarchy: **Publisher > Editor-in-chief > Section editor > Reporter > Reader.**
 
 - **No e-mail anywhere.** Username = first name (lowercase, ASCII-folded; collisions get a suffix: `anna`, `anna-2`; editable).
 - **Default password** = four words from a kid-friendly German word list, joined by dashes (`tiger-wolke-apfel-leiter`). Users may change it.
-- **Hand-over** on a printable slip: newspaper name, web address, username, password.
+- **Hand-over** on a printable slip: newspaper name, web address, username, password and a QR code with address and credentials; scanning it opens the login with the username filled in.
 - **Password reset** by anyone above the person (delegation rule): publishers reset every account except publishers, editors-in-chief every account holding neither publisher nor editor-in-chief, section editors only reporters who belong to their own sections only. Nobody resets their own password here (users change it in the Keycloak account console); a publisher who is locked out needs the Keycloak admin console. The reset hands out a new pass-phrase on the same slip. No self-registration, no "forgot password".
 - **Changing roles** of an existing account follows the password-reset rule (anyone above the person, never oneself, never a publisher) in one form for newspaper-wide and section roles together, all or nothing. Every role that is added or removed must be one the changer may assign; roles left unchanged need none, so a section editor can promote their reporter who also reads the newspaper. At least one role remains. No session is ended: section roles apply at once, newspaper-wide roles with the person's next token refresh (a few minutes).
 - **Locking** by publishers only, never of a publisher or of their own account. A locked account cannot log in; unlocking restores it with its password.
 - **Setup**: on first start the backend creates the first account as publisher from `PRESSERL_PUBLISHER_USERNAME` / `PRESSERL_PUBLISHER_PASSWORD`. That account holds all roles. The publisher logs in and creates an editor-in-chief.
-- Later: a QR code on the slip replaces typing (see M8 in [vision.md](vision.md#milestones)).
 
 ## Article lifecycle
 

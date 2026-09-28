@@ -6,6 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -21,7 +24,8 @@ import jakarta.ws.rs.core.Response.Status;
 
 /**
  * {@link AccountRequestValidator#validateRoles}: the {@code PUT /api/accounts/{id}/roles} body;
- * {@link AccountRequestValidator#validateTrust}: the {@code PUT /api/accounts/{id}/trust} body.
+ * {@link AccountRequestValidator#validateTrust}: the {@code PUT /api/accounts/{id}/trust} body;
+ * {@link AccountRequestValidator#isUsername}: the username rules on their own ({@code /qr}).
  */
 class AccountRequestValidatorTest {
 
@@ -152,5 +156,19 @@ class AccountRequestValidatorTest {
         } catch (JsonProcessingException e) {
             throw new IllegalArgumentException(e);
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "lena", "lena-2", "anna-maria", "abc" })
+    void usernames(String value) {
+        assertThat(AccountRequestValidator.isUsername(value)).isTrue();
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = { "Lena", "lena x", "lena--2", "-lena", "lena-", "ab", "lena&next=//evil", "lena#pw",
+            "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz" })
+    void notUsernames(String value) {
+        assertThat(AccountRequestValidator.isUsername(value)).isFalse();
     }
 }

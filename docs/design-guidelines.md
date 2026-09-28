@@ -126,11 +126,11 @@ All levels:
 New accounts are handed over on paper — there is no e-mail.
 
 - One slip per account, printed from the administration app right after creating the account or resetting its password; A4 with several slips to cut, or a single slip.
-- Content: newspaper name (masthead style), web address, **username**, **password** — nothing else, no role, no real name beyond the username.
+- Content: newspaper name (masthead style), web address, **username**, **password** and a **QR code** — nothing else, no role, no real name beyond the username.
 - Password in a large monospace face, words separated by dashes and easy to read aloud (`tiger-wolke-apfel-leiter`); no ambiguous characters because the word list has no umlauts or ß.
 - A short friendly line for the child ("Log in with these details." — UI text via i18n) and a hint to keep the slip safe.
-- Black on white, no images needed; a dashed cut line around the slip.
-- Room reserved for a QR code (M8), which replaces typing the address and password.
+- Black on white, no images besides the QR code; a dashed cut line around the slip.
+- QR code: encodes `<web address>/qr?u=<username>#pw=<password>` (error correction level M). Scanned with the phone camera it opens the newspaper's login with the username filled in; the mobile app (M8) reads address, username and password from it. Printed about 35 mm wide, black on white with a quiet zone of four modules, to the right of the details, with a short line below ("Scan the code to open the login." — i18n). The code holds the password, so the slip stays as secret as before.
 
 ## Sources
 

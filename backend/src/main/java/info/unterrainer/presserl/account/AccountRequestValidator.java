@@ -42,6 +42,14 @@ public final class AccountRequestValidator {
     }
 
     /**
+     * Whether {@code value} has the length and form of a username accepted by account creation.
+     */
+    public static boolean isUsername(String value) {
+        return value != null && value.length() >= UsernameDeriver.MIN_LENGTH
+                && value.length() <= UsernameDeriver.MAX_LENGTH && USERNAME.matcher(value).matches();
+    }
+
+    /**
      * A {@code POST /api/accounts} body; {@code sectionRoles} may be absent.
      *
      * @throws AccountException with status {@code 400} listing every violation

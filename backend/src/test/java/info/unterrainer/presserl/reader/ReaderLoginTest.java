@@ -166,6 +166,55 @@ class ReaderLoginTest {
     }
 
     @Test
+    void qrEntryForwardsTheUsernameAndDropsTheFragment() {
+        try (ReaderBrowser browser = new ReaderBrowser()) {
+            WebResponse qr = browser.getWithoutRedirect("/qr?u=lena");
+
+            assertThat(qr.getStatusCode()).isEqualTo(303);
+            assertThat(qr.getResponseHeaderValue("Location")).isEqualTo(ReaderBrowser.url("/login?login_hint=lena#"));
+            assertThat(qr.getResponseHeaderValue("Cache-Control")).isEqualTo("no-store");
+            assertThat(qr.getResponseHeaderValue("Set-Cookie")).isNull();
+            assertThat(browser.sessionCookie()).isNull();
+        }
+    }
+
+    @Test
+    void qrEntryWithInvalidOrMissingUsernameGoesToThePlainLogin() {
+        try (ReaderBrowser browser = new ReaderBrowser()) {
+            for (String path : new String[] { "/qr?u=Lena%20X", "/qr?u=lena%26next%3D%2F%2Fevil", "/qr?u=", "/qr" }) {
+                WebResponse qr = browser.getWithoutRedirect(path);
+
+                assertThat(qr.getStatusCode()).as(path).isEqualTo(303);
+                assertThat(qr.getResponseHeaderValue("Location")).as(path).isEqualTo(ReaderBrowser.url("/login#"));
+                assertThat(qr.getResponseHeaderValue("Cache-Control")).as(path).isEqualTo("no-store");
+                assertThat(qr.getResponseHeaderValue("Set-Cookie")).as(path).isNull();
+            }
+        }
+    }
+
+    @Test
+    void loginForwardsTheUsernameHintToKeycloak() {
+        try (ReaderBrowser browser = new ReaderBrowser()) {
+            String withHint = browser.getWithoutRedirect("/login?login_hint=lena").getResponseHeaderValue("Location");
+            String withoutHint = browser.getWithoutRedirect("/login").getResponseHeaderValue("Location");
+
+            assertThat(withHint).contains("/protocol/openid-connect/auth", "response_type=code", "login_hint=lena");
+            assertThat(withoutHint).contains("/protocol/openid-connect/auth").doesNotContain("login_hint");
+        }
+    }
+
+    @Test
+    void qrScanEndsOnThePrefilledLoginForm() {
+        try (ReaderBrowser browser = new ReaderBrowser()) {
+            WebResponse form = browser.get("/qr?u=reader");
+
+            assertThat(form.getWebRequest().getUrl().toString()).contains("/protocol/openid-connect/auth",
+                    "login_hint=reader");
+            assertThat(form.getContentAsString()).contains("value=\"reader\"");
+        }
+    }
+
+    @Test
     void logoutEndsTheSession() {
         try (ReaderBrowser browser = new ReaderBrowser()) {
             browser.login("/login", "reader", "reader");

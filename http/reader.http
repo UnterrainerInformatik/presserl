@@ -348,6 +348,45 @@ size=huge&next=/
     });
 %}
 
+### QR code entry of the account slip: username as login hint, fragment dropped
+# @no-redirect
+# @no-cookie-jar
+GET {{baseUrl}}/qr?u=lena
+
+> {%
+    client.test("303 to the login with hint and empty fragment", () => {
+        client.assert(response.status === 303, "status " + response.status);
+        client.assert(response.headers.valueOf("Location").endsWith("/login?login_hint=lena#"), "location " + response.headers.valueOf("Location"));
+        client.assert(response.headers.valueOf("Cache-Control") === "no-store", "cache " + response.headers.valueOf("Cache-Control"));
+        client.assert(!response.headers.valueOf("Set-Cookie"), "cookie " + response.headers.valueOf("Set-Cookie"));
+    });
+%}
+
+### QR code entry with an invalid username: plain login
+# @no-redirect
+# @no-cookie-jar
+GET {{baseUrl}}/qr?u=Lena%20X
+
+> {%
+    client.test("303 to the login without hint", () => {
+        client.assert(response.status === 303, "status " + response.status);
+        client.assert(response.headers.valueOf("Location").endsWith("/login#"), "location " + response.headers.valueOf("Location"));
+    });
+%}
+
+### Login forwards the hint to Keycloak
+# @no-redirect
+# @no-cookie-jar
+GET {{baseUrl}}/login?login_hint=lena
+
+> {%
+    client.test("302 to the authorization endpoint with login_hint", () => {
+        client.assert(response.status === 302, "status " + response.status);
+        const location = response.headers.valueOf("Location");
+        client.assert(location.includes("/protocol/openid-connect/auth") && location.includes("login_hint=lena"), "location " + location);
+    });
+%}
+
 ### Fork theme: needs quarkus:dev started with -Dpresserl.theme.dir=../deploy/theme
 GET {{baseUrl}}/theme/custom.css
 

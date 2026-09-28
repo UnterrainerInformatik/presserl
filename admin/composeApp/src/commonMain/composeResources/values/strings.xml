@@ -124,6 +124,7 @@
     <string name="slip_address">Adresse</string>
     <string name="slip_username">Benutzername</string>
     <string name="slip_password">Passwort</string>
+    <string name="slip_qr_hint">Code scannen öffnet die Anmeldung.</string>
     <string name="slip_note">Das Passwort wird nur jetzt angezeigt. Drucke den Zettel aus oder schreib es ab.</string>
     <string name="print">Drucken</string>
     <string name="done">Fertig</string>

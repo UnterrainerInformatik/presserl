@@ -125,7 +125,10 @@ One newspaper per server; a second newspaper is a second deployment.
 
 ```
 GET    /                                  front page
-GET    /login?next={path}                 reader login (code flow), back to a same-origin path
+GET    /login?next={path}&login_hint={u}  reader login (code flow), back to a same-origin path; login_hint
+                                          (optional) is forwarded to Keycloak and pre-fills the username
+GET    /qr?u={username}                   QR code entry of the account slip: 303 to /login?login_hint={u}# (or
+                                          /login# for an invalid/missing u), Cache-Control: no-store
 GET    /logout                            reader logout (RP-initiated), back to /
 GET    /sections/{slug}                   section page
 GET    /articles/{id}                     article page
@@ -154,7 +157,7 @@ they may be served does (taking offline, emergency brake, private switch).
 
 **Theme and text size.** The default theme `reader.css` is built on public design tokens
 (`--presserl-*`), follows `prefers-color-scheme` for dark mode and uses only self-hosted fonts, so
-the CSP stays `'self'`. `/text-size` and `/theme/*` are outside the reader OIDC tenant: they need no
+the CSP stays `'self'`. `/text-size`, `/theme/*` and `/qr` are outside the reader OIDC tenant: they need no
 session and also work for anonymous visitors of a private newspaper. `/theme/*` is a Vert.x route
 (`ThemeFiles`) that serves only regular files whose real path lies inside the theme directory.
 Every reader page renders `<html data-text-size>` from the reader's cookie, falling back to the
@@ -172,7 +175,19 @@ The "Print" button is shown and bound by `/reader/print.js`, so no inline script
 Keycloak client `presserl-reader` with the authorization code flow and PKCE. The session lives in the
 encrypted `q_session_reader` cookie (`HttpOnly`, `SameSite=Lax`, path `/`, `Secure` in production);
 there is no server-side session store. Only `/login` requires authentication; it starts the code
-flow and afterwards redirects to `next` when that is a same-origin path. `/logout` ends the reader
+flow and afterwards redirects to `next` when that is a same-origin path. The tenant forwards a
+`login_hint` query parameter of `/login` to the authorization endpoint (`forward-params`), so Keycloak
+pre-fills the username.
+
+**QR code entry.** The account slip's QR code encodes `<reader address>/qr?u=<username>#pw=<pass-phrase>`:
+the pass-phrase sits in the fragment, which no browser sends to a server (proxy, backend and Keycloak
+never see it); the mobile app will read address, username and pass-phrase from the same code. `/qr`
+checks `u` against the username rules of account creation and redirects to
+`/login?login_hint=<u>#`; the empty fragment replaces the scanned one, which browsers would otherwise
+carry across the redirects into the Keycloak address bar. `/qr` neither reads nor creates a session;
+a visitor who already has a reader session lands on the front page as with `/login`.
+
+`/logout` ends the reader
 session and the Keycloak session. Quarkus would otherwise pick the tenant from the session cookie on
 any path, so `ReaderTenantScope` pins every non-reader path to the default tenant: `/api` accepts
 bearer tokens only, never the reader cookie.

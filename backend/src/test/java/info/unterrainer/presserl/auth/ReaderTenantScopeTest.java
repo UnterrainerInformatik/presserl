@@ -22,7 +22,7 @@ class ReaderTenantScopeTest {
     @ParameterizedTest
     @ValueSource(strings = { "/api/me", "/api/newspaper", "/admin/", "/q/health/ready", "/login/x", "/articles",
             "/reader/reader.css", "/media", "/api/media/17/renditions/web", "/api/issues", "/api/issues/2", "/issuesx", "/print",
-            "/reader/print.js" })
+            "/reader/print.js", "/qr" })
     void otherPaths(String path) {
         assertThat(ReaderTenantScope.matches(READER_PATHS, path)).isFalse();
     }

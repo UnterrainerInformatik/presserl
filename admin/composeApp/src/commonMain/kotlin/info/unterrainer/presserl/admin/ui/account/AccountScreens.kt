@@ -1,5 +1,7 @@
 package info.unterrainer.presserl.admin.ui.account
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -7,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -36,6 +39,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
@@ -83,6 +88,7 @@ import info.unterrainer.presserl.admin.resources.slip_address
 import info.unterrainer.presserl.admin.resources.slip_heading
 import info.unterrainer.presserl.admin.resources.slip_note
 import info.unterrainer.presserl.admin.resources.slip_password
+import info.unterrainer.presserl.admin.resources.slip_qr_hint
 import info.unterrainer.presserl.admin.resources.slip_username
 import info.unterrainer.presserl.admin.resources.trust_switches
 import info.unterrainer.presserl.admin.resources.trusted_by
@@ -96,6 +102,7 @@ import info.unterrainer.presserl.admin.ui.roleText
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
 import info.unterrainer.presserl.admin.ui.sectionRoleText
 import org.jetbrains.compose.resources.stringResource
+import kotlin.math.floor
 
 /** The accounts, and the sections to name section roles and to offer them in "New account" and "Edit roles". */
 private data class AccountsView(val accounts: AccountListDto, val sections: List<SectionDto>)
@@ -438,33 +445,57 @@ fun AccountSlipScreen(newspaperName: String, siteUrl: String, created: CreatedAc
         stringResource(Res.string.slip_password) to created.password,
     )
     val note = stringResource(Res.string.slip_note)
+    val qrPayload = SlipQr.payload(siteUrl, created.account.username, created.password)
+    val qrCode = remember(qrPayload) { QrCode.encode(qrPayload) }
+    val qrHint = stringResource(Res.string.slip_qr_hint)
 
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Surface(tonalElevation = 2.dp, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
-            SelectionContainer {
-                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(newspaperName, style = MaterialTheme.typography.headlineMedium)
-                    Text(heading, style = MaterialTheme.typography.titleMedium)
-                    rows.forEachIndexed { index, (label, value) ->
-                        Column {
-                            Text(label, style = MaterialTheme.typography.labelLarge)
-                            Text(
-                                value,
-                                style = if (index == rows.lastIndex) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.SemiBold,
-                            )
+            FlowRow(Modifier.padding(24.dp), horizontalArrangement = Arrangement.spacedBy(32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                SelectionContainer {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(newspaperName, style = MaterialTheme.typography.headlineMedium)
+                        Text(heading, style = MaterialTheme.typography.titleMedium)
+                        rows.forEachIndexed { index, (label, value) ->
+                            Column {
+                                Text(label, style = MaterialTheme.typography.labelLarge)
+                                Text(
+                                    value,
+                                    style = if (index == rows.lastIndex) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
                         }
                     }
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    QrImage(qrCode, Modifier.size(180.dp))
+                    Text(qrHint, style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
         Banner(note, color = MaterialTheme.colorScheme.secondaryContainer)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = { printer.print(PrintableSlip(newspaperName, heading, rows, rows.lastIndex, note)) }) {
+            Button(onClick = { printer.print(PrintableSlip(newspaperName, heading, rows, rows.lastIndex, note, qrPayload, qrHint)) }) {
                 Text(stringResource(Res.string.print))
             }
             OutlinedButton(onClick = onDone) { Text(stringResource(Res.string.done)) }
+        }
+    }
+}
+
+/** [code] with its quiet zone, black on white regardless of the theme so that scanners read it; modules snap to whole pixels. */
+@Composable
+private fun QrImage(code: QrCode, modifier: Modifier = Modifier) {
+    Canvas(modifier.background(Color.White)) {
+        val modules = code.size + 2 * QrCode.QUIET_ZONE
+        val cell = maxOf(1f, floor(size.minDimension / modules))
+        val origin = (size.minDimension - cell * modules) / 2 + cell * QrCode.QUIET_ZONE
+        for (y in 0 until code.size) {
+            for ((start, length) in code.darkRuns(y)) {
+                drawRect(Color.Black, topLeft = Offset(origin + start * cell, origin + y * cell), size = Size(length * cell, cell))
+            }
         }
     }
 }
