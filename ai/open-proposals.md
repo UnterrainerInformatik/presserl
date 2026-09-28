@@ -5,10 +5,6 @@ change — never tick it off.
 
 Milestones from `docs/vision.md`; details in `docs/`.
 
-## M6 — Print
-Issues; reader print views for a single article and a whole issue (`@page` A4, columns,
-page numbers).
-
 ## M7 — First fork
 `../presserl-deployment` goes live for a real family newspaper: name, `.env`, theme, upstream
 images; walk through `deploy/INSTALL.md` end to end and fix what is missing.
