@@ -1,0 +1,10 @@
+{! Screen-only toolbar of a print view: the print button (shown and bound by /reader/print.js) and a
+   link back to the article (kind="article") or issue (kind="issue") with the given id. !}
+<div class="print-toolbar">
+  <button type="button" data-print hidden>{msg:print}</button>
+  {#if kind == 'article'}
+  <a href="/articles/{id}">{msg:backToArticle}</a>
+  {#else}
+  <a href="/issues/{id}">{msg:backToIssue}</a>
+  {/if}
+</div>

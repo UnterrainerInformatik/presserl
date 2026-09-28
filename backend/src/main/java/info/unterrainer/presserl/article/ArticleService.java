@@ -8,6 +8,7 @@ import java.util.Map;
 import org.hibernate.reactive.mutiny.Mutiny;
 
 import info.unterrainer.presserl.auth.NewspaperRole;
+import info.unterrainer.presserl.issue.IssueEntity;
 import info.unterrainer.presserl.media.MediaEntity;
 import info.unterrainer.presserl.newspaper.NewspaperConfig;
 import info.unterrainer.presserl.section.Newsroom;
@@ -42,8 +43,8 @@ public class ArticleService {
     StaffingService staffing;
 
     /**
-     * Summaries of the articles visible to the user with their latest revision and section, newest
-     * change first, in one query.
+     * Summaries of the articles visible to the user with their latest revision, section and issue,
+     * newest change first, in one query.
      *
      * @param status     only articles in this status, if not {@code null}
      * @param mine       only articles authored by the user
@@ -59,7 +60,8 @@ public class ArticleService {
                 .toList();
         boolean restricted = !newsroom.isAdministrator();
         StringBuilder hql = new StringBuilder(
-                "select a, r, s from ArticleEntity a, ArticleRevisionEntity r, SectionEntity s where s.id = a.sectionId and ")
+                "select a, r, s, i from ArticleEntity a left join IssueEntity i on i.id = a.issueId, "
+                        + "ArticleRevisionEntity r, SectionEntity s where s.id = a.sectionId and ")
                 .append(LATEST_REVISION);
         if (status != null) {
             hql.append(" and a.status = :status");
@@ -97,8 +99,26 @@ public class ArticleService {
             return query.getResultList();
         }).map(rows -> rows.stream()
                 .map(row -> new ArticleView((ArticleEntity) row[0], (ArticleRevisionEntity) row[1],
-                        (SectionEntity) row[2]))
+                        (SectionEntity) row[2], (IssueEntity) row[3]))
                 .toList());
+    }
+
+    /**
+     * The articles of an issue with their latest revision and section in issue order (position, ties
+     * by id), in one query. Access is checked by the caller.
+     */
+    @WithSession
+    public Uni<List<ArticleView>> listInIssue(IssueEntity issue) {
+        return Panache.getSession().flatMap(session -> session.createSelectionQuery(
+                "select a, r, s from ArticleEntity a, ArticleRevisionEntity r, SectionEntity s where s.id = a.sectionId and "
+                        + LATEST_REVISION + " and a.issueId = :issue order by a.issuePosition, a.id",
+                Object[].class)
+                .setParameter("issue", issue.id)
+                .getResultList())
+                .map(rows -> rows.stream()
+                        .map(row -> new ArticleView((ArticleEntity) row[0], (ArticleRevisionEntity) row[1],
+                                (SectionEntity) row[2], issue))
+                        .toList());
     }
 
     @WithSession
@@ -134,7 +154,7 @@ public class ArticleService {
                         revision.articleId = persisted.id;
                         return revision.<ArticleRevisionEntity>persist();
                     })
-                    .flatMap(persisted -> flushed(new ArticleView(article, revision, section)));
+                    .flatMap(persisted -> flushed(new ArticleView(article, revision, section, null)));
         });
     }
 
@@ -166,12 +186,12 @@ public class ArticleService {
                 article.updatedAt = now;
                 ArticleRevisionEntity latest = view.revision();
                 if (latest.holds(content)) {
-                    return flushed(new ArticleView(article, latest, section));
+                    return flushed(new ArticleView(article, latest, section, view.issue()));
                 }
                 if (latest.publishedAt == null) {
                     latest.apply(content);
                     latest.updatedAt = now;
-                    return flushed(new ArticleView(article, latest, section));
+                    return flushed(new ArticleView(article, latest, section, view.issue()));
                 }
                 ArticleRevisionEntity next = new ArticleRevisionEntity();
                 next.articleId = article.id;
@@ -179,7 +199,7 @@ public class ArticleService {
                 next.apply(content);
                 next.createdAt = now;
                 next.updatedAt = now;
-                return next.persist().flatMap(persisted -> flushed(new ArticleView(article, next, section)));
+                return next.persist().flatMap(persisted -> flushed(new ArticleView(article, next, section, view.issue())));
             });
         });
     }
@@ -206,8 +226,7 @@ public class ArticleService {
                 .flatMap(staffed -> {
                     require(ArticleAction.PUBLISH, newsroom, view, staffed);
                     requireHeadline(view, "publishing");
-                    goLive(view, now());
-                    return flushed(view);
+                    return appendTarget(view).flatMap(target -> flushed(goLive(view, now(), target)));
                 }));
     }
 
@@ -244,15 +263,17 @@ public class ArticleService {
             require(ArticleAction.APPROVE, newsroom, view, Staffing.NOT_NEEDED);
             return staffing.forApproval(view.article().authorSub).flatMap(staffed -> {
                 ArticleEntity article = view.article();
-                Instant now = now();
-                ArticleReviewEntity review = review(newsroom, view, ReviewDecision.APPROVED, null, now);
-                article.pendingLevel = ApprovalChain.next(ApprovalChain.approverLevel(newsroom, article.sectionId),
+                ApprovalLevel next = ApprovalChain.next(ApprovalChain.approverLevel(newsroom, article.sectionId),
                         article.sectionId, article.authorSub, staffed, article.locked).orElse(null);
-                if (article.pendingLevel == null) {
-                    goLive(view, now);
-                }
-                article.updatedAt = now;
-                return review.persist().flatMap(persisted -> flushed(view));
+                Uni<AppendTarget> target = next == null ? appendTarget(view) : Uni.createFrom().nullItem();
+                return target.flatMap(appendTo -> {
+                    Instant now = now();
+                    ArticleReviewEntity review = review(newsroom, view, ReviewDecision.APPROVED, null, now);
+                    article.pendingLevel = next;
+                    ArticleView result = next == null ? goLive(view, now, appendTo) : view;
+                    article.updatedAt = now;
+                    return review.persist().flatMap(persisted -> flushed(result));
+                });
             });
         });
     }
@@ -340,7 +361,7 @@ public class ArticleService {
                 .<ArticleRevisionEntity>findById(new ArticleRevisionId(id, number))
                 .onItem().ifNull().failWith(() -> ArticleException.notFound(
                         "article " + id + " has no revision " + number))
-                .flatMap(revision -> section(article).map(section -> new ArticleView(article, revision, section))));
+                .flatMap(revision -> view(article, revision)));
     }
 
     public record Revisions(ArticleEntity article, List<ArticleRevisionEntity> revisions) {
@@ -361,9 +382,12 @@ public class ArticleService {
 
     /**
      * Makes the latest revision live: status {@code PUBLISHED}, publication timestamps set on first
-     * publication, nothing pending, not locked.
+     * publication, nothing pending, not locked; appended to {@code target} if given.
+     *
+     * @param target from {@link #appendTarget}, queried before any change so no auto-flush writes the
+     *               article twice
      */
-    private static void goLive(ArticleView view, Instant now) {
+    private static ArticleView goLive(ArticleView view, Instant now, AppendTarget target) {
         ArticleEntity article = view.article();
         ArticleRevisionEntity latest = view.revision();
         if (latest.publishedAt == null) {
@@ -377,6 +401,40 @@ public class ArticleService {
         article.pendingLevel = null;
         article.locked = false;
         article.updatedAt = now;
+        if (target == null) {
+            return view;
+        }
+        article.issueId = target.issue().id;
+        article.issuePosition = target.position();
+        return new ArticleView(article, view.revision(), view.section(), target.issue());
+    }
+
+    /**
+     * Where a publication appends the article: the end of the issue with the highest number,
+     * published or not, when this is the article's first publication and it belongs to no issue;
+     * {@code null} otherwise and when no issue exists. Two concurrent appends may get the same
+     * position, which is harmless: articles of an issue are ordered by position, then id.
+     */
+    private static Uni<AppendTarget> appendTarget(ArticleView view) {
+        if (view.article().publishedAt != null || view.article().issueId != null) {
+            return Uni.createFrom().nullItem();
+        }
+        return Panache.getSession().flatMap(session -> session.createSelectionQuery(
+                "select i, (select max(a.issuePosition) from ArticleEntity a where a.issueId = i.id) "
+                        + "from IssueEntity i order by i.number desc",
+                Object[].class)
+                .setMaxResults(1)
+                .getResultList())
+                .map(rows -> {
+                    if (rows.isEmpty()) {
+                        return null;
+                    }
+                    Integer last = (Integer) rows.get(0)[1];
+                    return new AppendTarget((IssueEntity) rows.get(0)[0], last == null ? 0 : last + 1);
+                });
+    }
+
+    private record AppendTarget(IssueEntity issue, int position) {
     }
 
     private static void endSubmission(ArticleEntity article, Instant now) {
@@ -423,7 +481,16 @@ public class ArticleService {
     private static Uni<ArticleView> load(Newsroom newsroom, long id) {
         return find(newsroom, id).flatMap(article -> ArticleRevisionEntity
                 .<ArticleRevisionEntity>find("articleId = ?1 order by number desc", id).firstResult()
-                .flatMap(latest -> section(article).map(section -> new ArticleView(article, latest, section))));
+                .flatMap(latest -> view(article, latest)));
+    }
+
+    private static Uni<ArticleView> view(ArticleEntity article, ArticleRevisionEntity revision) {
+        return section(article).flatMap(section -> issue(article)
+                .map(issue -> new ArticleView(article, revision, section, issue)));
+    }
+
+    private static Uni<IssueEntity> issue(ArticleEntity article) {
+        return article.issueId == null ? Uni.createFrom().nullItem() : IssueEntity.findById(article.issueId);
     }
 
     private static Uni<SectionEntity> section(ArticleEntity article) {

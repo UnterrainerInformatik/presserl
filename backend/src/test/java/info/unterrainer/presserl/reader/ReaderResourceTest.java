@@ -43,7 +43,8 @@ class ReaderResourceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = { "/", "/articles/{published}", "/articles/999999", "/articles/abc" })
+    @ValueSource(strings = { "/", "/articles/{published}", "/articles/999999", "/articles/abc", "/issues",
+            "/issues/999999", "/print/article/999999" })
     void pagesHaveSameOriginCspAndNoScriptsOrForeignUrls(String path) {
         long published = emptyNewspaper().published("Csp check", Instant.parse("2026-09-20T12:00:00Z"));
 

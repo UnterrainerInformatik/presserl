@@ -110,6 +110,57 @@ GET {{baseUrl}}/articles/abc
     });
 %}
 
+### Print view of the article
+GET {{baseUrl}}/print/article/{{readerArticleId}}
+
+> {%
+    client.test("print view of the live revision with the print script", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.headers.valueOf("Content-Security-Policy").startsWith("default-src 'self';"), "csp");
+        client.assert(response.body.includes('<main data-view="print-article">'), "view");
+        client.assert(response.body.includes('<h1 class="headline">&lt;b&gt;Pumpkin&lt;/b&gt; record</h1>'), "headline");
+        client.assert(response.body.includes("<h2>Watering</h2>"), "body");
+        client.assert(response.body.includes('<script src="/reader/print.js" defer></script>'), "script");
+        client.assert(response.body.includes('<button type="button" data-print hidden>Drucken</button>'), "button");
+        client.assert(!response.body.includes("Unpublished headline"), "unpublished changes leaked");
+    });
+%}
+
+### The article page links its print view
+GET {{baseUrl}}/articles/{{readerArticleId}}
+
+> {%
+    client.test("print link", () => client.assert(
+        response.body.includes('<a href="/print/article/' + client.global.get("readerArticleId") + '">Drucken</a>'), "print link"));
+%}
+
+### Print view with a malformed id
+GET {{baseUrl}}/print/article/abc
+
+> {%
+    client.test("404 page", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### Print script and print rules
+GET {{baseUrl}}/reader/print.js
+
+> {%
+    client.test("same-origin script", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.includes("window.print()"), "print");
+    });
+%}
+
+### Stylesheet with A4 pages and page numbers
+GET {{baseUrl}}/reader/reader.css
+
+> {%
+    client.test("@page A4 with counter", () => {
+        client.assert(response.body.includes("size: A4 portrait"), "A4");
+        client.assert(response.body.includes("content: counter(page)"), "counter");
+    });
+%}
+
 ### Clean up: take the article offline, it disappears from the reader
 POST {{baseUrl}}/api/articles/{{readerArticleId}}/offline
 Authorization: Bearer {{accessToken}}
@@ -201,6 +252,28 @@ GET {{baseUrl}}/articles/{{imageArticleId}}
         client.assert(response.body.includes('src="/media/' + id + '/web"'), "src");
         client.assert(response.body.includes('<figcaption class="lead-image__caption">Our cat &lt;b&gt;Minka&lt;/b&gt;</figcaption>'),
             "caption");
+    });
+%}
+
+### Lead image: the print view uses the print rendition
+GET {{baseUrl}}/print/article/{{imageArticleId}}
+
+> {%
+    client.test("print rendition", () => {
+        const id = client.global.get("readerMediaId");
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.includes('src="/media/' + id + '/print"'), "src");
+        client.assert(!response.body.includes("srcset"), "srcset");
+    });
+%}
+
+### Lead image: the print rendition is served to readers
+GET {{baseUrl}}/media/{{readerMediaId}}/print
+
+> {%
+    client.test("200 JPEG", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.headers.valueOf("Content-Type") === "image/jpeg", "type " + response.headers.valueOf("Content-Type"));
     });
 %}
 

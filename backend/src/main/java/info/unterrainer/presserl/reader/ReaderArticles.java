@@ -22,14 +22,15 @@ import jakarta.enterprise.context.ApplicationScoped;
 public class ReaderArticles {
 
     /**
-     * Live revisions of published articles with their section and the {@code web} and
-     * {@code thumbnail} renditions of their lead image (both {@code null} without one).
+     * Live revisions of published articles with their section and the {@code web}, {@code thumbnail}
+     * and {@code print} renditions of their lead image (all {@code null} without one).
      */
-    private static final String LIVE_PUBLISHED = "select a, r, s, w, t from ArticleEntity a "
+    static final String LIVE_PUBLISHED = "select a, r, s, w, t, p from ArticleEntity a "
             + "join ArticleRevisionEntity r on r.articleId = a.id and r.number = a.liveRevision "
             + "join SectionEntity s on s.id = a.sectionId "
             + "left join MediaRenditionEntity w on w.mediaId = r.leadImageMediaId and w.kind = 'web' "
             + "left join MediaRenditionEntity t on t.mediaId = r.leadImageMediaId and t.kind = 'thumbnail' "
+            + "left join MediaRenditionEntity p on p.mediaId = r.leadImageMediaId and p.kind = 'print' "
             + "where a.status = :status";
 
     /**
@@ -91,10 +92,13 @@ public class ReaderArticles {
                 .map(sections -> sections.stream().map(ReaderSection::of).toList());
     }
 
-    private static ReaderArticle toArticle(Object[] row) {
+    /**
+     * Maps a row of {@link #LIVE_PUBLISHED}.
+     */
+    static ReaderArticle toArticle(Object[] row) {
         ArticleRevisionEntity live = (ArticleRevisionEntity) row[1];
         ReaderImage leadImage = ReaderImage.of(live.leadImageMediaId, live.leadImageCaption,
-                (MediaRenditionEntity) row[3], (MediaRenditionEntity) row[4]);
+                (MediaRenditionEntity) row[3], (MediaRenditionEntity) row[4], (MediaRenditionEntity) row[5]);
         return ReaderArticle.of((ArticleEntity) row[0], live, (SectionEntity) row[2], leadImage);
     }
 }

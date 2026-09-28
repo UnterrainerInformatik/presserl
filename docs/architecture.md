@@ -104,7 +104,7 @@ One newspaper per server; a second newspaper is a second deployment.
 - **Article** — section (exactly one, `NOT NULL` in the database; the section belongs to the article, not to a revision, so moving an article creates no revision; a section with articles cannot be deleted), author (token `sub` plus username/display-name snapshot for the byline), status (`DRAFT` | `SUBMITTED` | `PUBLISHED` | `OFFLINE`; `SUBMITTED` = never published and waiting for approval), pending approval level (`SECTION_EDITOR` | `EDITOR_IN_CHIEF` | `PUBLISHER`, `NULL` while no submission is pending; published and offline articles keep their status while it is set), live revision (by number, `NULL` until the first publication), first publication time, emergency-brake lock (only `OFFLINE` articles; set when a publisher takes the article offline, cleared when it goes online or a publisher unlocks it), optimistic-lock version. The lead image is revision content (see ArticleRevision), not an attribute of the article
 - **ArticleRevision** — numbered per article (`1, 2, …`), holds the content: kicker, headline, subheadline, lead (plain text), an optional lead image (media reference plus caption, plain text ≤ 300 characters; a caption needs an image, a referenced media cannot be deleted) and body (**body format v1**: structured JSON of blocks — paragraph, subhead, quote, bullet list — with inline runs whose only mark is bold; validated server-side against an allowlist, never raw HTML). The latest revision is the **working revision**: saves overwrite it until it is published; after that the next save with changed content starts a new revision. Publishing makes the latest revision the article's live revision, which stays unchanged until the next publication, so a new or changed lead image reaches readers only with it. Taking offline keeps the live revision reference.
 - **ArticleReview** — one approval or rejection: decision, the level the article waited for, the reviewed revision, reviewer (token `sub` plus username/display-name snapshot), note (rejections only, feedback to the author), time; deleted with the article
-- **Issue** — number and publication date; groups articles; basis for the issue print view
+- **Issue** — number (assigned as highest + 1, unique, never changed), optional publication date (a calendar date, display only), published switch plus time of the latest switch; groups articles in an order (the first is the lead story). Membership lives on the article (`issue_id` + `issue_position`, both set or both `NULL`), so an article belongs to at most one issue. The first publication of an article without issue appends it to the issue with the highest number, live or not (blog mode: one live issue that grows; planned issues: the highest one is not live yet and collects). Only unpublished issues can be deleted; their articles then belong to no issue. The migration creates issue 1 (not live) with every article published before. Issues only hide themselves while not live — article visibility stays governed by the article status
 - **Media** — one uploaded image after re-encoding: object key in the media store (`media/<uuid>.<jpg|png>`, random, written once), content type (`image/jpeg` | `image/png`), width, height, stored size, uploader (token `sub` plus username/display-name snapshot), upload time. The bytes live only in the object store; the rows are written after the objects, so no row points to a missing object.
 - **MediaRendition** — media × kind (`thumbnail` ≤ 480 px, `web` ≤ 1600 px, `print` ≤ 3000 px on the longer side, never enlarged): own object key, content type (that of the media), width, height, size. Produced during the upload from the decoded pixels (media and rendition rows in one transaction); media from before renditions get theirs from a startup backfill in the background. Storage per image grows by roughly half of the stored image
 
@@ -118,9 +118,11 @@ GET    /login?next={path}                 reader login (code flow), back to a sa
 GET    /logout                            reader logout (RP-initiated), back to /
 GET    /sections/{slug}                   section page
 GET    /articles/{id}                     article page
-GET    /issues/{id}                       issue
-GET    /print/article/{id}                print view: article
-GET    /print/issue/{id}                  print view: issue
+GET    /issues                            archive of the live issues, highest number first      (implemented)
+GET    /issues/{id}                       live issue: its published articles in issue order     (implemented)
+GET    /print/article/{id}                print view: a published article on A4                 (implemented)
+GET    /print/issue/{id}                  print view: a live issue on A4, columns after page 1  (implemented)
+GET    /reader/print.js                   same-origin script of the print button
 POST   /text-size                         reader's text-size choice (form: size, next) → cookie, 303 back
 GET    /reader/reader.css, /reader/fonts/* default theme and its self-hosted fonts (OFL)
 GET    /theme/*                           fork theme directory (presserl.theme.dir, from deploy/theme/): allow-listed
@@ -147,8 +149,15 @@ session and also work for anonymous visitors of a private newspaper. `/theme/*` 
 Every reader page renders `<html data-text-size>` from the reader's cookie, falling back to the
 newspaper's effective `reader.text-size`.
 
-**Reader login.** The reader paths (`/`, `/login`, `/logout`, `/articles/*`, `/media/*`, later sections,
-issues and print views) belong to the OIDC tenant `reader`: a web-app tenant using the confidential
+**Issues and print views.** The front page masthead names the newest live issue (linked) and links
+the archive when more than one issue is live. Print views are pure HTML + CSS on the reader stack:
+`@page` A4 portrait with the page number in the footer, black on white regardless of theme and dark
+mode, sizes in `pt`, figures and headline blocks kept whole, the issue's articles after the first
+page in `--presserl-grid-columns` columns (default 2); the lead image uses the `print` rendition.
+The "Print" button is shown and bound by `/reader/print.js`, so no inline script is needed.
+
+**Reader login.** The reader paths (`/`, `/login`, `/logout`, `/articles/*`, `/issues`, `/issues/*`,
+`/print/*`, `/media/*`, later sections) belong to the OIDC tenant `reader`: a web-app tenant using the confidential
 Keycloak client `presserl-reader` with the authorization code flow and PKCE. The session lives in the
 encrypted `q_session_reader` cookie (`HttpOnly`, `SameSite=Lax`, path `/`, `Secure` in production);
 there is no server-side session store. Only `/login` requires authentication; it starts the code
@@ -159,7 +168,8 @@ bearer tokens only, never the reader cookie.
 
 Access is decided per request in `ReaderResource` against the effective visibility. A public
 newspaper is open to everyone. In a private newspaper, anonymous visitors see the masthead, a note
-and a login link, and article pages redirect to the login for every id. Visitors with `READER`,
+and a login link, and article, issue and print pages redirect to the login (returning to the
+requested path) for every id. Visitors with `READER`,
 `EDITOR_IN_CHIEF` or `PUBLISHER` read normally. Other logged-in accounts get a no-access note and
 `404`. Pages of a private newspaper and pages for a logged-in visitor are sent with
 `Cache-Control: private, no-store`.
@@ -210,6 +220,13 @@ POST   /api/media                         WRITE_ARTICLES; multipart part `file`;
 GET    /api/media/{id}                    WRITE_ARTICLES; metadata (implemented)
 GET    /api/media/{id}/content            WRITE_ARTICLES; stored image bytes (implemented)
 GET    /api/media/{id}/renditions/{kind}  WRITE_ARTICLES; rendition bytes (thumbnail | web | print) (implemented)
+GET    /api/issues                        MANAGE_ISSUES; highest number first                (implemented)
+POST   /api/issues                        MANAGE_ISSUES; next number, optional date          (implemented)
+GET    /api/issues/{id}                   MANAGE_ISSUES; with its articles in order          (implemented)
+PUT    /api/issues/{id}                   MANAGE_ISSUES; set or clear the publication date   (implemented)
+POST   /api/issues/{id}/publish|unpublish MANAGE_ISSUES; switch live, no approval            (implemented)
+PUT    /api/issues/{id}/articles          MANAGE_ISSUES; complete ordered article list       (implemented)
+DELETE /api/issues/{id}                   MANAGE_ISSUES; only while not live                 (implemented)
 GET    /api/me                            my roles, section roles and allowed actions (implemented)
 ```
 
@@ -221,10 +238,10 @@ Article and account responses and `GET /api/me` carry `allowedActions`; clients 
 
 1. **Front page** — masthead, lead story, modular article cards
 2. **Article page** — reading mode with byline
-3. **Section / archive / issues**
-4. **Print views** — article and whole issue
+3. **Issues** — issue archive and issue page (implemented); section pages later
+4. **Print views** — article and whole issue (implemented)
 
-Every reader view sets `data-view="…"` on `<main>` (e.g. `frontpage`, `article`, `not-found`, `section`, `print-issue`) as a stable hook for custom CSS.
+Every reader view sets `data-view="…"` on `<main>` (`frontpage`, `article`, `issues`, `issue`, `print-article`, `print-issue`, `not-found`; later `section`) as a stable hook for custom CSS.
 
 ### Administration app (Compose)
 
@@ -233,7 +250,8 @@ Every reader view sets `data-view="…"` on `<main>` (e.g. `frontpage`, `article
 3. **Review queue** — "Waiting for me (n)" tab of the article lists (`GET /api/articles?awaitingMe=true`), only visible when there is something to approve (implemented)
 4. **Accounts** — create (with printable slip), reset password, lock, assign roles, trust
 5. **Sections** — create, order, colours, section roles
-6. **Newspaper** — default reader text size (publisher, editor-in-chief; `CONFIGURE_NEWSPAPER`, implemented); later name, subtitle, visibility
+6. **Issues** — create, date, switch live, order articles, delete while not live; links to the issue page and its print view (`MANAGE_ISSUES`, implemented)
+7. **Newspaper** — default reader text size (publisher, editor-in-chief; `CONFIGURE_NEWSPAPER`, implemented); later name, subtitle, visibility
 
 ## Security checklist (MVP)
 

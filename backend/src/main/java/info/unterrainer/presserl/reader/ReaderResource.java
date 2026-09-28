@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.function.Function;
 
 import org.jboss.resteasy.reactive.RestResponse;
 import org.jboss.resteasy.reactive.RestResponse.ResponseBuilder;
@@ -16,6 +17,7 @@ import info.unterrainer.presserl.newspaper.Visibility;
 import info.unterrainer.presserl.reader.BodyRenderer.Block;
 import info.unterrainer.presserl.reader.ReaderViewer.Access;
 import io.quarkus.qute.CheckedTemplate;
+import io.quarkus.qute.TemplateData;
 import io.quarkus.qute.TemplateInstance;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.mutiny.Uni;
@@ -42,7 +44,11 @@ import jakarta.ws.rs.core.UriInfo;
  * <p>
  * Every page renders the effective text size (the reader's cookie, else the newspaper's
  * {@code reader.text-size}), links the fork's {@code custom.css} when present and shows the section bar
- * whenever it shows content.
+ * whenever it shows content, except the print views.
+ * <p>
+ * Issues: {@code /issues} lists the published issues, {@code /issues/{id}} shows one; the front page
+ * masthead names the newest published issue. Print views: {@code /print/article/{id}} and
+ * {@code /print/issue/{id}}. All of them follow the same access rules as the article page.
  */
 @Path("/")
 @Produces(MediaType.TEXT_HTML + ";charset=UTF-8")
@@ -53,6 +59,7 @@ public class ReaderResource {
     static final int FRONT_PAGE_LIMIT = 30;
     static final String NO_STORE = "no-store";
     static final String PRIVATE_NO_STORE = "private, no-store";
+    static final String ID = "\\d{1,18}";
 
     @CheckedTemplate
     static class Templates {
@@ -62,6 +69,33 @@ public class ReaderResource {
         static native TemplateInstance article(ReaderPage page, ReaderArticle article, List<Block> blocks);
 
         static native TemplateInstance notFound(ReaderPage page);
+
+        static native TemplateInstance issues(ReaderPage page, List<ReaderIssue> issues);
+
+        static native TemplateInstance issue(ReaderPage page, ReaderIssue issue, ReaderArticle leadStory,
+                List<ReaderArticle> stories);
+
+        static native TemplateInstance printArticle(ReaderPage page, PrintStory story);
+
+        static native TemplateInstance printIssue(ReaderPage page, ReaderIssue issue, PrintStory leadStory,
+                List<PrintStory> stories);
+    }
+
+    /**
+     * An article of a print view with its body blocks.
+     */
+    @TemplateData
+    public record PrintStory(ReaderArticle article, List<Block> blocks) {
+
+        static PrintStory of(ReaderArticle article) {
+            return new PrintStory(article, BodyRenderer.blocks(article.body()));
+        }
+    }
+
+    /**
+     * A visitor who may read the newspaper, with the page chrome to render for them.
+     */
+    private record Visit(Locale locale, ReaderPage page, boolean noStore) {
     }
 
     @Inject
@@ -69,6 +103,9 @@ public class ReaderResource {
 
     @Inject
     ReaderArticles articles;
+
+    @Inject
+    ReaderIssues issues;
 
     @Inject
     SecurityIdentity identity;
@@ -89,49 +126,98 @@ public class ReaderResource {
                 return render(Templates.frontpage(page, !viewer.loggedIn(), viewer.loggedIn(), null, List.of()),
                         locale, Status.OK, noStore(s, viewer));
             }
-            // one after the other: both queries use the request's reactive session
-            return articles.frontPage(FRONT_PAGE_LIMIT).flatMap(list -> articles.sections().flatMap(sections -> render(
-                    Templates.frontpage(page.withSections(sections), false, false,
-                            list.isEmpty() ? null : list.get(0),
-                            list.isEmpty() ? List.of() : list.subList(1, list.size())),
-                    locale, Status.OK, noStore(s, viewer))));
+            // one after the other: all queries use the request's reactive session
+            return articles.frontPage(FRONT_PAGE_LIMIT).flatMap(list -> articles.sections().flatMap(sections -> issues
+                    .current().flatMap(current -> render(
+                            Templates.frontpage(page.withSections(sections).withIssueLine(current
+                                    .map(c -> new ReaderPage.IssueLine(c.issue(), true, c.publishedCount() > 1))
+                                    .orElse(null)), false, false,
+                                    list.isEmpty() ? null : list.get(0),
+                                    list.isEmpty() ? List.of() : list.subList(1, list.size())),
+                            locale, Status.OK, noStore(s, viewer)))));
         });
     }
 
     /**
      * The article page; a malformed or unknown id and an unpublished article get the same 404 page.
-     * In a private newspaper an anonymous visitor is sent to the login for every id, and a logged-in
-     * visitor without a newspaper role gets the 404 page.
      */
     @GET
     @Path("articles/{id}")
     public Uni<RestResponse<String>> article(@PathParam("id") String id, @Context HttpHeaders headers,
             @Context UriInfo uri, @CookieParam(TextSizeResource.COOKIE) String textSize) {
-        Locale locale = locale(headers);
-        ReaderViewer viewer = ReaderViewer.of(identity);
-        return settings.effective().flatMap(s -> {
-            boolean privateNewspaper = s.visibility() == Visibility.PRIVATE;
-            if (privateNewspaper && !viewer.loggedIn()) {
-                return Uni.createFrom().item(redirect(LoginTarget.loginForArticle(id)));
-            }
-            boolean readable = !privateNewspaper || viewer.access() == Access.ENTITLED;
-            ReaderPage page = page(locale, s, viewer, textSize, uri);
-            boolean noStore = noStore(s, viewer);
-            if (!readable) {
-                return render(Templates.notFound(page), locale, Status.NOT_FOUND, noStore);
-            }
-            Uni<Optional<ReaderArticle>> found = id.matches("\\d{1,18}")
-                    ? articles.article(Long.parseLong(id))
-                    : Uni.createFrom().item(Optional.empty());
-            // one after the other: both queries use the request's reactive session
-            return found.flatMap(article -> articles.sections().flatMap(sections -> {
-                ReaderPage withBar = page.withSections(sections);
-                return article
-                        .map(a -> render(Templates.article(withBar, a, BodyRenderer.blocks(a.body())), locale,
-                                Status.OK, noStore))
-                        .orElseGet(() -> render(Templates.notFound(withBar), locale, Status.NOT_FOUND, noStore));
-            }));
-        });
+        return guarded("/articles/" + LoginTarget.segment(id), headers, uri, textSize,
+                visit -> publishedArticle(id).flatMap(article -> withSections(visit).flatMap(page -> article
+                        .map(a -> render(Templates.article(page, a, BodyRenderer.blocks(a.body())), visit.locale(),
+                                Status.OK, visit.noStore()))
+                        .orElseGet(() -> notFound(visit, page)))));
+    }
+
+    /**
+     * The archive of the published issues, highest number first.
+     */
+    @GET
+    @Path("issues")
+    public Uni<RestResponse<String>> issues(@Context HttpHeaders headers, @Context UriInfo uri,
+            @CookieParam(TextSizeResource.COOKIE) String textSize) {
+        return guarded("/issues", headers, uri, textSize, visit -> issues.archive()
+                .flatMap(list -> withSections(visit).flatMap(page -> render(Templates.issues(page, list),
+                        visit.locale(), Status.OK, visit.noStore()))));
+    }
+
+    /**
+     * A published issue as a newspaper page: its published articles in issue order, the first as lead
+     * story. A malformed or unknown id and an unpublished issue get the 404 page.
+     */
+    @GET
+    @Path("issues/{id}")
+    public Uni<RestResponse<String>> issue(@PathParam("id") String id, @Context HttpHeaders headers,
+            @Context UriInfo uri, @CookieParam(TextSizeResource.COOKIE) String textSize) {
+        return guarded("/issues/" + LoginTarget.segment(id), headers, uri, textSize,
+                visit -> publishedIssue(id).flatMap(issue -> issue.isEmpty()
+                        ? withSections(visit).flatMap(page -> notFound(visit, page))
+                        : issues.articles(issue.get().id()).flatMap(list -> issues.current()
+                                .flatMap(current -> withSections(visit).flatMap(page -> render(
+                                        Templates.issue(page.withIssueLine(new ReaderPage.IssueLine(issue.get(), false,
+                                                current.map(c -> c.publishedCount() > 1).orElse(false))),
+                                                issue.get(), list.isEmpty() ? null : list.get(0),
+                                                list.isEmpty() ? List.of() : list.subList(1, list.size())),
+                                        visit.locale(), Status.OK, visit.noStore()))))));
+    }
+
+    /**
+     * The print view of a published article; otherwise the 404 page.
+     */
+    @GET
+    @Path("print/article/{id}")
+    public Uni<RestResponse<String>> printArticle(@PathParam("id") String id, @Context HttpHeaders headers,
+            @Context UriInfo uri, @CookieParam(TextSizeResource.COOKIE) String textSize) {
+        return guarded("/print/article/" + LoginTarget.segment(id), headers, uri, textSize,
+                visit -> publishedArticle(id).flatMap(article -> article.isEmpty()
+                        ? withSections(visit).flatMap(page -> notFound(visit, page))
+                        : render(Templates.printArticle(visit.page(), PrintStory.of(article.get())), visit.locale(),
+                                Status.OK, visit.noStore())));
+    }
+
+    /**
+     * The print view of a published issue: its published articles in issue order, the first on the
+     * front page; otherwise the 404 page.
+     */
+    @GET
+    @Path("print/issue/{id}")
+    public Uni<RestResponse<String>> printIssue(@PathParam("id") String id, @Context HttpHeaders headers,
+            @Context UriInfo uri, @CookieParam(TextSizeResource.COOKIE) String textSize) {
+        return guarded("/print/issue/" + LoginTarget.segment(id), headers, uri, textSize,
+                visit -> publishedIssue(id).flatMap(issue -> issue.isEmpty()
+                        ? withSections(visit).flatMap(page -> notFound(visit, page))
+                        : issues.articles(issue.get().id()).flatMap(list -> {
+                            List<PrintStory> stories = list.stream().map(PrintStory::of).toList();
+                            return render(Templates.printIssue(
+                                    visit.page().withIssueLine(new ReaderPage.IssueLine(issue.get(), false, false)),
+                                    issue.get(),
+                                    stories.isEmpty() ? null : stories.get(0),
+                                    stories.isEmpty() ? List.of() : stories.subList(1, stories.size())),
+                                    visit.locale(), Status.OK, visit.noStore());
+                        })));
     }
 
     /**
@@ -154,6 +240,50 @@ public class ReaderResource {
         return redirect(LoginTarget.HOME);
     }
 
+    /**
+     * Applies the newspaper's visibility before {@code content} renders the page: in a private
+     * newspaper an anonymous visitor is sent to the login (returning to {@code path}) for every id, and
+     * a logged-in visitor without a newspaper role gets the 404 page.
+     *
+     * @param path the requested reader path, segments encoded ({@link LoginTarget#segment})
+     */
+    private Uni<RestResponse<String>> guarded(String path, HttpHeaders headers, UriInfo uri, String textSize,
+            Function<Visit, Uni<RestResponse<String>>> content) {
+        Locale locale = locale(headers);
+        ReaderViewer viewer = ReaderViewer.of(identity);
+        return settings.effective().flatMap(s -> {
+            boolean privateNewspaper = s.visibility() == Visibility.PRIVATE;
+            if (privateNewspaper && !viewer.loggedIn()) {
+                return Uni.createFrom().item(redirect(LoginTarget.loginFor(path)));
+            }
+            Visit visit = new Visit(locale, page(locale, s, viewer, textSize, uri), noStore(s, viewer));
+            if (privateNewspaper && viewer.access() != Access.ENTITLED) {
+                return notFound(visit, visit.page());
+            }
+            return content.apply(visit);
+        });
+    }
+
+    private Uni<Optional<ReaderArticle>> publishedArticle(String id) {
+        return id.matches(ID) ? articles.article(Long.parseLong(id)) : Uni.createFrom().item(Optional.empty());
+    }
+
+    private Uni<Optional<ReaderIssue>> publishedIssue(String id) {
+        return id.matches(ID) ? issues.published(Long.parseLong(id)) : Uni.createFrom().item(Optional.empty());
+    }
+
+    /**
+     * The visitor's page with the section bar. Queries run one after the other: they share the
+     * request's reactive session.
+     */
+    private Uni<ReaderPage> withSections(Visit visit) {
+        return articles.sections().map(sections -> visit.page().withSections(sections));
+    }
+
+    private static Uni<RestResponse<String>> notFound(Visit visit, ReaderPage page) {
+        return render(Templates.notFound(page), visit.locale(), Status.NOT_FOUND, visit.noStore());
+    }
+
     private static RestResponse<String> redirect(String location) {
         return ResponseBuilder.<String> seeOther(URI.create(location)).header(HttpHeaders.CACHE_CONTROL, NO_STORE)
                 .build();
@@ -166,7 +296,7 @@ public class ReaderResource {
         String path = request.getRawQuery() == null ? request.getRawPath()
                 : request.getRawPath() + "?" + request.getRawQuery();
         return new ReaderPage(locale.getLanguage(), s.name(), s.subtitle(), viewer.displayName(), textSize.value(),
-                theme.customCssPresent(), List.of(), path);
+                theme.customCssPresent(), List.of(), path, null);
     }
 
     private static boolean noStore(EffectiveSettings s, ReaderViewer viewer) {

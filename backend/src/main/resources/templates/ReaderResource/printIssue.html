@@ -1,0 +1,24 @@
+{#include layout/reader}
+{#title}{msg:issueLabel(issue.number)} – {page.name}{/title}
+{#scripts}<script src="/reader/print.js" defer></script>{/scripts}
+<main data-view="print-issue">
+  {#printToolbar kind="issue" id=issue.id /}
+  <div class="print-sheet">
+    <section class="print-issue__front">
+      {#printMasthead page=page nameTag="h1" /}
+      {#if leadStory}
+      {#fullArticle story=leadStory heading="h2" /}
+      {#else}
+      <p class="note">{msg:issueEmptyNote}</p>
+      {/if}
+    </section>
+    {#if stories}
+    <div class="print-columns">
+      {#for other in stories}
+      {#fullArticle story=other heading="h2" /}
+      {/for}
+    </div>
+    {/if}
+  </div>
+</main>
+{/include}

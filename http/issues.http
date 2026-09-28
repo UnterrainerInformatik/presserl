@@ -1,0 +1,362 @@
+### Token for the publisher (writes and publishes articles)
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{username}}&password={{password}}
+
+> {%
+    client.global.set("accessToken", response.body.access_token);
+%}
+
+### Token for the editor-in-chief (manages issues)
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{chiefUsername}}&password={{chiefPassword}}
+
+> {%
+    client.global.set("chiefToken", response.body.access_token);
+%}
+
+### Token for a reader (no MANAGE_ISSUES)
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{readerUsername}}&password={{readerPassword}}
+
+> {%
+    client.global.set("readerToken", response.body.access_token);
+%}
+
+### The editor-in-chief may manage issues
+GET {{baseUrl}}/api/me
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("MANAGE_ISSUES listed", () => client.assert(response.body.allowedActions.includes("MANAGE_ISSUES"),
+        "actions " + response.body.allowedActions));
+%}
+
+### Without a token
+GET {{baseUrl}}/api/issues
+
+> {%
+    client.test("401", () => client.assert(response.status === 401, "status " + response.status));
+%}
+
+### A reader may not list issues
+GET {{baseUrl}}/api/issues
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("403", () => client.assert(response.status === 403, "status " + response.status));
+%}
+
+### List issues, highest number first
+GET {{baseUrl}}/api/issues
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("200, highest first, only the first is newest", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const numbers = response.body.issues.map(i => i.number);
+        client.assert(JSON.stringify(numbers) === JSON.stringify([...numbers].sort((a, b) => b - a)), "order " + numbers);
+        client.assert(response.body.issues.every((issue, index) => issue.newest === (index === 0)), "newest");
+    });
+    client.global.set("highestNumber", response.body.issues.length ? response.body.issues[0].number : 0);
+%}
+
+### Invalid date
+POST {{baseUrl}}/api/issues
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "publicationDate": "2026-13-40" }
+
+> {%
+    client.test("400 publicationDate", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "publicationDate", "field " + response.body.errors[0].field);
+    });
+%}
+
+### Unknown field
+POST {{baseUrl}}/api/issues
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "title": "Summer issue" }
+
+> {%
+    client.test("400 title", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "title", "field " + response.body.errors[0].field);
+    });
+%}
+
+### Create the next issue without a date
+POST {{baseUrl}}/api/issues
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "publicationDate": null }
+
+> {%
+    client.test("201 with the next number, not live, newest", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        client.assert(response.headers.valueOf("Location").endsWith("/api/issues/" + response.body.id), "Location");
+        client.assert(response.body.number === client.global.get("highestNumber") + 1, "number " + response.body.number);
+        client.assert(response.body.published === false && response.body.publishedAt === null, "published");
+        client.assert(response.body.newest === true && response.body.articles.length === 0, "newest, empty");
+    });
+    client.global.set("issueId", response.body.id);
+    client.global.set("issueNumber", response.body.number);
+%}
+
+### A new article
+POST {{baseUrl}}/api/articles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "headline": "Issue collects me" }
+
+> {%
+    client.global.set("collectedId", response.body.id);
+%}
+
+### Publishing it for the first time appends it to the newest issue
+POST {{baseUrl}}/api/articles/{{collectedId}}/publish
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("issue set", () => {
+        client.assert(response.body.status === "PUBLISHED", "status " + response.body.status);
+        client.assert(response.body.issue && response.body.issue.id === client.global.get("issueId"), "issue " + JSON.stringify(response.body.issue));
+    });
+%}
+
+### A draft that goes into the issue by hand
+POST {{baseUrl}}/api/articles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "headline": "Planned draft" }
+
+> {%
+    client.test("draft without issue", () => client.assert(response.body.issue === null, "issue " + response.body.issue));
+    client.global.set("draftId", response.body.id);
+%}
+
+### Set the publication date
+PUT {{baseUrl}}/api/issues/{{issueId}}
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "publicationDate": "2026-10-12" }
+
+> {%
+    client.test("date set, number unchanged", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.publicationDate === "2026-10-12", "date " + response.body.publicationDate);
+        client.assert(response.body.number === client.global.get("issueNumber"), "number");
+    });
+%}
+
+### Set the articles: the draft becomes the lead story
+PUT {{baseUrl}}/api/issues/{{issueId}}/articles
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "articleIds": [{{draftId}}, {{collectedId}}] }
+
+> {%
+    client.test("order as sent", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const ids = response.body.articles.map(a => a.id);
+        client.assert(JSON.stringify(ids) === JSON.stringify([client.global.get("draftId"), client.global.get("collectedId")]), "ids " + ids);
+        client.assert(response.body.articleCount === 2, "count");
+    });
+%}
+
+### Unknown article changes nothing
+PUT {{baseUrl}}/api/issues/{{issueId}}/articles
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "articleIds": [{{collectedId}}, 999999999] }
+
+> {%
+    client.test("400 articleIds", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "articleIds", "field");
+    });
+%}
+
+### Repeated article changes nothing
+PUT {{baseUrl}}/api/issues/{{issueId}}/articles
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "articleIds": [{{collectedId}}, {{collectedId}}] }
+
+> {%
+    client.test("400 articleIds", () => client.assert(response.status === 400, "status " + response.status));
+%}
+
+### Read the issue: still the order set before
+GET {{baseUrl}}/api/issues/{{issueId}}
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("draft first, then the published article", () => {
+        const ids = response.body.articles.map(a => a.id);
+        client.assert(JSON.stringify(ids) === JSON.stringify([client.global.get("draftId"), client.global.get("collectedId")]), "ids " + ids);
+        client.assert(response.body.articles.every(a => a.issue.id === client.global.get("issueId")), "issue refs");
+    });
+%}
+
+### Not live yet: readers get the 404 page
+GET {{baseUrl}}/issues/{{issueId}}
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### Switch it live
+POST {{baseUrl}}/api/issues/{{issueId}}/publish
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("published with publishedAt", () => {
+        client.assert(response.body.published === true && response.body.publishedAt, "published");
+    });
+    client.global.set("issuePublishedAt", response.body.publishedAt);
+%}
+
+### Publishing again keeps publishedAt
+POST {{baseUrl}}/api/issues/{{issueId}}/publish
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("idempotent", () => client.assert(response.body.publishedAt === client.global.get("issuePublishedAt"),
+        "publishedAt " + response.body.publishedAt));
+%}
+
+### A live issue cannot be deleted
+DELETE {{baseUrl}}/api/issues/{{issueId}}
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("409", () => client.assert(response.status === 409, "status " + response.status));
+%}
+
+### Reader: the issue page shows the published article only
+GET {{baseUrl}}/issues/{{issueId}}
+
+> {%
+    client.test("issue page", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.includes('<main data-view="issue">'), "view");
+        client.assert(response.body.includes("Ausgabe " + client.global.get("issueNumber")), "label");
+        client.assert(response.body.includes("12. Oktober 2026"), "date");
+        client.assert(response.body.includes("Issue collects me"), "published article");
+        client.assert(!response.body.includes("Planned draft"), "draft leaked");
+        client.assert(response.body.includes('href="/print/issue/' + client.global.get("issueId") + '"'), "print link");
+    });
+%}
+
+### Reader: the archive lists it
+GET {{baseUrl}}/issues
+
+> {%
+    client.test("archive", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.includes('href="/issues/' + client.global.get("issueId") + '"'), "link");
+    });
+%}
+
+### Reader: the front page masthead names the newest live issue
+GET {{baseUrl}}/
+
+> {%
+    client.test("issue line", () => client.assert(
+        response.body.includes('<a href="/issues/' + client.global.get("issueId") + '">Ausgabe ' + client.global.get("issueNumber") + '</a>'),
+        "issue line"));
+%}
+
+### Reader: the issue print view
+GET {{baseUrl}}/print/issue/{{issueId}}
+
+> {%
+    client.test("print view", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.includes('<main data-view="print-issue">'), "view");
+        client.assert(response.body.includes("Issue collects me"), "lead story");
+        client.assert(!response.body.includes("Planned draft"), "draft leaked");
+    });
+%}
+
+### Unpublish it again; articles stay published
+POST {{baseUrl}}/api/issues/{{issueId}}/unpublish
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("not published", () => {
+        client.assert(response.body.published === false && response.body.publishedAt === null, "published");
+        client.assert(response.body.articles.find(a => a.id === client.global.get("collectedId")).status === "PUBLISHED", "article status");
+    });
+%}
+
+### Reader: gone again
+GET {{baseUrl}}/print/issue/{{issueId}}
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### Delete the planned issue
+DELETE {{baseUrl}}/api/issues/{{issueId}}
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("204", () => client.assert(response.status === 204, "status " + response.status));
+%}
+
+### Its articles belong to no issue afterwards
+GET {{baseUrl}}/api/articles/{{collectedId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("issue null, still published", () => {
+        client.assert(response.body.issue === null, "issue " + JSON.stringify(response.body.issue));
+        client.assert(response.body.status === "PUBLISHED", "status");
+    });
+%}
+
+### Unknown issue
+GET {{baseUrl}}/api/issues/{{issueId}}
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### Malformed id
+GET {{baseUrl}}/api/issues/abc
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### Clean up: take the article offline and delete the draft
+POST {{baseUrl}}/api/articles/{{collectedId}}/offline
+Authorization: Bearer {{accessToken}}
+
+### Delete the draft
+DELETE {{baseUrl}}/api/articles/{{draftId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("204", () => client.assert(response.status === 204, "status " + response.status));
+%}

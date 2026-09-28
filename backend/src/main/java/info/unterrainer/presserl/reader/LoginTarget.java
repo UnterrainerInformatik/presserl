@@ -37,8 +37,22 @@ final class LoginTarget {
      * every id — known, unknown or malformed — gets the same kind of redirect.
      */
     static String loginForArticle(String id) {
-        String next = "/articles/" + encode(id).replace("+", "%20");
-        return "/login?next=" + encode(next).replace("%2F", "/");
+        return loginFor("/articles/" + segment(id));
+    }
+
+    /**
+     * The login URL that returns to {@code path}, a reader path whose segments are already encoded
+     * ({@link #segment}).
+     */
+    static String loginFor(String path) {
+        return "/login?next=" + encode(path).replace("%2F", "/");
+    }
+
+    /**
+     * {@code value} encoded as one path segment.
+     */
+    static String segment(String value) {
+        return encode(value).replace("+", "%20");
     }
 
     private static String encode(String value) {

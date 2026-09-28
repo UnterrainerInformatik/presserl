@@ -41,6 +41,7 @@ import info.unterrainer.presserl.admin.resources.log_in_again
 import info.unterrainer.presserl.admin.resources.log_out
 import info.unterrainer.presserl.admin.resources.nav_accounts
 import info.unterrainer.presserl.admin.resources.nav_articles
+import info.unterrainer.presserl.admin.resources.nav_issues
 import info.unterrainer.presserl.admin.resources.nav_newspaper
 import info.unterrainer.presserl.admin.resources.nav_sections
 import info.unterrainer.presserl.admin.resources.login_failed
@@ -54,6 +55,8 @@ import info.unterrainer.presserl.admin.ui.account.EditRolesScreen
 import info.unterrainer.presserl.admin.ui.account.NewAccountScreen
 import info.unterrainer.presserl.admin.ui.account.SlipPrinter
 import info.unterrainer.presserl.admin.ui.editor.EditorScreen
+import info.unterrainer.presserl.admin.ui.issue.IssueDetailScreen
+import info.unterrainer.presserl.admin.ui.issue.IssueListScreen
 import info.unterrainer.presserl.admin.ui.newspaper.NewspaperScreen
 import info.unterrainer.presserl.admin.ui.section.SectionFormScreen
 import info.unterrainer.presserl.admin.ui.section.SectionListScreen
@@ -85,6 +88,8 @@ sealed interface Route {
     /** "New section" when [section] is `null`, preselecting [defaultColor]; otherwise "Edit". */
     data class SectionForm(val section: SectionDto?, val defaultColor: String) : Route
     data class SectionMembers(val section: SectionDto) : Route
+    data object Issues : Route
+    data class IssueDetail(val issueId: Long) : Route
     data object Accounts : Route
     data class NewAccount(val assignableRoles: List<String>, val sections: List<SectionDto>) : Route
     data class EditRoles(val account: AccountDto, val assignableRoles: List<String>, val sections: List<SectionDto>) : Route
@@ -157,6 +162,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                 null -> null
                 Route.Accounts -> NavEntry.ACCOUNTS
                 Route.Sections -> NavEntry.SECTIONS
+                Route.Issues -> NavEntry.ISSUES
                 Route.Newspaper -> NavEntry.NEWSPAPER
                 else -> NavEntry.ARTICLES
             },
@@ -165,6 +171,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                     when (entry) {
                         NavEntry.ARTICLES -> Route.ArticleList(ListTab.MINE)
                         NavEntry.SECTIONS -> Route.Sections
+                        NavEntry.ISSUES -> Route.Issues
                         NavEntry.ACCOUNTS -> Route.Accounts
                         NavEntry.NEWSPAPER -> Route.Newspaper
                     },
@@ -207,6 +214,10 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                         SectionFormScreen(api, route.section, route.defaultColor, onBack = back, onSaved = { stack = listOf(Route.Sections) })
                     }
                     is Route.SectionMembers -> key(route) { SectionMembersScreen(api, route.section, onBack = back) }
+                    Route.Issues -> IssueListScreen(api, onOpen = { push(Route.IssueDetail(it)) })
+                    is Route.IssueDetail -> key(route) {
+                        IssueDetailScreen(api, route.issueId, siteUrl, onBack = back, onDeleted = { stack = listOf(Route.Issues) })
+                    }
                     Route.Accounts -> AccountListScreen(
                         api,
                         onNew = { roles, sections -> push(Route.NewAccount(roles, sections)) },
@@ -266,6 +277,7 @@ private fun Header(screen: Screen.LoggedIn, entry: NavEntry?, onEntry: (NavEntry
             val label = when (navEntry) {
                 NavEntry.ARTICLES -> Res.string.nav_articles
                 NavEntry.SECTIONS -> Res.string.nav_sections
+                NavEntry.ISSUES -> Res.string.nav_issues
                 NavEntry.ACCOUNTS -> Res.string.nav_accounts
                 NavEntry.NEWSPAPER -> Res.string.nav_newspaper
             }

@@ -1,0 +1,2 @@
+{! The issue line of a masthead (ReaderPage.IssueLine): label, long publication date, archive link. !}
+<p class="masthead__issue">{#if line.linked}<a href="/issues/{line.issue.id}">{msg:issueLabel(line.issue.number)}</a>{#else}{msg:issueLabel(line.issue.number)}{/if}{#if line.issue.publicationDate} · <time datetime="{line.issue.publicationDate}">{line.issue.publicationDate.longDate}</time>{/if}{#if line.archiveLink} · <a href="/issues">{msg:allIssues}</a>{/if}</p>

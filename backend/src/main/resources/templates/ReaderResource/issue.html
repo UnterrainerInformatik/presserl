@@ -1,0 +1,17 @@
+{#include layout/reader}
+{#title}{msg:issueLabel(issue.number)} – {page.name}{/title}
+<main data-view="issue">
+  {#masthead page=page linked=true /}
+  <p class="print-link"><a href="/print/issue/{issue.id}">{msg:print}</a></p>
+  {#if leadStory}
+  <div class="stories">
+    {#story article=leadStory cls="lead-article" /}
+    {#for other in stories}
+    {#story article=other cls="article-card" /}
+    {/for}
+  </div>
+  {#else}
+  <p class="note">{msg:issueEmptyNote}</p>
+  {/if}
+</main>
+{/include}

@@ -9,7 +9,7 @@ Hierarchy: **Publisher > Editor-in-chief > Section editor > Reporter > Reader.**
 | Role | Enum | German UI label | Stored in | Scope | Typically | Adds to the role below |
 |---|---|---|---|---|---|---|
 | **Publisher** | `PUBLISHER` | Herausgeber | Keycloak group `publisher` | newspaper + technology | parents / administrator | administration (create and lock accounts, reset passwords, theme, newspaper settings, backups), **emergency brake**, final approval level |
-| **Editor-in-chief** | `EDITOR_IN_CHIEF` | Chefredakteur | Keycloak group `editor-in-chief` | whole newspaper | the child who owns the newspaper | creates sections, approves section editors' articles, stands in for sections without a section editor, newspaper settings (e.g. the reader's default text size) |
+| **Editor-in-chief** | `EDITOR_IN_CHIEF` | Chefredakteur | Keycloak group `editor-in-chief` | whole newspaper | the child who owns the newspaper | creates sections, assembles and publishes issues, approves section editors' articles, stands in for sections without a section editor, newspaper settings (e.g. the reader's default text size) |
 | **Section editor** | `SECTION_EDITOR` | Ressortleiter | Presserl DB (per section) | 1..n sections | an older sibling / friend | approves the reporters of their sections |
 | **Reporter** | `REPORTER` | Redakteur | Presserl DB (per section) | 1..n sections | friends, siblings | writes, submits, takes own articles offline |
 | **Reader** | `READER` | Leser | Keycloak group `reader` | newspaper | family, friends | reads a private newspaper |
@@ -84,6 +84,16 @@ Consequences:
 - **Back online** otherwise follows the approval chain. A submission pending when the article is taken offline stays pending; approving it puts the article back online with its latest revision.
 - **Editing a published article** creates a new revision; the live revision stays until the new one passes the chain.
 - **The server decides.** Responses carry `allowedActions`; clients only render what the server lists and never re-implement the chain.
+
+## Issues
+
+Issues are assembled by **editors-in-chief and publishers** (`MANAGE_ISSUES`); section editors and reporters do not see them in the admin app. Publishing an issue needs no approval — the articles inside went through their own chain.
+
+- **Blog mode:** one issue that is switched live from the start and simply grows; no publication date, maybe never a second issue.
+- **Planned issues:** the newest issue (highest number) is not live yet and collects every newly published article; once it is complete it gets a publication date, is switched live, and the next issue is created.
+- A newly published article lands in the newest issue on its **first** publication only; editors-in-chief and publishers reorder, move or remove articles in the issues screen (the first one is the lead story). Republishing never moves an article.
+- An article's own status decides whether readers see it — also inside a planned issue. The issue only hides itself (issue page, archive, issue print view) while it is not live.
+- Only issues that are not live can be deleted; their articles then belong to no issue.
 
 ## Overrides
 

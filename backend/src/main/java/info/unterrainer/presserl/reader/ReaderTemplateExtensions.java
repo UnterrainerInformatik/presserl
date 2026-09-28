@@ -1,6 +1,7 @@
 package info.unterrainer.presserl.reader;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
 import java.util.Locale;
@@ -22,9 +23,16 @@ class ReaderTemplateExtensions {
      * The local date in the long form of the page's language, e.g. {@code 20. September 2026}.
      */
     static String longDate(Instant instant, @TemplateAttribute(TemplateInstance.LOCALE) Object locale) {
+        return longDate(ReaderArticle.localDate(instant), locale);
+    }
+
+    /**
+     * The date in the long form of the page's language, e.g. {@code 12. Oktober 2026}.
+     */
+    static String longDate(LocalDate date, @TemplateAttribute(TemplateInstance.LOCALE) Object locale) {
         return DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG)
                 .withLocale(locale instanceof Locale l ? l : ReaderResource.GERMAN)
-                .format(ReaderArticle.localDate(instant));
+                .format(date);
     }
 
     /**

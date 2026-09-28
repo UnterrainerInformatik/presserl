@@ -30,6 +30,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -77,6 +78,8 @@ class ApiClientTest {
                 path.endsWith("/members") -> """{ "assignableRoles": ["SECTION_EDITOR", "REPORTER"], "members": [$MEMBER] }"""
                 path.contains("/members/") -> MEMBER
                 path.startsWith("/api/sections") -> SECTION
+                path == "/api/issues" && request.method == HttpMethod.Get -> """{ "issues": [$ISSUE] }"""
+                path.startsWith("/api/issues") -> ISSUE_DETAIL
                 else -> """{ "oidc": { "issuer": "https://kc/realms/presserl", "clientId": "presserl-admin", "scopes": ["openid"] } }"""
             }
             if (request.method == HttpMethod.Delete) {
@@ -628,7 +631,75 @@ class ApiClientTest {
         assertEquals("file", refused.response.body<ApiErrorDto>().errors.single().field)
     }
 
+    @Test
+    fun listIssues() = runTest {
+        val issue = api.issues().issues.single()
+        assertEquals(4, issue.number)
+        assertEquals("2026-10-12", issue.publicationDate)
+        assertTrue(issue.newest)
+        assertEquals(Recorded(HttpMethod.Get, "https://news.example.org/api/issues", "Bearer token-123", null), requests.single())
+    }
+
+    @Test
+    fun getIssueWithArticlesInOrder() = runTest {
+        val issue = api.issue(4)
+        assertEquals(listOf(9L, 4L), issue.articles.map { it.id })
+        assertEquals(4, issue.articles.first().issue?.number)
+        assertEquals("https://news.example.org/api/issues/4", requests.single().url)
+    }
+
+    @Test
+    fun createIssueSendsTheDateOrAnExplicitNull() = runTest {
+        api.createIssue(null)
+        api.createIssue("2026-10-12")
+        assertEquals(
+            listOf(
+                Recorded(HttpMethod.Post, "https://news.example.org/api/issues", "Bearer token-123",
+                    buildJsonObject { put("publicationDate", JsonNull) }),
+                Recorded(HttpMethod.Post, "https://news.example.org/api/issues", "Bearer token-123",
+                    buildJsonObject { put("publicationDate", "2026-10-12") }),
+            ),
+            requests,
+        )
+    }
+
+    @Test
+    fun updateIssueDateClearsWithAnExplicitNull() = runTest {
+        api.updateIssueDate(4, null)
+        assertEquals(
+            Recorded(HttpMethod.Put, "https://news.example.org/api/issues/4", "Bearer token-123",
+                buildJsonObject { put("publicationDate", JsonNull) }),
+            requests.single(),
+        )
+    }
+
+    @Test
+    fun issueActions() = runTest {
+        api.publishIssue(4)
+        api.unpublishIssue(4)
+        api.setIssueArticles(4, listOf(9, 4, 6))
+        api.deleteIssue(4)
+        assertEquals(
+            listOf(
+                Recorded(HttpMethod.Post, "https://news.example.org/api/issues/4/publish", "Bearer token-123", null),
+                Recorded(HttpMethod.Post, "https://news.example.org/api/issues/4/unpublish", "Bearer token-123", null),
+                Recorded(HttpMethod.Put, "https://news.example.org/api/issues/4/articles", "Bearer token-123",
+                    buildJsonObject { putJsonArray("articleIds") { add(JsonPrimitive(9)); add(JsonPrimitive(4)); add(JsonPrimitive(6)) } }),
+                Recorded(HttpMethod.Delete, "https://news.example.org/api/issues/4", "Bearer token-123", null),
+            ),
+            requests,
+        )
+    }
+
     private companion object {
+        const val ISSUE = """{ "id": 4, "number": 4, "publicationDate": "2026-10-12", "published": false,
+            "publishedAt": null, "articleCount": 2, "newest": true }"""
+        const val ISSUE_ARTICLE = """{ "id": %d, "status": "PUBLISHED", "author": { "username": "papa", "displayName": "Papa" },
+            "section": { "id": 1, "name": "Sport", "slug": "sport", "color": "green" }, "issue": { "id": 4, "number": 4 },
+            "headline": "H", "kicker": "", "revision": 1, "liveRevision": 1, "hasUnpublishedChanges": false,
+            "updatedAt": "2026-09-26T10:05:00Z", "publishedAt": "2026-09-26T10:05:00Z", "allowedActions": [] }"""
+        val ISSUE_DETAIL = """{ "id": 4, "number": 4, "publicationDate": null, "published": false, "publishedAt": null,
+            "articleCount": 2, "newest": true, "articles": [${ISSUE_ARTICLE.replace("%d", "9")}, ${ISSUE_ARTICLE.replace("%d", "4")}] }"""
         const val MEDIA = """{ "id": 17, "contentType": "image/jpeg", "width": 4096, "height": 2731, "size": 1834211,
             "uploadedBy": { "username": "papa", "displayName": "Papa" }, "uploadedAt": "2026-09-27T14:03:11.402Z" }"""
         const val SECTION = """{ "id": 1, "name": "Sport", "slug": "sport", "color": "green", "position": 0,

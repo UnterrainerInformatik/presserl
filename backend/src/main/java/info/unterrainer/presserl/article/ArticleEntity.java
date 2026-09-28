@@ -51,6 +51,19 @@ public class ArticleEntity extends PanacheEntityBase {
     public Integer liveRevision;
 
     /**
+     * The issue the article belongs to; {@code null} for none. Set together with
+     * {@link #issuePosition}.
+     */
+    @Column(name = "issue_id")
+    public Long issueId;
+
+    /**
+     * Place within the issue (ascending, ties by id); {@code null} exactly when {@link #issueId} is.
+     */
+    @Column(name = "issue_position")
+    public Integer issuePosition;
+
+    /**
      * The approval level the article waits for; {@code null} while no submission is pending.
      */
     @Enumerated(EnumType.STRING)

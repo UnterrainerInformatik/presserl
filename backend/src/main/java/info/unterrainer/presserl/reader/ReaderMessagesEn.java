@@ -68,4 +68,36 @@ public interface ReaderMessagesEn extends ReaderMessages {
     @Override
     @Message("Sections")
     String sectionsLabel();
+
+    @Override
+    @Message("Issue {number}")
+    String issueLabel(int number);
+
+    @Override
+    @Message("Issues")
+    String issuesTitle();
+
+    @Override
+    @Message("All issues")
+    String allIssues();
+
+    @Override
+    @Message("No issues published yet.")
+    String noIssuesNote();
+
+    @Override
+    @Message("This issue has no articles yet.")
+    String issueEmptyNote();
+
+    @Override
+    @Message("Print")
+    String print();
+
+    @Override
+    @Message("Back to the article")
+    String backToArticle();
+
+    @Override
+    @Message("Back to the issue")
+    String backToIssue();
 }

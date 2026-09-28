@@ -9,6 +9,10 @@ import info.unterrainer.presserl.admin.api.AuthorDto
 import info.unterrainer.presserl.admin.api.ClientConfigDto
 import info.unterrainer.presserl.admin.api.CreatedAccountDto
 import info.unterrainer.presserl.admin.api.FieldErrorDto
+import info.unterrainer.presserl.admin.api.IssueDetailDto
+import info.unterrainer.presserl.admin.api.IssueDto
+import info.unterrainer.presserl.admin.api.IssueListDto
+import info.unterrainer.presserl.admin.api.IssueRefDto
 import info.unterrainer.presserl.admin.api.MeDto
 import info.unterrainer.presserl.admin.api.MemberDto
 import info.unterrainer.presserl.admin.api.MemberListDto
@@ -215,6 +219,57 @@ class DtoTest {
 
         assertTrue(dto.locked)
         assertEquals(listOf("UNLOCK"), dto.allowedActions)
+    }
+
+    @Test
+    fun summaryWithIssue() {
+        val dto = json.decodeFromString<ArticleSummaryDto>(
+            """{ "id": 9, "status": "PUBLISHED", "author": { "username": "chief", "displayName": "Chief" },
+                "section": { "id": 1, "name": "Sport", "slug": "sport", "color": "green" }, "issue": { "id": 4, "number": 2 },
+                "headline": "Goal", "kicker": "", "revision": 1, "liveRevision": 1, "hasUnpublishedChanges": false,
+                "updatedAt": "2026-09-27T10:00:00Z", "publishedAt": "2026-09-27T09:00:00Z", "allowedActions": [] }""",
+        )
+
+        assertEquals(IssueRefDto(4, 2), dto.issue)
+    }
+
+    @Test
+    fun articleWithoutIssue() {
+        assertNull(json.decodeFromString<ArticleDto>(ARTICLE).issue)
+        assertEquals(
+            IssueRefDto(4, 2),
+            json.decodeFromString<ArticleDto>(ARTICLE.trimEnd().removeSuffix("}") + """, "issue": { "id": 4, "number": 2 } }""").issue,
+        )
+    }
+
+    @Test
+    fun issueList() {
+        val dto = json.decodeFromString<IssueListDto>(
+            """{ "issues": [
+                { "id": 4, "number": 4, "publicationDate": "2026-10-12", "published": false, "publishedAt": null,
+                  "articleCount": 2, "newest": true },
+                { "id": 3, "number": 3, "publicationDate": null, "published": true, "publishedAt": "2026-10-01T08:00:00Z",
+                  "articleCount": 5, "newest": false } ] }""",
+        )
+
+        assertEquals(
+            listOf(
+                IssueDto(4, 4, "2026-10-12", false, null, 2, true),
+                IssueDto(3, 3, null, true, "2026-10-01T08:00:00Z", 5, false),
+            ),
+            dto.issues,
+        )
+    }
+
+    @Test
+    fun issueDetail() {
+        val dto = json.decodeFromString<IssueDetailDto>(
+            """{ "id": 4, "number": 4, "publicationDate": null, "published": false, "publishedAt": null,
+                "articleCount": 0, "newest": true, "articles": [] }""",
+        )
+
+        assertEquals(4, dto.number)
+        assertTrue(dto.articles.isEmpty())
     }
 
     @Test

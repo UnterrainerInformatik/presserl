@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import info.unterrainer.presserl.issue.IssueRefDto;
 import info.unterrainer.presserl.section.Newsroom;
 
 /**
@@ -15,6 +16,7 @@ public record ArticleDto(
         ArticleStatus status,
         AuthorDto author,
         SectionRefDto section,
+        IssueRefDto issue,
         int revision,
         Integer liveRevision,
         boolean hasUnpublishedChanges,
@@ -39,7 +41,7 @@ public record ArticleDto(
     public static ArticleDto of(ArticleView view, Newsroom newsroom, Staffing staffing, LeadImageDto leadImage) {
         ArticleEntity a = view.article();
         ArticleRevisionEntity r = view.revision();
-        return new ArticleDto(a.id, a.status, AuthorDto.of(a), SectionRefDto.of(view.section()), r.number, a.liveRevision,
+        return new ArticleDto(a.id, a.status, AuthorDto.of(a), SectionRefDto.of(view.section()), IssueRefDto.of(view.issue()), r.number, a.liveRevision,
                 ArticlePolicy.hasUnpublishedChanges(a, r.number), a.pendingLevel, a.locked, a.version, a.createdAt, a.updatedAt, a.publishedAt,
                 r.kicker, r.headline, r.subheadline, r.lead, r.body, leadImage, ArticlePolicy.allowedActions(newsroom, a, r.number, staffing));
     }

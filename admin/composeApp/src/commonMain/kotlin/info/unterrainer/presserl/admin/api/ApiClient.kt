@@ -233,6 +233,49 @@ class ApiClient(
         http.delete("$baseUrl/api/sections/$sectionId/members/$accountId") { bearerAuth(accessToken()) }
     }
 
+    /** All issues, highest number first. */
+    suspend fun issues(): IssueListDto = http.get("$baseUrl/api/issues") { bearerAuth(accessToken()) }.body()
+
+    suspend fun issue(id: Long): IssueDetailDto = http.get("$baseUrl/api/issues/$id") { bearerAuth(accessToken()) }.body()
+
+    /** Creates the next issue (not published, no articles) with an optional [publicationDate] (`yyyy-mm-dd`). */
+    suspend fun createIssue(publicationDate: String?): IssueDetailDto =
+        http.post("$baseUrl/api/issues") {
+            bearerAuth(accessToken())
+            contentType(ContentType.Application.Json)
+            setBody(IssueDateRequest(publicationDate))
+        }.body()
+
+    /** Sets the publication date (`yyyy-mm-dd`), or clears it with `null`. */
+    suspend fun updateIssueDate(id: Long, publicationDate: String?): IssueDetailDto =
+        http.put("$baseUrl/api/issues/$id") {
+            bearerAuth(accessToken())
+            contentType(ContentType.Application.Json)
+            setBody(IssueDateRequest(publicationDate))
+        }.body()
+
+    suspend fun publishIssue(id: Long): IssueDetailDto =
+        http.post("$baseUrl/api/issues/$id/publish") { bearerAuth(accessToken()) }.body()
+
+    suspend fun unpublishIssue(id: Long): IssueDetailDto =
+        http.post("$baseUrl/api/issues/$id/unpublish") { bearerAuth(accessToken()) }.body()
+
+    /**
+     * Makes [articleIds] the issue's articles in this order; listed articles of other issues move here, unlisted ones
+     * of this issue belong to no issue afterwards (`400` naming `articleIds` for unknown or repeated ids).
+     */
+    suspend fun setIssueArticles(id: Long, articleIds: List<Long>): IssueDetailDto =
+        http.put("$baseUrl/api/issues/$id/articles") {
+            bearerAuth(accessToken())
+            contentType(ContentType.Application.Json)
+            setBody(IssueArticles(articleIds))
+        }.body()
+
+    /** Deletes an issue that is not published (`409` otherwise); its articles belong to no issue afterwards. */
+    suspend fun deleteIssue(id: Long) {
+        http.delete("$baseUrl/api/issues/$id") { bearerAuth(accessToken()) }
+    }
+
     /**
      * Uploads an image as the multipart part `file`. The server detects the type from the bytes (JPEG, PNG, WebP),
      * re-encodes it without metadata and answers the stored image; `413` above `media.max-size`, `415` for other
@@ -274,6 +317,10 @@ private data class RejectNote(val note: String)
 /** Body of `PUT /api/sections/order`. */
 @Serializable
 private data class SectionOrder(val ids: List<Long>)
+
+/** Body of `PUT /api/issues/{id}/articles`. */
+@Serializable
+private data class IssueArticles(val articleIds: List<Long>)
 
 /** Body of `PUT /api/sections/{id}/members/{accountId}`. */
 @Serializable

@@ -62,6 +62,26 @@ All levels:
 - **Issue**: front page with masthead and lead story, then 2–3 columns; images never split across pages (`break-inside: avoid`); section headers.
 - Browser "Print → Save as PDF" is sufficient; no server-side PDF in the MVP.
 - Print colours: black on white; section colours only as rules.
+- As built: `@page { size: A4 portrait; margin: 18mm 16mm 20mm }` with the page number in the
+  `@bottom-center` margin box (`counter(page)`). Checked 2026-09-28: Chromium 140 prints the
+  numbers; Firefox 141 drops the margin box (its CSSOM keeps `@page` without it). Where a browser lacks
+  margin boxes, the page prints without a number; the browser's own header/footer option remains.
+- Text in `pt` while printing (12pt, the issue's columns 10.5pt), independent of the reader's text
+  size; colour tokens forced to black on white inside `@media print` and on the print sheet, so
+  dark mode and fork colours never reach paper.
+- The issue print view's first page (`.print-issue__front`: large masthead with issue line and the
+  whole lead story) ends with a page break; the other articles follow in full inside
+  `.print-columns`, each under a `.print-section-header` (section name in small caps, a top rule in
+  the section colour). The number of columns is `--presserl-grid-columns` within
+  `[data-view="print-issue"]`, default **2**; a fork sets 3 with
+  `@media print { [data-view="print-issue"] { --presserl-grid-columns: 3; } }`.
+- Figures and headline blocks (section header, kicker, headline, subheadline) never split
+  (`break-inside: avoid`), headers stay with their text (`break-after: avoid`), `orphans`/`widows`
+  3. Exact column balancing is out of scope.
+- On screen a print view is a paper preview (white sheet, at most 210mm wide, shadow) with a
+  screen-only toolbar: a "Drucken"/"Print" button (shown and bound by the same-origin
+  `/reader/print.js`; without script the browser's print command still works) and a link back.
+  Masthead tools, text-size switch, section bar, toolbar and `.print-link`s are never printed.
 
 ## 5. Theming via CSS in `deploy/` (reader)
 
@@ -96,7 +116,7 @@ All levels:
   @media print { [data-view="print-issue"] { --presserl-grid-columns: 3; } }
   ```
 
-- Public, stable styling API: tokens, `data-view` attributes (`frontpage`, `article`, `not-found`) and these documented classes: `.masthead`, `.masthead__name`, `.masthead__subtitle`, `.section-bar`, `.section-tag` (with `data-section-color="<key>"`), `.text-size-switch`, `.lead-article`, `.article-card`, `.kicker`, `.headline`, `.subheadline`, `.lead`, `.byline`, `.article`, `.article__body`, `.lead-image` (the lead image's `<figure>`), `.lead-image__caption` (its `<figcaption>`), `.note`. Everything else (other classes, tokens prefixed `--presserl-_`) is internal and may change.
+- Public, stable styling API: tokens, `data-view` attributes (`frontpage`, `article`, `issues`, `issue`, `print-article`, `print-issue`, `not-found`) and these documented classes: `.masthead`, `.masthead__name`, `.masthead__subtitle`, `.masthead__issue` (issue label and date in the masthead), `.section-bar`, `.section-tag` (with `data-section-color="<key>"`), `.text-size-switch`, `.lead-article`, `.article-card`, `.kicker`, `.headline`, `.subheadline`, `.lead`, `.byline`, `.article`, `.article__body`, `.lead-image` (the lead image's `<figure>`), `.lead-image__caption` (its `<figcaption>`), `.note`, `.print-link` (links to a print view), `.print-toolbar` (screen-only print button and back link), `.print-columns` (the issue's articles after the first page), `.print-section-header` (section name above an article in a print view, with `data-section-color`). Everything else (other classes, tokens prefixed `--presserl-_`) is internal and may change.
 - Front page: a grid of `--presserl-grid-columns` columns (12) on wide screens, 6 on tablets, 1 on phones; the lead story spans the full width, the other stories are equal cards separated by thin rules. A section bar below the masthead lists the sections with their colour markers; stories and articles show their section the same way.
 - Custom fonts and images go into `deploy/theme/fonts/` and `deploy/theme/` — same origin, CSP stays `self`.
 - Upstream ships the example themes *Classic*, *Colourful* (for younger kids) and *Night* in `deploy/theme/examples/` as templates to copy; `deploy/theme/custom.css` is a comment-only starter. Changes apply on the next page load (`Cache-Control: no-cache`).

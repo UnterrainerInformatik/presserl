@@ -1,0 +1,11 @@
+{#include layout/reader}
+{#title}{story.article.headline} – {page.name}{/title}
+{#scripts}<script src="/reader/print.js" defer></script>{/scripts}
+<main data-view="print-article">
+  {#printToolbar kind="article" id=story.article.id /}
+  <div class="print-sheet">
+    {#printMasthead page=page nameTag="p" /}
+    {#fullArticle story=story heading="h1" /}
+  </div>
+</main>
+{/include}

@@ -39,6 +39,22 @@ private fun verifySectionStrings(): Promise<JsAny?> = js(
 ).then(() => null)""",
 )
 
+/** Rejects unless both files define the issue screen labels with the expected texts. */
+private fun verifyIssueStrings(): Promise<JsAny?> = js(
+    """Promise.all([
+    ['values', { nav_issues: 'Ausgaben', new_issue: 'Neue Ausgabe', field_publication_date: 'Erscheinungsdatum' }],
+    ['values-en', { nav_issues: 'Issues', new_issue: 'New issue', field_publication_date: 'Publication date' }],
+].map(([qualifier, expected]) =>
+    fetch('/strings/' + qualifier + '/strings.xml').then(response => response.text()).then(text => {
+        const strings = new DOMParser().parseFromString(text, 'application/xml');
+        Object.entries(expected).forEach(([name, value]) => {
+            const actual = strings.querySelector('string[name="' + name + '"]')?.textContent;
+            if (actual !== value) throw new Error(qualifier + ': ' + name + ' is ' + actual);
+        });
+    }))
+).then(() => null)""",
+)
+
 /** German (default) and English must stay complete; a missing key would silently fall back to German. */
 class StringsTest {
 
@@ -47,4 +63,7 @@ class StringsTest {
 
     @Test
     fun sectionIsRessortInGermanAndSectionInEnglish(): Promise<JsAny?> = verifySectionStrings()
+
+    @Test
+    fun issueLabelsInGermanAndEnglish(): Promise<JsAny?> = verifyIssueStrings()
 }

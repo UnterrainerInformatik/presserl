@@ -1,0 +1,21 @@
+{#include layout/reader}
+{#title}{msg:issuesTitle} – {page.name}{/title}
+<main data-view="issues">
+  {#masthead page=page linked=true /}
+  <h1 class="issues__title">{msg:issuesTitle}</h1>
+  {#if issues}
+  <ul class="issue-list">
+    {#for issue in issues}
+    <li class="issue-list__item">
+      <a class="issue-list__label" href="/issues/{issue.id}">{msg:issueLabel(issue.number)}</a>{#if issue.publicationDate} · <time datetime="{issue.publicationDate}">{issue.publicationDate.longDate}</time>{/if}
+      {#if issue.headline}
+      <p class="issue-list__headline">{issue.headline}</p>
+      {/if}
+    </li>
+    {/for}
+  </ul>
+  {#else}
+  <p class="note">{msg:noIssuesNote}</p>
+  {/if}
+</main>
+{/include}

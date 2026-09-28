@@ -1,0 +1,19 @@
+{! The body of an article (BodyRenderer blocks). !}
+<div class="article__body">
+  {#for block in blocks}
+  {#when block.type}
+  {#is PARAGRAPH}
+  <p>{#runs runs=block.runs /}</p>
+  {#is SUBHEAD}
+  <h2>{block.text}</h2>
+  {#is QUOTE}
+  <blockquote><p>{#runs runs=block.runs /}</p></blockquote>
+  {#is LIST}
+  <ul>
+    {#for item in block.items}
+    <li>{#runs runs=item /}</li>
+    {/for}
+  </ul>
+  {/when}
+  {/for}
+</div>

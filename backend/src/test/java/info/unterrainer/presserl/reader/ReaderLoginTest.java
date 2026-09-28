@@ -9,6 +9,7 @@ import javax.sql.DataSource;
 
 import org.htmlunit.WebResponse;
 import org.htmlunit.http.Cookie;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -30,6 +31,7 @@ class ReaderLoginTest {
 
     private long published;
     private long draft;
+    private long issue;
 
     @BeforeEach
     void articles() {
@@ -38,6 +40,46 @@ class ReaderLoginTest {
         published = fixtures.published("Private headline", Instant.parse("2026-09-20T12:00:00Z"));
         draft = fixtures.article("DRAFT", "anna", "Anna", null, null);
         fixtures.revision(draft, 1, "", "Draft headline", "", "", ReaderFixtures.EMPTY_BODY, null);
+        fixtures.deleteAllIssues();
+        issue = fixtures.issue(1, true, null);
+        fixtures.inIssue(issue, published);
+    }
+
+    @AfterEach
+    void issues() {
+        TestSupport.resetIssues(dataSource);
+    }
+
+    @Test
+    void entitledReaderSeesIssuePagesAndPrintViewsUncached() {
+        try (ReaderBrowser browser = new ReaderBrowser()) {
+            WebResponse page = browser.login("/issues/" + issue, "reader", "reader");
+
+            assertThat(path(page)).isEqualTo("/issues/" + issue);
+            assertThat(page.getStatusCode()).isEqualTo(200);
+            assertThat(page.getContentAsString()).contains("Ausgabe 1", "Private headline");
+            assertThat(page.getResponseHeaderValue("Cache-Control")).isEqualTo("private, no-store");
+            for (String path : new String[] { "/issues", "/print/issue/" + issue, "/print/article/" + published }) {
+                WebResponse response = browser.get(path);
+                assertThat(response.getStatusCode()).as(path).isEqualTo(200);
+                assertThat(response.getContentAsString()).as(path).contains("Private headline");
+                assertThat(response.getResponseHeaderValue("Cache-Control")).as(path).isEqualTo("private, no-store");
+            }
+        }
+    }
+
+    @Test
+    void accountWithoutNewspaperRoleGetsNoIssuePages() {
+        try (ReaderBrowser browser = new ReaderBrowser()) {
+            browser.login("/login", "nogroups", "nogroups");
+
+            for (String path : new String[] { "/issues", "/issues/" + issue, "/print/issue/" + issue,
+                    "/print/article/" + published }) {
+                WebResponse response = browser.get(path);
+                assertThat(response.getStatusCode()).as(path).isEqualTo(404);
+                assertThat(response.getContentAsString()).as(path).doesNotContain("Private headline");
+            }
+        }
     }
 
     @Test

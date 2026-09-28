@@ -1,0 +1,22 @@
+{! A whole article for the print views (PrintStory): headline block with section header, lead image in
+   the print rendition, lead, byline and body. heading is the element of the headline. !}
+<article class="article print-article">
+  <header class="print-headline-block">
+    <p class="print-section-header" data-section-color="{story.article.section.color}">{story.article.section.name}</p>
+    {#if story.article.kicker}
+    <p class="kicker">{story.article.kicker}</p>
+    {/if}
+    <{heading} class="headline">{story.article.headline}</{heading}>
+    {#if story.article.subheadline}
+    <p class="subheadline">{story.article.subheadline}</p>
+    {/if}
+  </header>
+  {#if story.article.leadImage}
+  {#leadImage image=story.article.leadImage kind="print" /}
+  {/if}
+  {#if story.article.lead}
+  <p class="lead">{story.article.lead}</p>
+  {/if}
+  <p class="byline">{msg:byline(story.article.byline)} · <time datetime="{story.article.publishedAt.isoDate}">{msg:published(story.article.publishedAt.longDate)}</time></p>
+  {#articleBody blocks=story.blocks /}
+</article>

@@ -207,6 +207,11 @@ service. Before pulling the new image, copy the new `compose.yaml` over the old 
 `PRESSERL_MEDIA_S3_ACCESS_KEY` and `PRESSERL_MEDIA_S3_SECRET_KEY` to `.env` (see step 3).
 Without them `docker compose` refuses to start, naming the missing variable.
 
+**Updating from a version without issues:** the update creates issue 1, not yet live, holding
+every article published so far (nothing changes for readers). Open *Issues* in the admin app
+afterwards and either switch issue 1 live (blog mode: one issue that keeps growing) or give it a
+publication date and switch it live as your first issue, then create issue 2 for what comes next.
+
 The admin app's entry files (`index.html`, `composeApp.js`, …) are sent with
 `Cache-Control: no-cache`, so a new version takes effect on the next page load. Versions before
 that sent them as cacheable for a day: if a CDN or caching proxy sits in front of Presserl, purge

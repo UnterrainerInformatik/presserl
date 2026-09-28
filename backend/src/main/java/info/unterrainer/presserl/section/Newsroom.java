@@ -50,6 +50,13 @@ public record Newsroom(CurrentUser user, Map<Long, SectionRole> sectionRoles) {
         return isAdministrator() || isSectionEditorAnywhere();
     }
 
+    /**
+     * Administrators create, date, publish and assemble issues.
+     */
+    public boolean mayManageIssues() {
+        return isAdministrator();
+    }
+
     public boolean isSectionEditorAnywhere() {
         return sectionRoles.containsValue(SectionRole.SECTION_EDITOR);
     }
@@ -104,6 +111,9 @@ public record Newsroom(CurrentUser user, Map<Long, SectionRole> sectionRoles) {
         }
         if (mayAssignSectionRolesAnywhere()) {
             actions.add(NewspaperAction.ASSIGN_SECTION_ROLES);
+        }
+        if (mayManageIssues()) {
+            actions.add(NewspaperAction.MANAGE_ISSUES);
         }
         if (mayAdministerAccounts()) {
             actions.add(NewspaperAction.ADMINISTER_ACCOUNTS);

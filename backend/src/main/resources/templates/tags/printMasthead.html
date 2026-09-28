@@ -1,0 +1,11 @@
+{! The masthead of a print view: newspaper name and subtitle, the page's issue line if any; no tools
+   and no section bar. nameTag is the element of the name (h1 on the issue print view, p otherwise). !}
+<header class="masthead">
+  <{nameTag} class="masthead__name">{page.name}</{nameTag}>
+  {#if page.subtitle}
+  <p class="masthead__subtitle">{page.subtitle}</p>
+  {/if}
+  {#if page.issueLine}
+  {#issueLine line=page.issueLine /}
+  {/if}
+</header>

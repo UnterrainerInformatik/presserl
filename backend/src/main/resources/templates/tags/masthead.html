@@ -13,5 +13,8 @@
   {#if page.subtitle}
   <p class="masthead__subtitle">{page.subtitle}</p>
   {/if}
+  {#if page.issueLine}
+  {#issueLine line=page.issueLine /}
+  {/if}
 </header>
 {#sectionBar sections=page.sections /}

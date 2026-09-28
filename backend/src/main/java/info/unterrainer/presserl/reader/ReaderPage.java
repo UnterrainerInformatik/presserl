@@ -17,10 +17,11 @@ import io.quarkus.qute.TemplateData;
  * @param customCss  whether the fork's {@code /theme/custom.css} is linked
  * @param sections   the section bar, empty when the page shows no content
  * @param path       path and query of the page, where the text-size switch returns to
+ * @param issueLine  the issue named in the masthead, {@code null} for none
  */
 @TemplateData
 public record ReaderPage(String lang, String name, String subtitle, String viewerName, String textSize,
-        boolean customCss, List<ReaderSection> sections, String path) {
+        boolean customCss, List<ReaderSection> sections, String path, IssueLine issueLine) {
 
     static final List<String> TEXT_SIZES = Arrays.stream(TextSize.values()).map(TextSize::value).toList();
 
@@ -29,7 +30,11 @@ public record ReaderPage(String lang, String name, String subtitle, String viewe
     }
 
     ReaderPage withSections(List<ReaderSection> sections) {
-        return new ReaderPage(lang, name, subtitle, viewerName, textSize, customCss, sections, path);
+        return new ReaderPage(lang, name, subtitle, viewerName, textSize, customCss, sections, path, issueLine);
+    }
+
+    ReaderPage withIssueLine(IssueLine issueLine) {
+        return new ReaderPage(lang, name, subtitle, viewerName, textSize, customCss, sections, path, issueLine);
     }
 
     /**
@@ -39,6 +44,16 @@ public record ReaderPage(String lang, String name, String subtitle, String viewe
         return TEXT_SIZES.stream()
                 .map(size -> new TextSizeChoice(size, size.toUpperCase(Locale.ROOT), size.equals(textSize)))
                 .toList();
+    }
+
+    /**
+     * The issue line of the masthead: label and publication date of {@code issue}.
+     *
+     * @param linked      whether the label links to the issue page
+     * @param archiveLink whether the line links to {@code /issues} (more than one issue is live)
+     */
+    @TemplateData
+    public record IssueLine(ReaderIssue issue, boolean linked, boolean archiveLink) {
     }
 
     /**

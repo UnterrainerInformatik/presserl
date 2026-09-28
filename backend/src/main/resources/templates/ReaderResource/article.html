@@ -18,24 +18,8 @@
     <p class="lead">{article.lead}</p>
     {/if}
     <p class="byline">{msg:byline(article.byline)} · <time datetime="{article.publishedAt.isoDate}">{msg:published(article.publishedAt.longDate)}</time>{#if article.updated} · <time datetime="{article.revisedAt.isoDate}">{msg:updated(article.revisedAt.longDate)}</time>{/if}</p>
-    <div class="article__body">
-      {#for block in blocks}
-      {#when block.type}
-      {#is PARAGRAPH}
-      <p>{#runs runs=block.runs /}</p>
-      {#is SUBHEAD}
-      <h2>{block.text}</h2>
-      {#is QUOTE}
-      <blockquote><p>{#runs runs=block.runs /}</p></blockquote>
-      {#is LIST}
-      <ul>
-        {#for item in block.items}
-        <li>{#runs runs=item /}</li>
-        {/for}
-      </ul>
-      {/when}
-      {/for}
-    </div>
+    <p class="print-link"><a href="/print/article/{article.id}">{msg:print}</a></p>
+    {#articleBody blocks=blocks /}
   </article>
 </main>
 {/include}

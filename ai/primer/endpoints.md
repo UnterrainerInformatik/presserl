@@ -121,8 +121,8 @@ The logged-in user as seen by the backend.
   The bootstrapped publisher:
   ```json
   { "username": "publisher", "displayName": "publisher", "roles": ["PUBLISHER"], "sectionRoles": [],
-    "allowedActions": ["WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS",
-                       "CONFIGURE_NEWSPAPER"] }
+    "allowedActions": ["WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "MANAGE_ISSUES",
+                       "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER"] }
   ```
   - `username`: `preferred_username` claim, falling back to `sub`.
   - `displayName`: `name` claim, falling back to `username`.
@@ -141,6 +141,7 @@ The logged-in user as seen by the backend.
     | `WRITE_ARTICLES` | `PUBLISHER`, `EDITOR_IN_CHIEF`, or a section role in any section | the article endpoints |
     | `MANAGE_SECTIONS` | `PUBLISHER` or `EDITOR_IN_CHIEF` | creating, changing, reordering and deleting sections |
     | `ASSIGN_SECTION_ROLES` | `PUBLISHER`, `EDITOR_IN_CHIEF`, or `SECTION_EDITOR` in any section | section members of at least one section |
+    | `MANAGE_ISSUES` | `PUBLISHER` or `EDITOR_IN_CHIEF` | the issue endpoints (`/api/issues…`) |
     | `ADMINISTER_ACCOUNTS` | `PUBLISHER`, `EDITOR_IN_CHIEF`, or `SECTION_EDITOR` in any section | listing and creating accounts |
     | `CONFIGURE_NEWSPAPER` | `PUBLISHER` or `EDITOR_IN_CHIEF` | changing the newspaper settings (`PUT /api/newspaper/settings`) |
 - **Errors:** `401` (empty body) without a valid token.
@@ -310,6 +311,7 @@ Content fields are those of the latest revision (`revision`).
   "status": "PUBLISHED",
   "author": { "username": "papa", "displayName": "Papa" },
   "section": { "id": 4, "name": "Kultur", "slug": "kultur", "color": "blue" },
+  "issue": { "id": 2, "number": 2 },
   "revision": 2,
   "liveRevision": 1,
   "hasUnpublishedChanges": true,
@@ -330,6 +332,8 @@ Content fields are those of the latest revision (`revision`).
 ```
 - `author`: username and display name as `GET /api/me` returned them when the article was created.
 - `section`: the article's section with its current name and palette colour.
+- `issue`: the issue the article belongs to (`IssueRefDto`: `id`, `number`), `null` for none. Also
+  part of `ArticleSummaryDto`.
 - `liveRevision`, `publishedAt` (first publication): `null` until the first publish.
 - `pendingLevel`: the approval level the article waits for, `null` while no submission is pending.
 - `locked`: `true` while the emergency-brake lock is set (see above), otherwise `false`.
@@ -352,7 +356,7 @@ pagination yet.
 - **Response `200`:** array of `ArticleSummaryDto`
   ```json
   [ { "id": 42, "status": "DRAFT", "author": { "username": "papa", "displayName": "Papa" },
-      "section": { "id": 1, "name": "Sport", "slug": "sport", "color": "green" },
+      "section": { "id": 1, "name": "Sport", "slug": "sport", "color": "green" }, "issue": null,
       "headline": "Hello", "kicker": "", "revision": 1, "liveRevision": null,
       "hasUnpublishedChanges": false, "pendingLevel": null, "locked": false, "updatedAt": "2026-09-26T10:05:00Z", "publishedAt": null,
       "allowedActions": ["EDIT", "PUBLISH", "DELETE"] } ]
@@ -418,7 +422,9 @@ Makes the latest revision live without approval. No request body.
 - **Side effects:** latest revision marked published (if not yet), `liveRevision` set, status
   `PUBLISHED`, `publishedAt` set on first publication; `updatedAt` and `version` change. Works
   from `DRAFT` and `OFFLINE` (an `OFFLINE` article whose latest revision is already live goes
-  back online without a new revision).
+  back online without a new revision). On the **first** publication an article without issue is
+  appended to the end of the issue with the highest number, live or not, in the same transaction
+  (see Issues); later publications never change `issue`.
 
 ## `POST /api/articles/{id}/offline`
 
@@ -471,7 +477,8 @@ Approves the pending submission up to the approver's level. No request body.
   decision.
 - **Side effects:** review `APPROVED` recorded with the level the article waited for; when
   published: as for publish (latest revision marked published, `liveRevision`, status, first
-  `publishedAt`). `updatedAt` and `version` change.
+  `publishedAt`, appended to the newest issue on the first publication). `updatedAt` and
+  `version` change.
 
 ## `POST /api/articles/{id}/reject`
 
@@ -963,6 +970,123 @@ Removes the account's role in the section.
 
 ---
 
+# Issues
+
+Issues group articles: a `number` (assigned on creation as highest + 1, `1` when none exists,
+never changed), an optional `publicationDate` (a calendar date, display only), a `published` switch
+(live for readers or not) and an ordered article list whose first article is the **lead story**.
+An article belongs to at most one issue; articles of any status may belong to one, readers only
+see the `PUBLISHED` ones.
+
+- **Newest issue collects new articles:** when an article is published for the first time
+  (`POST /api/articles/{id}/publish` or the approval that publishes it) and belongs to no issue, it
+  is appended to the issue with the highest number, whether or not that issue is live. No issue at
+  all → it stays without issue. Later publications never move it. Blog mode = one issue that is
+  live from the start; planned issues = the highest issue is not live yet and collects.
+- **Initial issue:** the migration creates issue `1`, not live, without date; on an existing
+  installation it holds every article published before, in order of first publication. Switch it
+  live (blog mode) or date and publish it after upgrading.
+- **Number reuse:** only unpublished issues can be deleted; deleting the highest one lets its number
+  be issued again by the next creation.
+
+All issue endpoints require `MANAGE_ISSUES` (`PUBLISHER`, `EDITOR_IN_CHIEF`): missing/invalid token
+→ `401`, other users → `403` with an empty body. Unknown or malformed ids → `404` with the error
+body (field `null`). Refusals carry `{"errors": [{"field": …, "message": …}]}`; a `400` lists every
+violation; unknown fields are rejected. Articles in issue responses are not filtered by
+visibility (issue managers see every article anyway).
+
+## `IssueDto`
+
+```json
+{ "id": 4, "number": 4, "publicationDate": "2026-10-12", "published": false,
+  "publishedAt": null, "articleCount": 2, "newest": true }
+```
+- `publicationDate`: ISO date or `null`.
+- `publishedAt`: time of the latest switch to published (ISO-8601 UTC), `null` while not
+  published.
+- `articleCount`: all articles of the issue, any status.
+- `newest`: the issue has the highest number, i.e. it collects newly published articles.
+
+`IssueDetailDto` = `IssueDto` + `articles`: `ArticleSummaryDto`s (as in `GET /api/articles`, with
+`allowedActions` for the requesting user) in issue order (position, ties by id); each carries
+`"issue": { "id": …, "number": … }` of this issue.
+
+## `GET /api/issues`
+
+- **Auth:** `MANAGE_ISSUES`
+- **Response `200`:** `{ "issues": [ IssueDto, … ] }`, highest number first.
+- **Side effects:** none.
+
+## `POST /api/issues`
+
+Creates the next issue: not published, no articles, number = highest + 1.
+
+- **Auth:** `MANAGE_ISSUES`
+- **Body:** `{ "publicationDate": "2026-10-12" }`, `{ "publicationDate": null }` or `{}`.
+- **Response `201`:** header `Location: /api/issues/{id}`, body `IssueDetailDto` (`newest: true`).
+- **Errors:** `400` invalid date (field `publicationDate`, must be `yyyy-mm-dd` or `null`) or
+  unknown field, `409` a concurrent creation took the number (nothing created; try again).
+- **Side effects:** issue stored; from now on it collects newly published articles. Logged at INFO
+  with number and acting user.
+
+## `GET /api/issues/{id}`
+
+- **Auth:** `MANAGE_ISSUES`
+- **Response `200`:** `IssueDetailDto`
+  ```json
+  { "id": 4, "number": 4, "publicationDate": null, "published": false, "publishedAt": null,
+    "articleCount": 2, "newest": true,
+    "articles": [ { "id": 9, "status": "PUBLISHED", "headline": "…", "issue": { "id": 4, "number": 4 }, … },
+                  { "id": 6, "status": "DRAFT", … } ] }
+  ```
+- **Errors:** `404`.
+
+## `PUT /api/issues/{id}`
+
+Sets or clears the publication date, for published issues too; the number never changes.
+
+- **Auth:** `MANAGE_ISSUES`
+- **Body:** `{ "publicationDate": "2026-10-12" }` or `{ "publicationDate": null }` — the field is
+  required.
+- **Response `200`:** `IssueDetailDto`.
+- **Errors:** `400` missing/invalid `publicationDate` or unknown field, `404`.
+
+## `POST /api/issues/{id}/publish`, `POST /api/issues/{id}/unpublish`
+
+Switches the issue live for readers or hides it again. No request body, no approval.
+
+- **Auth:** `MANAGE_ISSUES`
+- **Response `200`:** `IssueDetailDto` with `published` `true`/`false`.
+- **Errors:** `404`.
+- **Side effects:** `publish` sets `publishedAt` to now (publishing a published issue keeps it,
+  idempotent); `unpublish` clears it (idempotent). Article statuses are never touched; any number
+  of issues may be live. Logged at INFO with number and acting user.
+
+## `PUT /api/issues/{id}/articles`
+
+Makes exactly the listed articles the issue's articles, in this order, in one transaction.
+
+- **Auth:** `MANAGE_ISSUES`
+- **Body:** `{ "articleIds": [9, 4, 6] }` (`[]` empties the issue).
+- **Response `200`:** `IssueDetailDto`.
+- **Errors:** `400` field `articleIds` for an unknown or repeated id (e.g. `"unknown article
+  999999"`) or a non-array; nothing is changed. `404` unknown issue.
+- **Side effects:** positions `0..n-1`; a listed article of another issue moves here; an article of
+  this issue that is not listed belongs to no issue afterwards. The articles themselves are
+  otherwise unchanged (`version`, `updatedAt` stay). Last write wins between concurrent editors.
+
+## `DELETE /api/issues/{id}`
+
+- **Auth:** `MANAGE_ISSUES`
+- **Response `204`**, empty body.
+- **Errors:** `404`, `409` (field `null`) while the issue is published — unpublish it first; nothing
+  is changed.
+- **Side effects:** the issue's articles belong to no issue afterwards and are otherwise unchanged;
+  the issue is deleted; logged at INFO with number and acting user. A new issue gets the number
+  after the highest remaining one.
+
+---
+
 # Media
 
 Uploaded images. Every upload is re-encoded on the server from its pixels: the stored image is a
@@ -1099,6 +1223,28 @@ link `web` (article page, lead story, with `thumbnail` in `srcset`) and `thumbna
   `original`/`content`: the stored image is never served), unknown media, media only used in drafts,
   in working revisions or in `OFFLINE` articles, and — for a private newspaper — anonymous visitors
   and visitors without a newspaper role. `503` (empty body) when the object store is unreachable.
+
+## Issue pages and print views
+
+Server-rendered HTML with the same access rules as the article page (`/articles/{id}`): in a
+private newspaper an anonymous visitor gets `303` to `/login?next=<path>`, a logged-in visitor
+without a newspaper role the `404` page; `Cache-Control: private, no-store` for a private newspaper
+or a logged-in visitor. Paths belong to the reader OIDC tenant (`/issues`, `/issues/*`,
+`/print/*`). Malformed or unknown ids and unpublished issues/articles get the reader's `404` page.
+
+- `GET /issues` — archive of the live issues, highest number first, each with date and the live
+  headline of its first published article (`data-view="issues"`).
+- `GET /issues/{id}` — a live issue as a newspaper page: its `PUBLISHED` articles in issue order,
+  the first as lead story, and a link to its print view (`data-view="issue"`). The admin app opens
+  it in a new tab.
+- `GET /print/article/{id}` — a `PUBLISHED` article on A4 with its `print` rendition
+  (`data-view="print-article"`); linked from the article page.
+- `GET /print/issue/{id}` — a live issue on A4: first page with masthead and lead story, then the
+  other articles in columns (`data-view="print-issue"`). The admin app opens it in a new tab.
+- The front page masthead names the newest live issue (link to `/issues/{id}`) and links `/issues`
+  when more than one issue is live.
+- Print views load `/reader/print.js` (static, same origin) for the screen-only "Print" button; the
+  reader CSP stays `default-src 'self'`.
 
 ## `GET /theme/<path>`
 

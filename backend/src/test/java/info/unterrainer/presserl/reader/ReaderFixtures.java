@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
 
 import javax.sql.DataSource;
 
@@ -78,6 +79,45 @@ final class ReaderFixtures {
      */
     void status(long articleId, String status) {
         execute("UPDATE article SET status = '" + status + "' WHERE id = " + articleId);
+    }
+
+    /**
+     * Deletes every issue; articles keep existing without issue.
+     */
+    void deleteAllIssues() {
+        execute("UPDATE article SET issue_id = NULL, issue_position = NULL");
+        execute("DELETE FROM issue");
+    }
+
+    /**
+     * An issue, published or not, with an optional publication date.
+     */
+    long issue(int number, boolean published, LocalDate publicationDate) {
+        String sql = "INSERT INTO issue (number, publication_date, published, published_at) VALUES (?, ?, ?, ?) "
+                + "RETURNING id";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, number);
+            statement.setObject(2, publicationDate);
+            statement.setBoolean(3, published);
+            statement.setTimestamp(4, published ? Timestamp.from(Instant.now()) : null);
+            try (ResultSet result = statement.executeQuery()) {
+                result.next();
+                return result.getLong(1);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * Puts the articles into the issue in this order.
+     */
+    void inIssue(long issueId, long... articleIds) {
+        for (int position = 0; position < articleIds.length; position++) {
+            execute("UPDATE article SET issue_id = " + issueId + ", issue_position = " + position + " WHERE id = "
+                    + articleIds[position]);
+        }
     }
 
     /**

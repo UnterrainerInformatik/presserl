@@ -53,4 +53,28 @@ public interface ReaderMessages {
 
     @Message("Ressorts")
     String sectionsLabel();
+
+    @Message("Ausgabe {number}")
+    String issueLabel(int number);
+
+    @Message("Ausgaben")
+    String issuesTitle();
+
+    @Message("Alle Ausgaben")
+    String allIssues();
+
+    @Message("Noch keine Ausgaben erschienen.")
+    String noIssuesNote();
+
+    @Message("Diese Ausgabe enthält noch keine Artikel.")
+    String issueEmptyNote();
+
+    @Message("Drucken")
+    String print();
+
+    @Message("Zurück zum Artikel")
+    String backToArticle();
+
+    @Message("Zurück zur Ausgabe")
+    String backToIssue();
 }

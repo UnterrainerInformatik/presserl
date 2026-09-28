@@ -95,10 +95,17 @@ data class SectionRefDto(
     val color: String,
 )
 
+/** The issue an article belongs to. */
+@Serializable
+data class IssueRefDto(
+    val id: Long,
+    val number: Int,
+)
+
 /**
  * `GET/POST/PUT /api/articles/{id}` and the article actions (publish, submit, approve, reject,
  * withdraw, offline, unlock). [section] is `null` only for an article the server has not filed under a
- * section yet. Content fields are those of the latest revision ([revision]); [body] is format v1
+ * section yet, [issue] `null` for an article without issue. Content fields are those of the latest revision ([revision]); [body] is format v1
  * (`{"version": 1, "blocks": [...]}`). [pendingLevel] is the approval level the article waits for
  * (`SECTION_EDITOR`, `EDITOR_IN_CHIEF`, `PUBLISHER`), `null` while no submission is pending.
  * [locked] is the emergency-brake lock: a publisher took the article offline, only a publisher puts it back online.
@@ -110,6 +117,7 @@ data class ArticleDto(
     val status: String,
     val author: AuthorDto,
     val section: SectionRefDto? = null,
+    val issue: IssueRefDto? = null,
     val revision: Int,
     val liveRevision: Int? = null,
     val hasUnpublishedChanges: Boolean,
@@ -128,13 +136,14 @@ data class ArticleDto(
     val allowedActions: List<String>,
 )
 
-/** Entry of `GET /api/articles`. */
+/** Entry of `GET /api/articles` and of the articles of an issue; [issue] is `null` for an article without issue. */
 @Serializable
 data class ArticleSummaryDto(
     val id: Long,
     val status: String,
     val author: AuthorDto,
     val section: SectionRefDto? = null,
+    val issue: IssueRefDto? = null,
     val headline: String,
     val kicker: String,
     val revision: Int,
@@ -344,3 +353,43 @@ data class MemberListDto(
     val assignableRoles: List<String>,
     val members: List<MemberDto>,
 )
+
+/**
+ * Entry of `GET /api/issues`: [publicationDate] is an ISO date (`2026-10-12`) or `null`, [publishedAt] the time of the
+ * latest switch to published (`null` while not published), [articleCount] counts articles of any status, [newest]
+ * marks the issue with the highest number, which collects newly published articles.
+ */
+@Serializable
+data class IssueDto(
+    val id: Long,
+    val number: Int,
+    val publicationDate: String? = null,
+    val published: Boolean,
+    val publishedAt: String? = null,
+    val articleCount: Int,
+    val newest: Boolean,
+)
+
+/** `GET /api/issues`: highest number first. */
+@Serializable
+data class IssueListDto(val issues: List<IssueDto>)
+
+/**
+ * `GET/PUT /api/issues/{id}`, `POST /api/issues` and the issue actions: the [IssueDto] fields and the [articles] in
+ * issue order; the first one is the lead story.
+ */
+@Serializable
+data class IssueDetailDto(
+    val id: Long,
+    val number: Int,
+    val publicationDate: String? = null,
+    val published: Boolean,
+    val publishedAt: String? = null,
+    val articleCount: Int,
+    val newest: Boolean,
+    val articles: List<ArticleSummaryDto> = emptyList(),
+)
+
+/** Request body of `POST /api/issues` and `PUT /api/issues/{id}`; [publicationDate] is always sent, `null` clears it. */
+@Serializable
+data class IssueDateRequest(val publicationDate: String?)

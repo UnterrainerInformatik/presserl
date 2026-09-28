@@ -56,7 +56,7 @@ class AuthenticationTest {
                 .body("displayName", equalTo("publisher"))
                 .body("roles", contains("PUBLISHER"))
                 .body("allowedActions", contains("WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES",
-                        "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER"));
+                        "MANAGE_ISSUES", "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER"));
     }
 
     @Test
@@ -65,7 +65,7 @@ class AuthenticationTest {
                 .statusCode(200)
                 .body("roles", contains("EDITOR_IN_CHIEF"))
                 .body("allowedActions", contains("WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES",
-                        "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER"));
+                        "MANAGE_ISSUES", "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER"));
     }
 
     @Test

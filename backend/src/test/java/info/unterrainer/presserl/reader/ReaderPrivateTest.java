@@ -85,6 +85,14 @@ class ReaderPrivateTest {
     }
 
     @Test
+    void issuePagesAndPrintViewsRedirectToLogin() {
+        assertLoginRedirectOf("/issues", "/login?next=/issues");
+        assertLoginRedirectOf("/issues/3", "/login?next=/issues/3");
+        assertLoginRedirectOf("/print/issue/3", "/login?next=/print/issue/3");
+        assertLoginRedirectOf("/print/article/" + published, "/login?next=/print/article/" + published);
+    }
+
+    @Test
     void logoutWithoutSessionGoesHome() {
         Response response = given().redirects().follow(false).get("/logout");
 
@@ -104,7 +112,11 @@ class ReaderPrivateTest {
     }
 
     private void assertLoginRedirect(String id, String location) {
-        Response response = given().redirects().follow(false).urlEncodingEnabled(false).get("/articles/" + id);
+        assertLoginRedirectOf("/articles/" + id, location);
+    }
+
+    private void assertLoginRedirectOf(String path, String location) {
+        Response response = given().redirects().follow(false).urlEncodingEnabled(false).get(path);
 
         assertThat(response.statusCode()).isEqualTo(303);
         assertThat(response.header("Location")).endsWith(":8081" + location);

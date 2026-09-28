@@ -59,6 +59,20 @@ public final class TestSupport {
     }
 
     /**
+     * Restores the issues of a fresh installation: only issue 1, not published, without date and
+     * without articles.
+     */
+    public static void resetIssues(DataSource dataSource) {
+        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+            statement.executeUpdate("UPDATE article SET issue_id = NULL, issue_position = NULL");
+            statement.executeUpdate("DELETE FROM issue");
+            statement.executeUpdate("INSERT INTO issue (number) VALUES (1)");
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
      * Deletes every trust entry (section entries also go with their sections).
      */
     public static void deleteTrust(DataSource dataSource) {
