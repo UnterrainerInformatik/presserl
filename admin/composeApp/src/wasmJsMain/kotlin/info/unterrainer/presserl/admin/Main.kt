@@ -6,6 +6,7 @@ import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.auth.BrowserAuthClient
 import info.unterrainer.presserl.admin.ui.App
 import info.unterrainer.presserl.admin.ui.BrowserSlipPrinter
+import info.unterrainer.presserl.admin.ui.installFocusGuard
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.js.Js
 import kotlinx.browser.document
@@ -28,4 +29,5 @@ fun main() {
     ComposeViewport(document.body!!) {
         App(auth, api, siteUrl = baseUrl, slipPrinter = BrowserSlipPrinter())
     }
+    installFocusGuard(document.body!!)
 }

@@ -28,14 +28,3 @@ id (renditions regenerated, caches busted) or a new media row swapped into all r
 who may edit (uploader, reviewers of the article, publishers); whether editing must happen
 server-side (re-encode path, EXIF stripping) or client-side with a fresh upload; undo before
 saving only, no history after.
-
-## Explain kicker, headline, subheadline and lead for children
-The editor fields *Dachzeile*, *Schlagzeile*, *Unterzeile* and *Vorspann* (kicker, headline,
-subheadline, lead) mean nothing to a ten-year-old reporter. Each field gets a question-mark
-icon next to its label: hovering (desktop) or tapping/clicking (touch) opens a short,
-child-friendly explanation (roughly age 10, one or two sentences) with a concrete example,
-ideally the four fields of one sample article shown together so their roles become clear
-(e.g. Dachzeile „Tierheim Linz“ · Schlagzeile „Minka hat ein neues Zuhause“ · Unterzeile „Warum
-Katzen …“ · Vorspann …). Texts German and English via the admin resources; accessible (keyboard
-focus opens it, Escape closes, screen-reader label). Possibly the same help for other fields
-(caption, section, age level) and a matching note in the design guidelines.

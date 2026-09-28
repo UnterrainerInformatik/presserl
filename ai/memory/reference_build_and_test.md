@@ -35,6 +35,14 @@ Verified 2026-09-26 on Gerald's machine (JDK 21, Docker running) unless marked o
   `AlertDialog` is open the semantics tree holds only the dialog. After it closes the tree keeps
   the dialog's nodes indefinitely (waiting, mouse moves, wheel do not refresh it) — reload the page
   after each dialog and check in-place updates by screenshot or API, secrets from the network response.
+- **Compose popups in Playwright (verified 2026-09-28):** while a `Popup` is open the semantics
+  tree hides everything below it (locators time out) and keeps the popup's nodes after it closes.
+  Record button bounding boxes before opening anything, click by coordinates, use a fresh page per
+  scenario, and judge "closed" by screenshot. `page.mouse.click` moves and presses at once, so a
+  late hover event can follow the click.
+- **Admin dev server does not rebuild:** `wasmJsBrowserDevelopmentRun --continuous` kept serving the
+  old bundle; stop and restart it after code changes. Stop it with
+  `pkill -f "[w]asmJsBrowserDevelopmentRun"` (the bracket keeps pkill from matching its own shell).
 - **.http response handlers:** `client.test(...)` callbacks run after the handler body, so read a
   global into a `const` before a later `client.global.set` overwrites it.
 - **Admin tests:** `cd admin && ./gradlew check` (Karma, headless Chrome with SwiftShader via

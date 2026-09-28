@@ -55,6 +55,16 @@ All levels:
 - Touch targets ≥ 44 px; works on tablets and phones.
 - The administration app uses the reader's colour and font tokens where it can, but is not themed by `custom.css`.
 
+### Field help
+
+Newsroom words (*Ressort*, *Dachzeile*, *Vorspann* …) mean nothing to a ten-year-old, so the editor explains them where they are used:
+
+- A **`?` button** (≥ 44 px touch target, screen-reader label "What is the kicker?") sits next to every editor field and every block type label. Pointing at it, focusing it or tapping it opens the explanation; tapping again, Escape or tapping outside closes it. Only one explanation is open at a time; it never takes focus, changes the article or triggers a save.
+- **Child-level text**: about age 10, one or two short sentences, "du" in German, saying what the part is *for* — no definitions from a style guide.
+- **One shared sample article** (a cat that found a new home) shows every part in the reader's order; the explained part is highlighted by background, border and a `▶` marker, not by colour alone. The sample shows no person.
+- **Images carry the image-rights hint**: ask every recognisable person (children: their parents too) first; otherwise choose another photo or have faces pixelated with an adult's help; use only own or permitted photos. It is a reminder, not legal advice.
+- **Every new editor field or block type gets a help entry** (text, label and sample part, German and English); the `HelpPart` mapping test fails otherwise.
+
 ## 4. Print views
 
 - Dedicated routes (`/print/article/:id`, `/print/issue/:id`) with `@media print` + `@page` (A4 portrait, margins, page numbers).

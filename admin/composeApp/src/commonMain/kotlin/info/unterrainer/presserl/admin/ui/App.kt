@@ -3,6 +3,9 @@ package info.unterrainer.presserl.admin.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -257,14 +260,13 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
     }
 }
 
+/** Below this width the header takes two rows so the names never get squeezed. */
+private val NARROW_HEADER = 720.dp
+
 @Composable
 private fun Header(screen: Screen.LoggedIn, entry: NavEntry?, onEntry: (NavEntry) -> Unit, onLogout: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Column(Modifier.weight(1f)) {
+    val identity = @Composable { modifier: Modifier ->
+        Column(modifier) {
             Text(screen.newspaper.name, style = MaterialTheme.typography.titleLarge)
             val roles = screen.me.roles.map { roleText(it) } +
                 screen.me.sectionRoles.map { sectionRoleText(it.role) + " · " + it.sectionName }
@@ -273,6 +275,8 @@ private fun Header(screen: Screen.LoggedIn, entry: NavEntry?, onEntry: (NavEntry
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
+    }
+    val navigation = @Composable {
         for (navEntry in screen.navEntries) {
             val label = when (navEntry) {
                 NavEntry.ARTICLES -> Res.string.nav_articles
@@ -283,7 +287,28 @@ private fun Header(screen: Screen.LoggedIn, entry: NavEntry?, onEntry: (NavEntry
             }
             NavButton(stringResource(label), entry == navEntry) { onEntry(navEntry) }
         }
-        OutlinedButton(onClick = onLogout) { Text(stringResource(Res.string.log_out)) }
+    }
+    val logout = @Composable { OutlinedButton(onClick = onLogout) { Text(stringResource(Res.string.log_out)) } }
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        if (maxWidth >= NARROW_HEADER) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                identity(Modifier.weight(1f))
+                navigation()
+                logout()
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    identity(Modifier.weight(1f))
+                    logout()
+                }
+                if (screen.navEntries.isNotEmpty()) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        navigation()
+                    }
+                }
+            }
+        }
     }
 }
 

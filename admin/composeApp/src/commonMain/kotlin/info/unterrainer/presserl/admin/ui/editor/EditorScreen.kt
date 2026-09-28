@@ -2,6 +2,7 @@ package info.unterrainer.presserl.admin.ui.editor
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -332,11 +333,18 @@ private fun Editor(
 
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (actions.editable) {
-                SectionChooser(model, article.section, sections.orEmpty(), errors.section, enabled = saveState != SaveState.Conflict)
+                // One explanation at a time for the whole editor
+                val help = remember { FieldHelpState() }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) {
+                        SectionChooser(model, article.section, sections.orEmpty(), errors.section, enabled = saveState != SaveState.Conflict)
+                    }
+                    FieldHelp(HelpPart.SECTION, help)
+                }
                 val leadImage = LeadImageSlot(thumbnails, maxUploadSize, onChoose = {
                     scope.launch { pickImageFile()?.let { model.uploadLeadImage(it, api::uploadMedia) } }
                 })
-                EditableArticle(model, errors, leadImage, enabled = saveState != SaveState.Conflict)
+                EditableArticle(model, errors, leadImage, help, enabled = saveState != SaveState.Conflict)
             } else {
                 article.section?.let { SectionLabel(it.name, it.color) }
                 ArticleView(model.draft, thumbnails)
@@ -429,30 +437,49 @@ private fun BottomBar(
     onUnlock: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-            if (actions.editable) {
-                OutlinedButton(onClick = { model.dispatch(EditorIntent.Undo) }, enabled = model.canUndo) { Text("↶ " + stringResource(Res.string.undo)) }
-                OutlinedButton(onClick = { model.dispatch(EditorIntent.Redo) }, enabled = model.canRedo) { Text("↷ " + stringResource(Res.string.redo)) }
-                Text(saveStateText(saveState), style = MaterialTheme.typography.bodyMedium)
+    val history = @Composable {
+        if (actions.editable) {
+            OutlinedButton(onClick = { model.dispatch(EditorIntent.Undo) }, enabled = model.canUndo) { Text("↶ " + stringResource(Res.string.undo)) }
+            OutlinedButton(onClick = { model.dispatch(EditorIntent.Redo) }, enabled = model.canRedo) { Text("↷ " + stringResource(Res.string.redo)) }
+            Text(saveStateText(saveState), style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+    val articleActions = @Composable {
+        if (actions.delete) {
+            TextButton(onClick = onDelete, enabled = !busy, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                Text(stringResource(Res.string.delete))
             }
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), itemVerticalAlignment = Alignment.CenterVertically) {
-            if (actions.delete) {
-                TextButton(onClick = onDelete, enabled = !busy, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                    Text(stringResource(Res.string.delete))
+        if (actions.takeOffline) OutlinedButton(onClick = onTakeOffline, enabled = !busy) { Text(stringResource(Res.string.take_offline)) }
+        if (actions.unlock) OutlinedButton(onClick = onUnlock, enabled = !busy) { Text(stringResource(Res.string.unlock)) }
+        if (actions.withdraw) OutlinedButton(onClick = onWithdraw, enabled = !busy) { Text(stringResource(Res.string.withdraw)) }
+        if (actions.reject) OutlinedButton(onClick = onReject, enabled = !busy) { Text(stringResource(Res.string.reject)) }
+        if (actions.approve) Button(onClick = onApprove, enabled = !busy) { Text(stringResource(Res.string.approve)) }
+        if (actions.submit) Button(onClick = onSubmit, enabled = !busy && saveState != SaveState.Conflict) { Text(stringResource(Res.string.submit)) }
+        if (actions.publish) Button(onClick = onPublish, enabled = !busy && saveState != SaveState.Conflict) { Text(stringResource(Res.string.publish)) }
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        if (maxWidth < NARROW_BAR) {
+            // One wrapping group: side by side the actions would squeeze undo and redo into broken words
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                history()
+                articleActions()
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                    history()
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), itemVerticalAlignment = Alignment.CenterVertically) {
+                    articleActions()
                 }
             }
-            if (actions.takeOffline) OutlinedButton(onClick = onTakeOffline, enabled = !busy) { Text(stringResource(Res.string.take_offline)) }
-            if (actions.unlock) OutlinedButton(onClick = onUnlock, enabled = !busy) { Text(stringResource(Res.string.unlock)) }
-            if (actions.withdraw) OutlinedButton(onClick = onWithdraw, enabled = !busy) { Text(stringResource(Res.string.withdraw)) }
-            if (actions.reject) OutlinedButton(onClick = onReject, enabled = !busy) { Text(stringResource(Res.string.reject)) }
-            if (actions.approve) Button(onClick = onApprove, enabled = !busy) { Text(stringResource(Res.string.approve)) }
-            if (actions.submit) Button(onClick = onSubmit, enabled = !busy && saveState != SaveState.Conflict) { Text(stringResource(Res.string.submit)) }
-            if (actions.publish) Button(onClick = onPublish, enabled = !busy && saveState != SaveState.Conflict) { Text(stringResource(Res.string.publish)) }
         }
     }
 }
+
+/** Below this width the bottom bar wraps as one group. */
+private val NARROW_BAR = 720.dp
 
 /** The article's approvals and rejections, newest first, with their notes. */
 @Composable
@@ -560,10 +587,10 @@ private fun SectionChooser(model: EditorModel, current: SectionRefDto?, sections
 private class LeadImageSlot(val thumbnails: Thumbnails, val maxUploadSize: String?, val onChoose: () -> Unit)
 
 @Composable
-private fun EditableArticle(model: EditorModel, errors: FieldErrors, leadImage: LeadImageSlot, enabled: Boolean) {
+private fun EditableArticle(model: EditorModel, errors: FieldErrors, leadImage: LeadImageSlot, help: FieldHelpState, enabled: Boolean) {
     HeaderField.entries.forEach { field ->
         // The reader's order: the lead image follows the headline block
-        if (field == HeaderField.LEAD) LeadImageField(model, leadImage, errors.leadImage, enabled)
+        if (field == HeaderField.LEAD) LeadImageField(model, leadImage, errors.leadImage, help, enabled)
         val value = model.draft[field]
         val error = errors.header[field]
         OutlinedTextField(
@@ -573,6 +600,7 @@ private fun EditableArticle(model: EditorModel, errors: FieldErrors, leadImage: 
                 if (changed.filterNot { it == '\n' || it == '\r' } != value) model.dispatch(EditorIntent.EditHeader(field, changed))
             },
             label = { Text(stringResource(HEADER_LABELS.getValue(field))) },
+            trailingIcon = { FieldHelp(field.helpPart, help) },
             singleLine = field != HeaderField.LEAD,
             minLines = if (field == HeaderField.LEAD) 2 else 1,
             isError = error != null,
@@ -588,7 +616,7 @@ private fun EditableArticle(model: EditorModel, errors: FieldErrors, leadImage: 
     val blocks = model.draft.blocks
     blocks.forEachIndexed { index, block ->
         key(block.id) {
-            BlockCard(model, block, first = index == 0, last = index == blocks.lastIndex, error = errors.blocks[index], enabled)
+            BlockCard(model, block, first = index == 0, last = index == blocks.lastIndex, error = errors.blocks[index], help, enabled)
             AddBlockButton(afterId = block.id, model, enabled)
         }
     }
@@ -600,10 +628,13 @@ private fun EditableArticle(model: EditorModel, errors: FieldErrors, leadImage: 
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun LeadImageField(model: EditorModel, slot: LeadImageSlot, error: String?, enabled: Boolean) {
+private fun LeadImageField(model: EditorModel, slot: LeadImageSlot, error: String?, help: FieldHelpState, enabled: Boolean) {
     val image = model.draft.leadImage
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(Res.string.field_lead_image), style = MaterialTheme.typography.labelLarge)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(Res.string.field_lead_image), style = MaterialTheme.typography.labelLarge)
+            FieldHelp(HelpPart.LEAD_IMAGE, help)
+        }
         if (image != null) {
             LeadImagePreview(image, slot.thumbnails)
             OutlinedTextField(
@@ -612,6 +643,7 @@ private fun LeadImageField(model: EditorModel, slot: LeadImageSlot, error: Strin
                     if (changed.filterNot { it == '\n' || it == '\r' } != image.caption) model.dispatch(EditorIntent.EditCaption(changed))
                 },
                 label = { Text(stringResource(Res.string.field_caption)) },
+                trailingIcon = { FieldHelp(HelpPart.CAPTION, help) },
                 singleLine = true,
                 isError = error != null,
                 supportingText = error?.let { { Text(it) } },
@@ -683,12 +715,15 @@ private data class BoldTarget(val itemId: Long?, val state: RichTextState)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun BlockCard(model: EditorModel, block: EditorBlock, first: Boolean, last: Boolean, error: String?, enabled: Boolean) {
+private fun BlockCard(model: EditorModel, block: EditorBlock, first: Boolean, last: Boolean, error: String?, help: FieldHelpState, enabled: Boolean) {
     var boldTarget by remember { mutableStateOf<BoldTarget?>(null) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(BLOCK_LABELS.getValue(block.type)), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(end = 8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 8.dp)) {
+                    Text(stringResource(BLOCK_LABELS.getValue(block.type)), style = MaterialTheme.typography.labelLarge)
+                    FieldHelp(block.type.helpPart, help)
+                }
                 if (block !is EditorBlock.Subhead) {
                     val target = boldTarget
                     val isBold = target?.state?.currentSpanStyle?.fontWeight == FontWeight.Bold
