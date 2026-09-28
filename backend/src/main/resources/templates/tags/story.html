@@ -4,6 +4,13 @@
   <p class="kicker">{article.kicker}</p>
   {/if}
   <h2 class="headline"><a href="/articles/{article.id}">{article.headline}</a></h2>
+  {#if article.leadImage}
+  {#if cls == 'lead-article'}
+  {#leadImage image=article.leadImage kind="web" sizes="(min-width: 75rem) 75rem, 100vw" /}
+  {#else}
+  {#leadImage image=article.leadImage kind="thumbnail" /}
+  {/if}
+  {/if}
   {#if article.lead}
   <p class="lead">{article.lead}</p>
   {/if}

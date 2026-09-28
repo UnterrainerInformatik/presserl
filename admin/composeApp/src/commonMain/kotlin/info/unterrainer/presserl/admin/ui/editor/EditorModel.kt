@@ -2,11 +2,17 @@ package info.unterrainer.presserl.admin.ui.editor
 
 import info.unterrainer.presserl.admin.api.ArticleContent
 import info.unterrainer.presserl.admin.api.ArticleDto
+import info.unterrainer.presserl.admin.api.LeadImageDto
+import info.unterrainer.presserl.admin.api.LeadImageRequest
+import info.unterrainer.presserl.admin.api.MediaDto
 import info.unterrainer.presserl.admin.api.RevisionDto
 import info.unterrainer.presserl.admin.article.Block
 import info.unterrainer.presserl.admin.article.Body
 import info.unterrainer.presserl.admin.article.Run
 import info.unterrainer.presserl.admin.article.singleLine
+import info.unterrainer.presserl.admin.ui.media.PickedFile
+import io.ktor.client.plugins.ResponseException
+import kotlinx.coroutines.CancellationException
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -20,6 +26,42 @@ enum class HeaderField(val maxLength: Int) {
 }
 
 enum class BlockType { PARAGRAPH, SUBHEAD, QUOTE, LIST }
+
+/** Longest lead-image caption in code points, as enforced by the server. */
+const val CAPTION_MAX = 300
+
+/** The lead image of the draft: an uploaded media, its caption and the stored image's size (for the layout). */
+data class DraftLeadImage(val mediaId: Long, val caption: String, val width: Int, val height: Int)
+
+/** Why an upload was refused, as the editor explains it. */
+sealed interface UploadError {
+    /** `413`: above the newspaper's `media.max-size`. */
+    data object TooLarge : UploadError
+
+    /** `415`: not a JPEG, PNG or WebP image (HEIC, GIF, other files). */
+    data object Unsupported : UploadError
+
+    /** `400`: damaged, or too many pixels. */
+    data object Damaged : UploadError
+
+    /** `503`, other server errors and network failures. */
+    data object Unreachable : UploadError
+
+    /** Any other refusal, with the server's text. */
+    data class Other(val message: String) : UploadError
+}
+
+/** Maps a failed upload to what the editor shows. */
+fun uploadErrorOf(e: Throwable): UploadError {
+    if (e !is ResponseException) return UploadError.Unreachable
+    return when (val status = e.response.status.value) {
+        413 -> UploadError.TooLarge
+        415 -> UploadError.Unsupported
+        400 -> UploadError.Damaged
+        in 500..599 -> UploadError.Unreachable
+        else -> UploadError.Other("$status ${e.response.status.description}")
+    }
+}
 
 data class ListItem(val id: Long, val runs: List<Run>)
 
@@ -41,6 +83,7 @@ data class Draft(
     val subheadline: String = "",
     val lead: String = "",
     val blocks: List<EditorBlock> = emptyList(),
+    val leadImage: DraftLeadImage? = null,
 ) {
     operator fun get(field: HeaderField): String = when (field) {
         HeaderField.KICKER -> kicker
@@ -67,7 +110,15 @@ data class Draft(
         },
     )
 
-    fun toContent(): ArticleContent = ArticleContent(kicker, headline, subheadline, lead, body().toJson(), sectionId)
+    fun toContent(): ArticleContent = ArticleContent(
+        kicker,
+        headline,
+        subheadline,
+        lead,
+        body().toJson(),
+        sectionId,
+        leadImage?.let { LeadImageRequest(it.mediaId, it.caption) },
+    )
 }
 
 /** Hands out the local ids of blocks and list items. */
@@ -79,10 +130,13 @@ class IdSource {
 
 fun draftOf(article: ArticleDto, ids: IdSource): Draft =
     draftOf(article.kicker, article.headline, article.subheadline, article.lead, Body.fromJson(article.body), ids)
-        .copy(sectionId = article.section?.id)
+        .copy(sectionId = article.section?.id, leadImage = article.leadImage?.toDraft())
 
 fun draftOf(revision: RevisionDto, ids: IdSource): Draft =
     draftOf(revision.kicker, revision.headline, revision.subheadline, revision.lead, Body.fromJson(revision.body), ids)
+        .copy(leadImage = revision.leadImage?.toDraft())
+
+private fun LeadImageDto.toDraft() = DraftLeadImage(mediaId, caption, width, height)
 
 private fun draftOf(kicker: String, headline: String, subheadline: String, lead: String, body: Body, ids: IdSource) = Draft(
     kicker = kicker,
@@ -103,6 +157,11 @@ sealed interface EditorIntent {
     /** Moves the article to another section; its own undo step. */
     data class ChooseSection(val sectionId: Long) : EditorIntent
     data class EditHeader(val field: HeaderField, val value: String) : EditorIntent
+
+    /** Sets (or replaces) the lead image; a replaced image's caption is kept. Its own undo step. */
+    data class SetLeadImage(val mediaId: Long, val width: Int, val height: Int) : EditorIntent
+    data class EditCaption(val value: String) : EditorIntent
+    data object RemoveLeadImage : EditorIntent
     data class EditSubhead(val blockId: Long, val text: String) : EditorIntent
 
     /** Typed text of a paragraph or quote ([itemId] `null`) or of a list item. */
@@ -127,7 +186,8 @@ sealed interface EditorIntent {
  * Editor state outside the composables (design D3/D4): the [draft] and its undo/redo history of
  * snapshots. Typing in one field within [coalesceMillis] forms a single undo step; every structural
  * change is its own step. [clock] returns milliseconds. State is Compose snapshot state, so text
- * fields read it synchronously.
+ * fields read it synchronously. [uploading] and [uploadError] describe the lead-image upload; they
+ * are not part of the draft.
  */
 class EditorModel(
     initial: Draft,
@@ -147,6 +207,11 @@ class EditorModel(
     var restored by mutableStateOf(0)
         private set
 
+    var uploading by mutableStateOf(false)
+        private set
+    var uploadError by mutableStateOf<UploadError?>(null)
+        private set
+
     private val undoStack = ArrayDeque<Draft>()
     private val redoStack = ArrayDeque<Draft>()
 
@@ -156,6 +221,16 @@ class EditorModel(
     fun dispatch(intent: EditorIntent) {
         when (intent) {
             is EditorIntent.ChooseSection -> change(draft.copy(sectionId = intent.sectionId))
+            is EditorIntent.SetLeadImage -> change(
+                draft.copy(
+                    leadImage = DraftLeadImage(intent.mediaId, draft.leadImage?.caption.orEmpty(), intent.width, intent.height),
+                ),
+            )
+            is EditorIntent.EditCaption -> {
+                val image = draft.leadImage ?: return
+                change(draft.copy(leadImage = image.copy(caption = singleLine(intent.value, CAPTION_MAX))), typing = CAPTION_KEY)
+            }
+            EditorIntent.RemoveLeadImage -> change(draft.copy(leadImage = null))
             is EditorIntent.EditHeader ->
                 change(draft.with(intent.field, singleLine(intent.value, intent.field.maxLength)), typing = intent.field)
             is EditorIntent.EditSubhead ->
@@ -194,6 +269,27 @@ class EditorModel(
         }
     }
 
+    /**
+     * Uploads [file] with [upload] and makes it the lead image. A refused or failed upload keeps the current
+     * image and sets [uploadError]; a new upload clears it.
+     */
+    suspend fun uploadLeadImage(file: PickedFile, upload: suspend (bytes: ByteArray, fileName: String) -> MediaDto) {
+        if (uploading) return
+        uploading = true
+        uploadError = null
+        try {
+            val media = upload(file.bytes, file.name)
+            dispatch(EditorIntent.SetLeadImage(media.id, media.width, media.height))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // Browser fetch failures surface as kotlin.Error, not Exception
+            uploadError = uploadErrorOf(e)
+        } finally {
+            uploading = false
+        }
+    }
+
     private fun change(next: Draft, typing: Any? = null) {
         val current = draft
         if (next == current) return
@@ -224,6 +320,10 @@ class EditorModel(
     private fun updateFlags() {
         canUndo = undoStack.isNotEmpty()
         canRedo = redoStack.isNotEmpty()
+    }
+
+    private companion object {
+        const val CAPTION_KEY = "caption"
     }
 
     private fun emptyBlock(type: BlockType): EditorBlock = when (type) {

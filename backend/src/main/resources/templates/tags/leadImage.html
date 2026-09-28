@@ -1,0 +1,15 @@
+{! A lead image (ReaderImage). kind="web" links the web rendition with the thumbnail in srcset for the
+   given sizes; kind="thumbnail" links the thumbnail alone and loads it lazily. The figcaption is the
+   image's text, so alt is empty and the caption is not read twice. !}
+<figure class="lead-image">
+  {#if kind == 'thumbnail'}
+  <img src="/media/{image.mediaId}/thumbnail" width="{image.thumbWidth}" height="{image.thumbHeight}" alt="" loading="lazy">
+  {#else if image.webWidth > image.thumbWidth}
+  <img src="/media/{image.mediaId}/web" srcset="/media/{image.mediaId}/thumbnail {image.thumbWidth}w, /media/{image.mediaId}/web {image.webWidth}w" sizes="{sizes}" width="{image.webWidth}" height="{image.webHeight}" alt="">
+  {#else}
+  <img src="/media/{image.mediaId}/web" width="{image.webWidth}" height="{image.webHeight}" alt="">
+  {/if}
+  {#if image.caption}
+  <figcaption class="lead-image__caption">{image.caption}</figcaption>
+  {/if}
+</figure>

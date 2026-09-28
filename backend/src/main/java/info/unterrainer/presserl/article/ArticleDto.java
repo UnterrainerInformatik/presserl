@@ -29,16 +29,18 @@ public record ArticleDto(
         String subheadline,
         String lead,
         JsonNode body,
+        LeadImageDto leadImage,
         List<ArticleAction> allowedActions) {
 
     /**
-     * @param staffing from {@link StaffingService#forArticles} for this article
+     * @param staffing  from {@link StaffingService#forArticles} for this article
+     * @param leadImage from {@link ArticleService#leadImage} for the revision
      */
-    public static ArticleDto of(ArticleView view, Newsroom newsroom, Staffing staffing) {
+    public static ArticleDto of(ArticleView view, Newsroom newsroom, Staffing staffing, LeadImageDto leadImage) {
         ArticleEntity a = view.article();
         ArticleRevisionEntity r = view.revision();
         return new ArticleDto(a.id, a.status, AuthorDto.of(a), SectionRefDto.of(view.section()), r.number, a.liveRevision,
                 ArticlePolicy.hasUnpublishedChanges(a, r.number), a.pendingLevel, a.locked, a.version, a.createdAt, a.updatedAt, a.publishedAt,
-                r.kicker, r.headline, r.subheadline, r.lead, r.body, ArticlePolicy.allowedActions(newsroom, a, r.number, staffing));
+                r.kicker, r.headline, r.subheadline, r.lead, r.body, leadImage, ArticlePolicy.allowedActions(newsroom, a, r.number, staffing));
     }
 }

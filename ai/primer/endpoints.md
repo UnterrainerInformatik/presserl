@@ -253,7 +253,8 @@ publisher unlocks it (`POST /api/articles/{id}/unlock`). Taking offline by anyon
 
 `ArticleContent` (request body of create and save):
 ```json
-{ "sectionId": 3, "kicker": "", "headline": "", "subheadline": "", "lead": "", "body": { "version": 1, "blocks": [] } }
+{ "sectionId": 3, "kicker": "", "headline": "", "subheadline": "", "lead": "", "body": { "version": 1, "blocks": [] },
+  "leadImage": { "mediaId": 17, "caption": "Our cat Minka" } }
 ```
 - All fields optional; missing or `null` text fields → `""`, missing `body` →
   `{"version": 1, "blocks": []}`. Every save is a **full replacement** (no PATCH) of the content.
@@ -263,6 +264,15 @@ publisher unlocks it (`POST /api/articles/{id}/unlock`). Taking offline by anyon
   `sectionId`; nothing is stored then.
 - Text fields are plain text, stored trimmed, no control characters (no line breaks). Max length
   (code points): `kicker`, `headline`, `subheadline` 200; `lead` 1000.
+- `leadImage`: `null` or `{"mediaId", "caption"}`. **Missing or `null` means no lead image** — with
+  full replacement a save without the field removes the image, so clients always send it.
+  `mediaId` required, a positive integer naming an existing media (any media, whoever uploaded it);
+  `caption` optional plain text (default `""`, stored trimmed, no control characters, at most 300
+  code points). Errors (`400`, collected with all other field errors): not an object → field
+  `leadImage`; `mediaId` missing, not a positive integer or no such media (`media 17 does not
+  exist`, checked after the syntax, nothing is stored) → `leadImage.mediaId`; bad caption →
+  `leadImage.caption`; other keys → `leadImage.<key>` ("unknown field"). The lead image is revision
+  content: it is revisioned, counts for "unchanged" saves and goes live with the next publication.
 - Unknown fields → `400` naming them.
 
 `body`, format version 1:
@@ -314,6 +324,7 @@ Content fields are those of the latest revision (`revision`).
   "subheadline": "",
   "lead": "Our pumpkin weighs 12 kilos.",
   "body": { "version": 1, "blocks": [ { "type": "subhead", "text": "Watering" } ] },
+  "leadImage": { "mediaId": 17, "caption": "Our cat Minka", "width": 4096, "height": 2731 },
   "allowedActions": ["EDIT", "PUBLISH", "TAKE_OFFLINE"]
 }
 ```
@@ -322,6 +333,8 @@ Content fields are those of the latest revision (`revision`).
 - `liveRevision`, `publishedAt` (first publication): `null` until the first publish.
 - `pendingLevel`: the approval level the article waits for, `null` while no submission is pending.
 - `locked`: `true` while the emergency-brake lock is set (see above), otherwise `false`.
+- `leadImage`: the latest revision's lead image or `null`; `width`/`height` are those of the stored
+  image (`MediaDto`), for the editor's layout. Not part of `ArticleSummaryDto`.
 - Timestamps: ISO-8601 UTC, millisecond precision.
 
 ## `GET /api/articles`
@@ -518,7 +531,7 @@ The author ends their pending submission. No request body.
 
 - **Auth:** writer; article visible
 - **Response `200`:** `RevisionDto` = `RevisionSummaryDto` fields plus `kicker`, `subheadline`,
-  `lead`, `body`
+  `lead`, `body`, `leadImage` (that revision's lead image, shaped as in `ArticleDto`, or `null`)
 - **Errors:** `404` unknown or invisible article, unknown revision number.
 
 ---
@@ -956,8 +969,14 @@ Uploaded images. Every upload is re-encoded on the server from its pixels: the s
 JPEG (quality 0.85) or, when the source has visible transparency, a PNG, in sRGB, rotated upright
 by its EXIF orientation and scaled down to at most 4096 px on the longer side (never enlarged). No
 metadata survives (EXIF incl. GPS/camera/date/orientation, XMP, IPTC, ICC, comments, thumbnails).
-Images live in an S3-compatible object store that browsers never reach; readers get no media in
-this version (lead images come later).
+Every media also has three **renditions** derived from the stored image — `thumbnail` (longer side
+≤ 480 px), `web` (≤ 1600 px) and `print` (≤ 3000 px) — keeping the aspect ratio, never enlarged
+(a small image keeps its size), in the stored image's format (JPEG, or PNG with transparency) and
+without metadata. They are produced during the upload; media uploaded before renditions existed get
+theirs from a background backfill shortly after the backend starts.
+Images live in an S3-compatible object store that browsers never reach. Readers only get
+renditions of published lead images through the reader route `GET /media/{id}/{kind}` (below),
+never the stored image.
 
 All media endpoints require a bearer token (missing/invalid → `401`, empty body) and
 `WRITE_ARTICLES` in `allowedActions` (publisher, editor-in-chief or any section role); everyone
@@ -974,11 +993,17 @@ other path keeps the former 10M limit (`413`, error body with field `null`, mess
 ```json
 { "id": 17, "contentType": "image/jpeg", "width": 4096, "height": 2731, "size": 1834211,
   "uploadedBy": { "username": "papa", "displayName": "Papa" },
-  "uploadedAt": "2026-09-27T14:03:11.402Z" }
+  "uploadedAt": "2026-09-27T14:03:11.402Z",
+  "renditions": {
+    "thumbnail": { "width": 480,  "height": 320,  "size": 31877 },
+    "web":       { "width": 1600, "height": 1067, "size": 298114 },
+    "print":     { "width": 3000, "height": 2000, "size": 861022 } } }
 ```
 `contentType`: `image/jpeg` | `image/png` — the type of the stored (re-encoded) image, not of the
-upload. `width`, `height`: pixels of the stored image. `size`: bytes of the stored image.
-`uploadedBy`: username and display name at upload time (like article bylines).
+upload; the renditions have the same type. `width`, `height`: pixels of the stored image. `size`:
+bytes of the stored image. `uploadedBy`: username and display name at upload time (like article
+bylines). `renditions`: per kind width, height and bytes; always all three once produced, `{}`
+while the backfill has not reached an older media yet.
 
 ## `POST /api/media`
 
@@ -997,10 +1022,12 @@ Uploads one image.
   | `403` | no `WRITE_ARTICLES` (checked before the body) |
   | `413` | file larger than the effective setting `media.max-size` (default `10M`, at most `60M`; field `file`); above 64M Quarkus answers `413` with an empty body |
   | `415` | not JPEG, PNG or still WebP — e.g. GIF, HEIC, SVG, PDF, animated WebP, HTML named `.jpg` (field `file`) |
-  | `503` | object store unreachable (field `null`); no media record is left behind |
+  | `503` | object store unreachable, also while writing a rendition (field `null`); no media record and no object is left behind |
 
-- **Side effects:** the re-encoded image is written once to the object store under a random key,
-  then the media record is stored. Nothing is stored for a refused upload.
+- **Side effects:** the re-encoded image and its three renditions are written to the object store
+  under random keys, then the media record and its rendition records are stored in one transaction;
+  on any failure the objects already written are deleted (best effort). Nothing is stored for a
+  refused upload.
 
 ## `GET /api/media/{id}`
 
@@ -1019,6 +1046,19 @@ The stored image bytes.
   `X-Content-Type-Options: nosniff`, `Cache-Control: private, max-age=31536000, immutable` (a
   stored image never changes).
 - **Errors:** `403`, `404` unknown id (JSON error body), `503` object store unreachable.
+- **Side effects:** none.
+
+## `GET /api/media/{id}/renditions/{kind}`
+
+The bytes of one rendition; `kind` is `thumbnail`, `web` or `print` (lower case). Used by the
+editor's preview.
+
+- **Auth:** `WRITE_ARTICLES`
+- **Response `200`:** body = the rendition; headers as `/content` (`Content-Type`,
+  `Content-Length`, `Content-Disposition: inline`, `X-Content-Type-Options: nosniff`,
+  `Cache-Control: private, max-age=31536000, immutable`).
+- **Errors:** `403`, `404` unknown id, unknown kind or a rendition not produced yet (JSON error
+  body, field `null`), `503` object store unreachable.
 - **Side effects:** none.
 
 ---
@@ -1041,6 +1081,24 @@ The reader's text-size switch (a plain HTML form, no JavaScript).
   production, `presserl.reader.cookie-secure`); an unknown or missing size sets no cookie.
 - **Effect:** every reader page renders `<html data-text-size>` from a valid cookie, otherwise
   from the newspaper's effective `reader.text-size`.
+
+## `GET /media/{id}/{kind}`
+
+A rendition (`kind` `thumbnail` | `web` | `print`) of a lead image for readers; the reader pages
+link `web` (article page, lead story, with `thumbnail` in `srcset`) and `thumbnail` (cards).
+
+- **Auth:** none for a public newspaper. For a private one (effective `visibility` `private`) the
+  reader session (`q_session_reader`) of an entitled reader (`READER`, `EDITOR_IN_CHIEF`,
+  `PUBLISHER`) is needed; `/media/*` belongs to the reader OIDC tenant. No login redirect.
+- **Response `200`:** only while media `{id}` is the lead image of the **live revision of at least
+  one `PUBLISHED` article**; body = the rendition, headers `Content-Type`, `Content-Length`,
+  `X-Content-Type-Options: nosniff`, `Cache-Control: public, max-age=3600` (public newspaper) or
+  `private, max-age=3600` (private newspaper) — an image taken offline disappears from caches within
+  an hour.
+- **Errors:** `404` with an **empty body** for everything else: malformed id, unknown kind (also
+  `original`/`content`: the stored image is never served), unknown media, media only used in drafts,
+  in working revisions or in `OFFLINE` articles, and — for a private newspaper — anonymous visitors
+  and visitors without a newspaper role. `503` (empty body) when the object store is unreachable.
 
 ## `GET /theme/<path>`
 

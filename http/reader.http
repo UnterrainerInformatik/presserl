@@ -125,6 +125,96 @@ GET {{baseUrl}}/articles/{{readerArticleId}}
     client.test("404 after taking offline", () => client.assert(response.status === 404, "status " + response.status));
 %}
 
+### Lead image: upload a photo
+POST {{baseUrl}}/api/media
+Authorization: Bearer {{accessToken}}
+Content-Type: multipart/form-data; boundary=PresserlBoundary
+
+--PresserlBoundary
+Content-Disposition: form-data; name="file"; filename="photo-gps.jpg"
+Content-Type: image/jpeg
+
+< ./media/photo-gps.jpg
+--PresserlBoundary--
+
+> {%
+    client.global.set("readerMediaId", response.body.id);
+%}
+
+### Lead image: a draft carries it
+POST {{baseUrl}}/api/articles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "headline": "Minka is back", "leadImage": { "mediaId": {{readerMediaId}}, "caption": "Our cat <b>Minka</b>" } }
+
+> {%
+    client.global.set("imageArticleId", response.body.id);
+%}
+
+### Lead image: only in a draft, readers get an empty 404
+GET {{baseUrl}}/media/{{readerMediaId}}/web
+
+> {%
+    client.test("404 without body", () => {
+        client.assert(response.status === 404, "status " + response.status);
+        client.assert(!response.body, "body " + response.body);
+    });
+%}
+
+### Lead image: publish the article
+POST {{baseUrl}}/api/articles/{{imageArticleId}}/publish
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("published", () => client.assert(response.body.status === "PUBLISHED", "status " + response.body.status));
+%}
+
+### Lead image: the web rendition is served to readers
+GET {{baseUrl}}/media/{{readerMediaId}}/web
+
+> {%
+    client.test("200 JPEG, public for an hour", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.headers.valueOf("Content-Type") === "image/jpeg", "type " + response.headers.valueOf("Content-Type"));
+        client.assert(response.headers.valueOf("X-Content-Type-Options") === "nosniff", "nosniff");
+        client.assert(response.headers.valueOf("Cache-Control") === "public, max-age=3600",
+            "cache " + response.headers.valueOf("Cache-Control"));
+    });
+%}
+
+### Lead image: the stored image is never served
+GET {{baseUrl}}/media/{{readerMediaId}}/original
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### Lead image: the article page shows the figure with the escaped caption
+GET {{baseUrl}}/articles/{{imageArticleId}}
+
+> {%
+    client.test("figure with web rendition and caption", () => {
+        const id = client.global.get("readerMediaId");
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.includes('<figure class="lead-image">'), "figure");
+        client.assert(response.body.includes('src="/media/' + id + '/web"'), "src");
+        client.assert(response.body.includes('<figcaption class="lead-image__caption">Our cat &lt;b&gt;Minka&lt;/b&gt;</figcaption>'),
+            "caption");
+    });
+%}
+
+### Lead image: take it offline, the image is gone for readers
+POST {{baseUrl}}/api/articles/{{imageArticleId}}/offline
+Authorization: Bearer {{accessToken}}
+
+### Lead image: offline article's image
+GET {{baseUrl}}/media/{{readerMediaId}}/web
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
 ### Text-size switch: choose XL and return to the front page
 # @no-redirect
 # @no-cookie-jar

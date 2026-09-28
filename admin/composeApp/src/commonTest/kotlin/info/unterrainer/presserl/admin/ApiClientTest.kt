@@ -7,7 +7,10 @@ import info.unterrainer.presserl.admin.api.ArticleContent
 import info.unterrainer.presserl.admin.api.AuthorDto
 import info.unterrainer.presserl.admin.api.CreateAccountRequest
 import info.unterrainer.presserl.admin.api.EditRolesRequest
+import info.unterrainer.presserl.admin.api.LeadImageDto
+import info.unterrainer.presserl.admin.api.LeadImageRequest
 import info.unterrainer.presserl.admin.api.MediaDto
+import info.unterrainer.presserl.admin.api.RenditionDto
 import info.unterrainer.presserl.admin.api.SectionRequest
 import info.unterrainer.presserl.admin.api.SectionRoleDto
 import io.ktor.client.HttpClient
@@ -152,12 +155,57 @@ class ApiClientTest {
     }
 
     @Test
-    fun createArticleSendsOnlyTheGivenContent() = runTest {
+    fun createArticleSendsOnlyTheGivenContentAndTheLeadImage() = runTest {
         api.createArticle(ArticleContent(headline = "Hello"))
         val request = requests.single()
         assertEquals(HttpMethod.Post to "https://news.example.org/api/articles", request.method to request.url)
-        assertEquals(buildJsonObject { put("headline", "Hello") }, request.body)
+        assertEquals(buildJsonObject { put("headline", "Hello"); put("leadImage", JsonNull) }, request.body)
         assertEquals("Bearer token-123", request.authorization)
+    }
+
+    @Test
+    fun createArticleWithLeadImage() = runTest {
+        api.createArticle(ArticleContent(headline = "Minka", leadImage = LeadImageRequest(17, "Our cat Minka")))
+        assertEquals(
+            buildJsonObject {
+                put("headline", "Minka")
+                put("leadImage", buildJsonObject { put("mediaId", 17); put("caption", "Our cat Minka") })
+            },
+            requests.single().body,
+        )
+    }
+
+    @Test
+    fun updateArticleSendsTheLeadImage() = runTest {
+        api.updateArticle(42, ArticleContent(headline = "H", leadImage = LeadImageRequest(17, "")), version = 5)
+        assertEquals(
+            buildJsonObject { put("mediaId", 17); put("caption", "") },
+            (requests.single().body as JsonObject)["leadImage"],
+        )
+    }
+
+    @Test
+    fun articleAndRevisionReadTheLeadImage() = runTest {
+        val leadImage = LeadImageDto(17, "Our cat Minka", 4096, 2731)
+        val withImage = ApiClient(
+            HttpClient(MockEngine { request ->
+                val body = if (request.url.encodedPath.contains("/revisions/")) {
+                    """{ "number": 1, "headline": "H", "createdAt": "t", "updatedAt": "t", "live": true, "kicker": "",
+                        "subheadline": "", "lead": "", "body": { "version": 1, "blocks": [] },
+                        "leadImage": { "mediaId": 17, "caption": "Our cat Minka", "width": 4096, "height": 2731 } }"""
+                } else {
+                    ARTICLE.trimEnd().removeSuffix("}") +
+                        """, "leadImage": { "mediaId": 17, "caption": "Our cat Minka", "width": 4096, "height": 2731 } }"""
+                }
+                respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+            }),
+            baseUrl = "https://news.example.org",
+        ) { "token-123" }
+
+        assertEquals(leadImage, withImage.article(42).leadImage)
+        assertEquals(leadImage, withImage.revision(42, 1).leadImage)
+        assertNull(api.article(42).leadImage)
+        assertNull(api.revision(42, 1).leadImage)
     }
 
     @Test
@@ -176,6 +224,7 @@ class ApiClientTest {
                 put("subheadline", "")
                 put("lead", "")
                 put("body", body)
+                put("leadImage", JsonNull)
                 put("version", 5)
             },
             request.body,
@@ -192,6 +241,7 @@ class ApiClientTest {
                 put("subheadline", "")
                 put("lead", "")
                 put("body", null as String?)
+                put("leadImage", JsonNull)
                 put("version", 5)
                 put("sectionId", 4)
             },
@@ -536,6 +586,34 @@ class ApiClientTest {
 
         assertContentEquals(image, content)
         assertEquals("https://news.example.org/api/media/17/content", sent.single().url)
+        assertEquals("Bearer token-123", sent.single().authorization)
+    }
+
+    @Test
+    fun mediaReadsTheRenditions() = runTest {
+        val withRenditions = MEDIA.trimEnd().removeSuffix("}") + """, "renditions": {
+            "thumbnail": { "width": 480, "height": 320, "size": 31877 },
+            "web": { "width": 1600, "height": 1067, "size": 298114 },
+            "print": { "width": 3000, "height": 2000, "size": 861022 } } }"""
+
+        val media = mediaApi(mutableListOf(), body = withRenditions.encodeToByteArray()).media(17)
+
+        assertEquals(RenditionDto(480, 320, 31877), media.renditions["thumbnail"])
+        assertEquals(RenditionDto(1600, 1067, 298114), media.renditions["web"])
+        assertEquals(RenditionDto(3000, 2000, 861022), media.renditions["print"])
+        assertEquals(emptyMap(), mediaApi(mutableListOf()).media(17).renditions)
+    }
+
+    @Test
+    fun mediaRenditionDownloadsWithTheBearerToken() = runTest {
+        val sent = mutableListOf<Sent>()
+        val image = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xD9.toByte())
+
+        val content = mediaApi(sent, body = image, contentType = "image/jpeg").mediaRendition(17, "thumbnail")
+
+        assertContentEquals(image, content)
+        assertEquals(HttpMethod.Get, sent.single().method)
+        assertEquals("https://news.example.org/api/media/17/renditions/thumbnail", sent.single().url)
         assertEquals("Bearer token-123", sent.single().authorization)
     }
 

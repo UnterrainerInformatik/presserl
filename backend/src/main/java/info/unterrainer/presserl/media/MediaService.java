@@ -3,7 +3,10 @@ package info.unterrainer.presserl.media;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Semaphore;
+import java.util.function.Supplier;
 
 import org.jboss.logging.Logger;
 
@@ -20,7 +23,8 @@ import jakarta.inject.Inject;
  * Uploading and reading media for writers ({@code WRITE_ARTICLES}). Decoding, encoding and the
  * blocking object-store calls run on worker threads; at most
  * {@code presserl.media.max-concurrent-processing} images are processed at once. An upload writes the
- * object first and the row second, so no row ever points to a missing object.
+ * objects (image and renditions) first and the rows second, in one transaction, so no row ever
+ * points to a missing object; a failure removes the objects already written.
  */
 @Startup
 @ApplicationScoped
@@ -50,7 +54,7 @@ public class MediaService {
         processing = new Semaphore(Math.max(1, config.maxConcurrentProcessing()), true);
     }
 
-    public Uni<MediaEntity> upload(Newsroom newsroom, Path file, long size) {
+    public Uni<MediaView> upload(Newsroom newsroom, Path file, long size) {
         requireWriter(newsroom);
         if (size == 0) {
             throw MediaException.invalid("the file is empty");
@@ -58,37 +62,63 @@ public class MediaService {
         if (size > maxBytes) {
             throw MediaException.tooLarge("the file is larger than " + config.maxSize());
         }
-        return vertx.executeBlocking(Uni.createFrom().item(() -> {
-            MediaProcessor.Processed processed = process(file);
-            return new Stored(processed, store.put(processed.bytes(), processed.contentType(), processed.extension()));
-        })).flatMap(stored -> insert(newsroom, stored)
-                .onFailure().call(e -> vertx.executeBlocking(Uni.createFrom().item(() -> {
-                    discard(stored.key());
-                    return null;
-                }))));
+        return vertx.executeBlocking(Uni.createFrom().item(() -> store(process(file))))
+                .flatMap(stored -> insert(newsroom, stored)
+                        .onFailure().call(e -> vertx.executeBlocking(Uni.createFrom().item(() -> {
+                            discard(stored.keys(), "the media record failed");
+                            return null;
+                        }))));
     }
 
-    public Uni<MediaEntity> get(Newsroom newsroom, long id) {
+    public Uni<MediaView> get(Newsroom newsroom, long id) {
         requireWriter(newsroom);
-        return Panache.withSession(() -> MediaEntity.<MediaEntity>findById(id))
-                .onItem().ifNull().failWith(() -> MediaException.notFound("media " + id + " does not exist"));
+        return Panache.withSession(() -> MediaEntity.<MediaEntity>findById(id)
+                .onItem().ifNull().failWith(() -> MediaException.notFound("media " + id + " does not exist"))
+                .flatMap(media -> MediaRenditionEntity.<MediaRenditionEntity>list("mediaId", id)
+                        .map(renditions -> new MediaView(media, renditions))));
     }
 
     public Uni<Content> content(Newsroom newsroom, long id) {
-        return get(newsroom, id).flatMap(media -> vertx.executeBlocking(Uni.createFrom()
-                .item(() -> new Content(media, store.get(media.objectKey)))));
+        return get(newsroom, id).map(MediaView::media).flatMap(media -> vertx.executeBlocking(Uni.createFrom()
+                .item(() -> new Content(media.contentType, store.get(media.objectKey)))));
     }
 
     /**
-     * The media record and the stored bytes.
+     * The bytes of one rendition; {@code 404} for an unknown kind and for a rendition not produced yet.
      */
-    public record Content(MediaEntity media, byte[] bytes) {
+    public Uni<Content> rendition(Newsroom newsroom, long id, String kind) {
+        requireWriter(newsroom);
+        RenditionKind parsed = RenditionKind.parse(kind)
+                .orElseThrow(() -> MediaException.notFound("unknown rendition '" + kind + "'"));
+        return Panache.withSession(() -> MediaRenditionEntity
+                .<MediaRenditionEntity>findById(new MediaRenditionId(id, parsed.value())))
+                .onItem().ifNull().failWith(() -> MediaException.notFound(
+                        "media " + id + " has no rendition " + parsed.value()))
+                .flatMap(rendition -> vertx.executeBlocking(Uni.createFrom()
+                        .item(() -> new Content(rendition.contentType, store.get(rendition.objectKey)))));
     }
 
-    private record Stored(MediaProcessor.Processed processed, String key) {
+    /**
+     * Stored bytes and their content type.
+     */
+    public record Content(String contentType, byte[] bytes) {
     }
 
-    private MediaProcessor.Processed process(Path file) {
+    /**
+     * The processed upload and its object keys: the image first, then the renditions in the order of
+     * {@link MediaProcessor.Processed#renditions()}.
+     */
+    private record Stored(MediaProcessor.Processed processed, List<String> keys) {
+    }
+
+    MediaProcessor.Processed process(Path file) {
+        return underProcessingLimit(() -> processor.process(file));
+    }
+
+    /**
+     * Runs one decode/encode job while holding a processing slot.
+     */
+    <T> T underProcessingLimit(Supplier<T> job) {
         try {
             processing.acquire();
         } catch (InterruptedException e) {
@@ -96,35 +126,100 @@ public class MediaService {
             throw new IllegalStateException("interrupted while waiting to process an image", e);
         }
         try {
-            return processor.process(file);
+            return job.get();
         } finally {
             processing.release();
         }
     }
 
-    private Uni<MediaEntity> insert(Newsroom newsroom, Stored stored) {
+    MediaProcessor processor() {
+        return processor;
+    }
+
+    /**
+     * Puts the image and its renditions; when one put fails, the objects already written are deleted.
+     */
+    private Stored store(MediaProcessor.Processed processed) {
+        List<String> keys = new ArrayList<>();
+        try {
+            keys.add(store.put(processed.bytes(), processed.contentType(), processed.extension()));
+            keys.addAll(putRenditions(processed.renditions()));
+        } catch (RuntimeException e) {
+            discard(keys, "storing the upload failed");
+            throw e;
+        }
+        return new Stored(processed, keys);
+    }
+
+    /**
+     * Puts the renditions in order; when one put fails, the ones already written are deleted.
+     *
+     * @return their object keys, in the order of {@code renditions}
+     */
+    List<String> putRenditions(List<MediaProcessor.Rendition> renditions) {
+        List<String> keys = new ArrayList<>();
+        try {
+            for (MediaProcessor.Rendition rendition : renditions) {
+                keys.add(store.put(rendition.bytes(), rendition.contentType(), rendition.extension()));
+            }
+        } catch (RuntimeException e) {
+            discard(keys, "storing a rendition failed");
+            throw e;
+        }
+        return keys;
+    }
+
+    private Uni<MediaView> insert(Newsroom newsroom, Stored stored) {
+        MediaProcessor.Processed processed = stored.processed();
         MediaEntity media = new MediaEntity();
-        media.objectKey = stored.key();
-        media.contentType = stored.processed().contentType();
-        media.width = stored.processed().width();
-        media.height = stored.processed().height();
-        media.byteSize = stored.processed().bytes().length;
+        media.objectKey = stored.keys().getFirst();
+        media.contentType = processed.contentType();
+        media.width = processed.width();
+        media.height = processed.height();
+        media.byteSize = processed.bytes().length;
         media.uploaderSub = newsroom.user().sub();
         media.uploaderUsername = newsroom.user().username();
         media.uploaderDisplayName = newsroom.user().displayName();
         // PostgreSQL keeps microseconds
         media.createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
-        return Panache.withTransaction(media::persist).replaceWith(media);
+        return Panache.withTransaction(() -> media.<MediaEntity>persist().flatMap(persisted -> {
+            List<MediaRenditionEntity> rows = renditionRows(persisted.id, processed.renditions(),
+                    stored.keys().subList(1, stored.keys().size()));
+            return MediaRenditionEntity.persist(rows).replaceWith(new MediaView(persisted, rows));
+        }));
+    }
+
+    /**
+     * The rows for renditions stored under {@code keys} (same order).
+     */
+    static List<MediaRenditionEntity> renditionRows(long mediaId, List<MediaProcessor.Rendition> renditions,
+            List<String> keys) {
+        List<MediaRenditionEntity> rows = new ArrayList<>();
+        for (int i = 0; i < renditions.size(); i++) {
+            MediaProcessor.Rendition rendition = renditions.get(i);
+            MediaRenditionEntity row = new MediaRenditionEntity();
+            row.mediaId = mediaId;
+            row.kind = rendition.kind().value();
+            row.objectKey = keys.get(i);
+            row.contentType = rendition.contentType();
+            row.width = rendition.width();
+            row.height = rendition.height();
+            row.byteSize = rendition.bytes().length;
+            rows.add(row);
+        }
+        return rows;
     }
 
     /**
      * Best effort: an orphaned object is harmless, it is only logged.
      */
-    private void discard(String key) {
-        try {
-            store.delete(key);
-        } catch (RuntimeException e) {
-            LOG.warnf("Could not delete media object %s after the media record failed: %s", key, e.toString());
+    void discard(List<String> keys, String reason) {
+        for (String key : keys) {
+            try {
+                store.delete(key);
+            } catch (RuntimeException e) {
+                LOG.warnf("Could not delete media object %s after %s: %s", key, reason, e.toString());
+            }
         }
     }
 

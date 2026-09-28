@@ -8,6 +8,7 @@ import java.util.Map;
 import org.hibernate.reactive.mutiny.Mutiny;
 
 import info.unterrainer.presserl.auth.NewspaperRole;
+import info.unterrainer.presserl.media.MediaEntity;
 import info.unterrainer.presserl.newspaper.NewspaperConfig;
 import info.unterrainer.presserl.section.Newsroom;
 import info.unterrainer.presserl.section.SectionEntity;
@@ -113,7 +114,7 @@ public class ArticleService {
     @WithTransaction
     public Uni<ArticleView> create(Newsroom newsroom, ArticleContent content, Long sectionId) {
         Uni<SectionEntity> target = sectionId != null ? writableSection(newsroom, sectionId) : fallbackSection(newsroom);
-        return target.flatMap(section -> {
+        return target.call(section -> requireMedia(content)).flatMap(section -> {
             Instant now = now();
             ArticleEntity article = new ArticleEntity();
             article.status = ArticleStatus.DRAFT;
@@ -157,7 +158,7 @@ public class ArticleService {
             Uni<SectionEntity> target = sectionId == null || sectionId.equals(article.sectionId)
                     ? Uni.createFrom().item(view.section())
                     : writableSection(newsroom, sectionId);
-            return target.flatMap(section -> {
+            return target.call(section -> requireMedia(content)).flatMap(section -> {
                 Instant now = now();
                 if (section != null) {
                     article.sectionId = section.id;
@@ -346,6 +347,19 @@ public class ArticleService {
     }
 
     /**
+     * The revision's lead image with the media's dimensions; {@code null} for none.
+     */
+    @WithSession
+    public Uni<LeadImageDto> leadImage(ArticleRevisionEntity revision) {
+        ArticleContent.LeadImage leadImage = revision.leadImage();
+        if (leadImage == null) {
+            return Uni.createFrom().nullItem();
+        }
+        return MediaEntity.<MediaEntity>findById(leadImage.mediaId()).map(media -> new LeadImageDto(media.id,
+                leadImage.caption(), media.width, media.height));
+    }
+
+    /**
      * Makes the latest revision live: status {@code PUBLISHED}, publication timestamps set on first
      * publication, nothing pending, not locked.
      */
@@ -414,6 +428,24 @@ public class ArticleService {
 
     private static Uni<SectionEntity> section(ArticleEntity article) {
         return article.sectionId == null ? Uni.createFrom().nullItem() : SectionEntity.findById(article.sectionId);
+    }
+
+    /**
+     * The lead image's media must exist (any media, whoever uploaded it).
+     *
+     * @throws ArticleException {@code 400 leadImage.mediaId} for an unknown media
+     */
+    private static Uni<Void> requireMedia(ArticleContent content) {
+        if (content.leadImage() == null) {
+            return Uni.createFrom().voidItem();
+        }
+        long mediaId = content.leadImage().mediaId();
+        return MediaEntity.count("id", mediaId).invoke(count -> {
+            if (count == 0) {
+                throw ArticleException.invalid(ArticleContentValidator.LEAD_IMAGE_MEDIA_ID,
+                        "media " + mediaId + " does not exist");
+            }
+        }).replaceWithVoid();
     }
 
     /**

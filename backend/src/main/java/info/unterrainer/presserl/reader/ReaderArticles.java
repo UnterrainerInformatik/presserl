@@ -6,6 +6,8 @@ import java.util.Optional;
 import info.unterrainer.presserl.article.ArticleEntity;
 import info.unterrainer.presserl.article.ArticleRevisionEntity;
 import info.unterrainer.presserl.article.ArticleStatus;
+import info.unterrainer.presserl.media.MediaRenditionEntity;
+import info.unterrainer.presserl.media.RenditionKind;
 import info.unterrainer.presserl.section.SectionEntity;
 import io.quarkus.hibernate.reactive.panache.Panache;
 import io.quarkus.hibernate.reactive.panache.common.WithSession;
@@ -19,9 +21,25 @@ import jakarta.enterprise.context.ApplicationScoped;
 @ApplicationScoped
 public class ReaderArticles {
 
-    private static final String LIVE_PUBLISHED = "select a, r, s from ArticleEntity a, ArticleRevisionEntity r, "
-            + "SectionEntity s where r.articleId = a.id and r.number = a.liveRevision and s.id = a.sectionId "
-            + "and a.status = :status";
+    /**
+     * Live revisions of published articles with their section and the {@code web} and
+     * {@code thumbnail} renditions of their lead image (both {@code null} without one).
+     */
+    private static final String LIVE_PUBLISHED = "select a, r, s, w, t from ArticleEntity a "
+            + "join ArticleRevisionEntity r on r.articleId = a.id and r.number = a.liveRevision "
+            + "join SectionEntity s on s.id = a.sectionId "
+            + "left join MediaRenditionEntity w on w.mediaId = r.leadImageMediaId and w.kind = 'web' "
+            + "left join MediaRenditionEntity t on t.mediaId = r.leadImageMediaId and t.kind = 'thumbnail' "
+            + "where a.status = :status";
+
+    /**
+     * A rendition of a media that is the lead image of at least one live revision of a published
+     * article.
+     */
+    private static final String PUBLISHED_RENDITION = "select m from MediaRenditionEntity m "
+            + "where m.mediaId = :id and m.kind = :kind and exists (select 1 from ArticleEntity a "
+            + "join ArticleRevisionEntity r on r.articleId = a.id and r.number = a.liveRevision "
+            + "where a.status = :status and r.leadImageMediaId = :id)";
 
     /**
      * The published articles, newest first publication first.
@@ -50,6 +68,21 @@ public class ReaderArticles {
     }
 
     /**
+     * The rendition, if media {@code mediaId} is the lead image of a live revision of a published
+     * article; never the stored image itself.
+     */
+    @WithSession
+    public Uni<Optional<MediaRenditionEntity>> publishedRendition(long mediaId, RenditionKind kind) {
+        return Panache.getSession().flatMap(session -> session
+                .createSelectionQuery(PUBLISHED_RENDITION, MediaRenditionEntity.class)
+                .setParameter("id", mediaId)
+                .setParameter("kind", kind.value())
+                .setParameter("status", ArticleStatus.PUBLISHED)
+                .getResultList())
+                .map(rows -> rows.stream().findFirst());
+    }
+
+    /**
      * Every section in position order, for the section bar.
      */
     @WithSession
@@ -59,6 +92,9 @@ public class ReaderArticles {
     }
 
     private static ReaderArticle toArticle(Object[] row) {
-        return ReaderArticle.of((ArticleEntity) row[0], (ArticleRevisionEntity) row[1], (SectionEntity) row[2]);
+        ArticleRevisionEntity live = (ArticleRevisionEntity) row[1];
+        ReaderImage leadImage = ReaderImage.of(live.leadImageMediaId, live.leadImageCaption,
+                (MediaRenditionEntity) row[3], (MediaRenditionEntity) row[4]);
+        return ReaderArticle.of((ArticleEntity) row[0], live, (SectionEntity) row[2], leadImage);
     }
 }

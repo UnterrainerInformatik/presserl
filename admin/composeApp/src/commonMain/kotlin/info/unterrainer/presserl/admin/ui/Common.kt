@@ -31,6 +31,8 @@ import info.unterrainer.presserl.admin.resources.reload
 import info.unterrainer.presserl.admin.resources.something_went_wrong
 import info.unterrainer.presserl.admin.ui.editor.Draft
 import info.unterrainer.presserl.admin.ui.editor.EditorBlock
+import info.unterrainer.presserl.admin.ui.media.LeadImageView
+import info.unterrainer.presserl.admin.ui.media.Thumbnails
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -59,11 +61,12 @@ fun LoadFailed(message: String, onReload: () -> Unit) {
 
 /** Read-only view of article content in the newspaper's hierarchy (revisions, articles without `EDIT`). */
 @Composable
-fun ArticleView(draft: Draft) {
+fun ArticleView(draft: Draft, thumbnails: Thumbnails) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (draft.kicker.isNotEmpty()) Text(draft.kicker, style = MaterialTheme.typography.labelLarge)
         Text(draft.headline.ifEmpty { stringResource(Res.string.no_headline) }, style = MaterialTheme.typography.headlineMedium)
         if (draft.subheadline.isNotEmpty()) Text(draft.subheadline, style = MaterialTheme.typography.titleMedium)
+        draft.leadImage?.let { LeadImageView(it, thumbnails) }
         if (draft.lead.isNotEmpty()) Text(draft.lead, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
         draft.blocks.forEach { block ->
             when (block) {

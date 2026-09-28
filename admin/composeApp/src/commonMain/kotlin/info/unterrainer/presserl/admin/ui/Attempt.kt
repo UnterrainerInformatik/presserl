@@ -10,7 +10,7 @@ import kotlinx.coroutines.CancellationException
 
 /** A failure as text for the user: the server's messages if it sent any, otherwise the error's message. */
 suspend fun describe(e: Throwable): String =
-    fieldErrorsOf(e)?.let { (listOfNotNull(it.section) + it.header.values + it.blocks.values + it.general).joinToString(" ") }
+    fieldErrorsOf(e)?.let { (listOfNotNull(it.section, it.leadImage) + it.header.values + it.blocks.values + it.general).joinToString(" ") }
         ?: e.message ?: e.toString()
 
 /** Runs [block]; a failure goes to [onError] as text, cancellation passes through. */

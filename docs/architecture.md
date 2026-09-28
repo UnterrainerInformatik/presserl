@@ -101,11 +101,12 @@ One newspaper per server; a second newspaper is a second deployment.
 - **Section** — name (unique ignoring case), slug (derived once from the name, stable for reader URLs), colour (palette key `red` | `orange` | `yellow` | `green` | `teal` | `blue` | `purple` | `pink`, mapped to `--presserl-section-<key>` by the theme), position, settings (JSON, overrides only)
 - **SectionRole** — user (Keycloak id = token `sub`) × section × role (`SECTION_EDITOR` | `REPORTER`), at most one role per user and section. Newspaper-wide roles (`PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`) are Keycloak groups, not rows.
 - **Trust** — approving level × trusted user × section (section only for the section-editor level, the other levels are newspaper-wide), plus who set it and when; at most one row per user, level and section; deleted with its section. One row skips that level for that user's articles (in that section).
-- **Article** — section (exactly one, `NOT NULL` in the database; the section belongs to the article, not to a revision, so moving an article creates no revision; a section with articles cannot be deleted), author (token `sub` plus username/display-name snapshot for the byline), status (`DRAFT` | `SUBMITTED` | `PUBLISHED` | `OFFLINE`; `SUBMITTED` = never published and waiting for approval), pending approval level (`SECTION_EDITOR` | `EDITOR_IN_CHIEF` | `PUBLISHER`, `NULL` while no submission is pending; published and offline articles keep their status while it is set), live revision (by number, `NULL` until the first publication), first publication time, emergency-brake lock (only `OFFLINE` articles; set when a publisher takes the article offline, cleared when it goes online or a publisher unlocks it), optimistic-lock version; later: lead image
-- **ArticleRevision** — numbered per article (`1, 2, …`), holds the content: kicker, headline, subheadline, lead (plain text) and body (**body format v1**: structured JSON of blocks — paragraph, subhead, quote, bullet list — with inline runs whose only mark is bold; validated server-side against an allowlist, never raw HTML). The latest revision is the **working revision**: saves overwrite it until it is published; after that the next save with changed content starts a new revision. Publishing makes the latest revision the article's live revision, which stays unchanged until the next publication. Taking offline keeps the live revision reference.
+- **Article** — section (exactly one, `NOT NULL` in the database; the section belongs to the article, not to a revision, so moving an article creates no revision; a section with articles cannot be deleted), author (token `sub` plus username/display-name snapshot for the byline), status (`DRAFT` | `SUBMITTED` | `PUBLISHED` | `OFFLINE`; `SUBMITTED` = never published and waiting for approval), pending approval level (`SECTION_EDITOR` | `EDITOR_IN_CHIEF` | `PUBLISHER`, `NULL` while no submission is pending; published and offline articles keep their status while it is set), live revision (by number, `NULL` until the first publication), first publication time, emergency-brake lock (only `OFFLINE` articles; set when a publisher takes the article offline, cleared when it goes online or a publisher unlocks it), optimistic-lock version. The lead image is revision content (see ArticleRevision), not an attribute of the article
+- **ArticleRevision** — numbered per article (`1, 2, …`), holds the content: kicker, headline, subheadline, lead (plain text), an optional lead image (media reference plus caption, plain text ≤ 300 characters; a caption needs an image, a referenced media cannot be deleted) and body (**body format v1**: structured JSON of blocks — paragraph, subhead, quote, bullet list — with inline runs whose only mark is bold; validated server-side against an allowlist, never raw HTML). The latest revision is the **working revision**: saves overwrite it until it is published; after that the next save with changed content starts a new revision. Publishing makes the latest revision the article's live revision, which stays unchanged until the next publication, so a new or changed lead image reaches readers only with it. Taking offline keeps the live revision reference.
 - **ArticleReview** — one approval or rejection: decision, the level the article waited for, the reviewed revision, reviewer (token `sub` plus username/display-name snapshot), note (rejections only, feedback to the author), time; deleted with the article
 - **Issue** — number and publication date; groups articles; basis for the issue print view
-- **Media** — one uploaded image after re-encoding: object key in the media store (`media/<uuid>.<jpg|png>`, random, written once), content type (`image/jpeg` | `image/png`), width, height, stored size, uploader (token `sub` plus username/display-name snapshot), upload time. The bytes live only in the object store; the row is written after the object, so no row points to a missing object. Later: renditions (thumbnail / web / print), lead image of an article
+- **Media** — one uploaded image after re-encoding: object key in the media store (`media/<uuid>.<jpg|png>`, random, written once), content type (`image/jpeg` | `image/png`), width, height, stored size, uploader (token `sub` plus username/display-name snapshot), upload time. The bytes live only in the object store; the rows are written after the objects, so no row points to a missing object.
+- **MediaRendition** — media × kind (`thumbnail` ≤ 480 px, `web` ≤ 1600 px, `print` ≤ 3000 px on the longer side, never enlarged): own object key, content type (that of the media), width, height, size. Produced during the upload from the decoded pixels (media and rendition rows in one transaction); media from before renditions get theirs from a startup backfill in the background. Storage per image grows by roughly half of the stored image
 
 ## Routes
 
@@ -124,7 +125,19 @@ POST   /text-size                         reader's text-size choice (form: size,
 GET    /reader/reader.css, /reader/fonts/* default theme and its self-hosted fonts (OFL)
 GET    /theme/*                           fork theme directory (presserl.theme.dir, from deploy/theme/): allow-listed
                                           static types, no path escapes, Cache-Control: no-cache
+GET    /media/{id}/{kind}                 rendition (thumbnail | web | print) of a lead image of a live revision of a
+                                          PUBLISHED article; empty 404 otherwise; Cache-Control public/private max-age=3600
 ```
+
+**Lead images.** The article page shows the live revision's lead image after the headline block as
+`<figure class="lead-image">` (`web` with `thumbnail` in `srcset`, `width`/`height` against layout
+shift, `alt=""` because the caption in `<figcaption class="lead-image__caption">` is the image's
+text); the front page's lead story uses `web`, the cards `thumbnail` (lazy). `/media/{id}/{kind}`
+answers only for media that are the lead image of at least one live revision of a `PUBLISHED`
+article, with the same visibility decision as the pages (private newspaper: entitled readers only,
+otherwise `404`, never a login redirect since only `<img>` loads it). The stored image is never
+served to readers. The route caches for an hour, not immutably: the bytes never change, but whether
+they may be served does (taking offline, emergency brake, private switch).
 
 **Theme and text size.** The default theme `reader.css` is built on public design tokens
 (`--presserl-*`), follows `prefers-color-scheme` for dark mode and uses only self-hosted fonts, so
@@ -134,7 +147,7 @@ session and also work for anonymous visitors of a private newspaper. `/theme/*` 
 Every reader page renders `<html data-text-size>` from the reader's cookie, falling back to the
 newspaper's effective `reader.text-size`.
 
-**Reader login.** The reader paths (`/`, `/login`, `/logout`, `/articles/*`, later sections,
+**Reader login.** The reader paths (`/`, `/login`, `/logout`, `/articles/*`, `/media/*`, later sections,
 issues and print views) belong to the OIDC tenant `reader`: a web-app tenant using the confidential
 Keycloak client `presserl-reader` with the authorization code flow and PKCE. The session lives in the
 encrypted `q_session_reader` cookie (`HttpOnly`, `SameSite=Lax`, path `/`, `Secure` in production);
@@ -196,6 +209,7 @@ PUT    /api/accounts/{id}/trust           set/clear trust at my own highest leve
 POST   /api/media                         WRITE_ARTICLES; multipart part `file`; sniffed, re-encoded, metadata stripped (implemented)
 GET    /api/media/{id}                    WRITE_ARTICLES; metadata (implemented)
 GET    /api/media/{id}/content            WRITE_ARTICLES; stored image bytes (implemented)
+GET    /api/media/{id}/renditions/{kind}  WRITE_ARTICLES; rendition bytes (thumbnail | web | print) (implemented)
 GET    /api/me                            my roles, section roles and allowed actions (implemented)
 ```
 
@@ -228,6 +242,7 @@ Every reader view sets `data-view="…"` on `<main>` (e.g. `frontpage`, `article
 - Service account client limited to `manage-users`, `view-users`, `query-users`, `query-groups` in its realm (Keycloak needs the view/query roles for lookups); its secret never leaves the backend. Tokens must carry the audience `presserl-backend`, since the realm may live on a shared Keycloak
 - Every action checked server-side against groups, section roles and trust; ownership checks
 - Article bodies only as structured JSON with an allowlist — never raw HTML; strict CSP (`self` only), reader and admin bundle served from the same origin. The admin policy additionally allows `'wasm-unsafe-eval'` in `script-src`, the issuer origin in `connect-src` (Keycloak lives on another origin) and, by hash only, the style Compose injects into its shadow DOM (`csp-style-hashes.txt` in the admin bundle, checked by the admin tests)
-- Uploads: type from magic bytes only (JPEG, PNG, still WebP; declared type and name ignored), size limit (`media.max-size`), dimensions checked before decoding (≤ 50 MP, ≤ 20000 px per side), re-encoding from pixels (JPEG or PNG, ≤ 4096 px) so no EXIF/GPS/XMP/IPTC/ICC/comment survives, at most `max-concurrent-processing` images decoded at once; the media store is never exposed to browsers
+- Uploads: type from magic bytes only (JPEG, PNG, still WebP; declared type and name ignored), size limit (`media.max-size`), dimensions checked before decoding (≤ 50 MP, ≤ 20000 px per side), re-encoding from pixels (JPEG or PNG, ≤ 4096 px) so no EXIF/GPS/XMP/IPTC/ICC/comment survives, renditions derived from the same decoded pixels (no second decoder path for untrusted bytes), at most `max-concurrent-processing` images decoded at once; the media store is never exposed to browsers
+- Readers only ever get renditions of lead images of published live revisions (`/media/{id}/{kind}`), never the stored image, drafts or working revisions; every other media answers an indistinguishable empty `404`. An image of an article taken offline can stay in caches for up to an hour
 - Free choice of author name (nickname); no real-name requirement
 - Backups of PostgreSQL (`presserl-db`) and the media volume (`presserl-media`) via cron; see `deploy/INSTALL.md`, "Backups"

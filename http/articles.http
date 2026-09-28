@@ -752,6 +752,94 @@ Authorization: Bearer {{accessToken}}
 DELETE {{baseUrl}}/api/sections/{{gardenId}}/members/{{nogroupsId}}
 Authorization: Bearer {{accessToken}}
 
+### Lead image: upload a photo
+POST {{baseUrl}}/api/media
+Authorization: Bearer {{accessToken}}
+Content-Type: multipart/form-data; boundary=PresserlBoundary
+
+--PresserlBoundary
+Content-Disposition: form-data; name="file"; filename="photo-gps.jpg"
+Content-Type: image/jpeg
+
+< ./media/photo-gps.jpg
+--PresserlBoundary--
+
+> {%
+    client.test("201", () => client.assert(response.status === 201, "status " + response.status));
+    client.global.set("leadMediaId", response.body.id);
+%}
+
+### Lead image: create a draft with it
+POST {{baseUrl}}/api/articles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "sectionId": {{gardenId}}, "headline": "Minka is back", "leadImage": { "mediaId": {{leadMediaId}}, "caption": "  Our cat Minka  " } }
+
+> {%
+    client.test("201 with the lead image, the caption trimmed and the stored image's size", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        const leadImage = response.body.leadImage;
+        client.assert(leadImage.mediaId === client.global.get("leadMediaId"), JSON.stringify(leadImage));
+        client.assert(leadImage.caption === "Our cat Minka", JSON.stringify(leadImage));
+        client.assert(leadImage.width === 640 && leadImage.height === 480, JSON.stringify(leadImage));
+    });
+    client.global.set("leadArticleId", response.body.id);
+    client.global.set("leadVersion", response.body.version);
+%}
+
+### Lead image: unknown media is refused and nothing is saved
+PUT {{baseUrl}}/api/articles/{{leadArticleId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "version": {{leadVersion}}, "headline": "Changed", "leadImage": { "mediaId": 999999 } }
+
+> {%
+    client.test("400 naming leadImage.mediaId", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "leadImage.mediaId", JSON.stringify(response.body));
+    });
+%}
+
+### Lead image: invalid caption and unknown nested field
+PUT {{baseUrl}}/api/articles/{{leadArticleId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "version": {{leadVersion}}, "leadImage": { "mediaId": {{leadMediaId}}, "caption": "Line\nbreak", "alt": "x" } }
+
+> {%
+    client.test("400 naming both", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        const fields = response.body.errors.map(e => e.field).sort().join(",");
+        client.assert(fields === "leadImage.alt,leadImage.caption", fields);
+    });
+%}
+
+### Lead image: remove it with null
+PUT {{baseUrl}}/api/articles/{{leadArticleId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "version": {{leadVersion}}, "headline": "Minka is back", "leadImage": null }
+
+> {%
+    client.test("200 without lead image, still revision 1", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.leadImage === null, JSON.stringify(response.body.leadImage));
+        client.assert(response.body.revision === 1, "revision " + response.body.revision);
+    });
+%}
+
+### Lead image: clean up the draft
+DELETE {{baseUrl}}/api/articles/{{leadArticleId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("204", () => client.assert(response.status === 204, "status " + response.status));
+%}
+
 ### Reader is refused
 GET {{baseUrl}}/api/articles
 Authorization: Bearer {{readerToken}}

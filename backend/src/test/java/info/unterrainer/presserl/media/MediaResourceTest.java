@@ -25,6 +25,7 @@ import org.keycloak.admin.client.Keycloak;
 
 import info.unterrainer.presserl.TestSupport;
 import info.unterrainer.presserl.bootstrap.KeycloakAdminProducer.KeycloakRealm;
+import io.quarkus.test.junit.QuarkusMock;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
 import io.restassured.response.ExtractableResponse;
@@ -50,6 +51,9 @@ class MediaResourceTest {
 
     @Inject
     MediaStore store;
+
+    @Inject
+    MediaRenditionBackfill backfill;
 
     @Inject
     Keycloak keycloak;
@@ -88,6 +92,26 @@ class MediaResourceTest {
     private long mediaRows() {
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
                 ResultSet rs = statement.executeQuery("SELECT count(*) FROM media")) {
+            rs.next();
+            return rs.getLong(1);
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private String masterKey() {
+        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
+                ResultSet rs = statement.executeQuery("SELECT object_key FROM media")) {
+            rs.next();
+            return rs.getString(1);
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private long renditionRows() {
+        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
+                ResultSet rs = statement.executeQuery("SELECT count(*) FROM media_rendition")) {
             rs.next();
             return rs.getLong(1);
         } catch (SQLException e) {
@@ -137,7 +161,7 @@ class MediaResourceTest {
 
         assertThat(created.header("Location")).endsWith("/api/media/" + id);
         assertThat(mediaRows()).isEqualTo(1);
-        assertThat(objects()).singleElement().satisfies(key -> assertThat(key).matches("media/[0-9a-f-]{36}\\.jpg"));
+        assertThat(objects()).hasSize(4).allSatisfy(key -> assertThat(key).matches("media/[0-9a-f-]{36}\\.jpg"));
     }
 
     @Test
@@ -160,7 +184,7 @@ class MediaResourceTest {
                 .header("Content-Disposition", equalTo("inline"))
                 .header("X-Content-Type-Options", equalTo("nosniff"))
                 .header("Cache-Control", equalTo("private, max-age=31536000, immutable"));
-        byte[] stored = s3.getObjectAsBytes(b -> b.bucket(store.bucket()).key(objects().getFirst())).asByteArray();
+        byte[] stored = s3.getObjectAsBytes(b -> b.bucket(store.bucket()).key(masterKey())).asByteArray();
         assertThat(downloaded).isEqualTo(stored);
         assertThat(content.header("Content-Length")).isEqualTo(String.valueOf(stored.length));
         as(publisher).get("/api/media/" + id).then().body("size", equalTo(stored.length));
@@ -170,7 +194,7 @@ class MediaResourceTest {
     void storedObjectHasNoMetadata() {
         upload(publisher, "gps.jpg", bytes("photo-gps.jpg"), "image/jpeg", 201);
 
-        byte[] stored = s3.getObjectAsBytes(b -> b.bucket(store.bucket()).key(objects().getFirst())).asByteArray();
+        byte[] stored = s3.getObjectAsBytes(b -> b.bucket(store.bucket()).key(masterKey())).asByteArray();
         assertThat(directories(stored)).doesNotContain("ExifIFD0Directory", "ExifSubIFDDirectory", "GpsDirectory",
                 "XmpDirectory", "IptcDirectory", "JpegCommentDirectory");
     }
@@ -179,7 +203,7 @@ class MediaResourceTest {
     void transparentWebpIsStoredAsPng() {
         upload(publisher, "sticker.webp", bytes("transparent.webp"), "image/webp", 201).jsonPath();
 
-        assertThat(objects()).singleElement().satisfies(key -> assertThat(key).endsWith(".png"));
+        assertThat(objects()).hasSize(4).allSatisfy(key -> assertThat(key).endsWith(".png"));
     }
 
     @Test
@@ -189,8 +213,9 @@ class MediaResourceTest {
         upload(reader, "photo.jpg", bytes("photo-gps.jpg"), "image/jpeg", 403);
         as(reader).get("/api/media/" + id).then().statusCode(403);
         as(reader).get("/api/media/%d/content".formatted(id)).then().statusCode(403);
+        as(reader).get("/api/media/%d/renditions/web".formatted(id)).then().statusCode(403);
         assertThat(mediaRows()).isEqualTo(1);
-        assertThat(objects()).hasSize(1);
+        assertThat(objects()).hasSize(4);
     }
 
     @Test
@@ -204,6 +229,7 @@ class MediaResourceTest {
                 .statusCode(401).body(emptyString());
         given().get("/api/media/1").then().statusCode(401).body(emptyString());
         given().get("/api/media/1/content").then().statusCode(401).body(emptyString());
+        given().get("/api/media/1/renditions/web").then().statusCode(401).body(emptyString());
         assertNothingStored();
     }
 
@@ -275,6 +301,105 @@ class MediaResourceTest {
         as(publisher).get("/api/media/999999").then().statusCode(404).body("errors[0].field", equalTo(null));
         as(publisher).get("/api/media/999999/content").then().statusCode(404)
                 .contentType(ContentType.JSON);
+    }
+
+    @Test
+    void uploadListsTheThreeRenditions() {
+        upload(publisher, "big.jpg", MediaFixtures.jpeg(6000, 4000), "image/jpeg", 201).response().then()
+                .body("renditions.thumbnail.width", equalTo(480))
+                .body("renditions.thumbnail.height", equalTo(320))
+                .body("renditions.thumbnail.size", greaterThan(0))
+                .body("renditions.web.width", equalTo(1600))
+                .body("renditions.web.height", equalTo(1067))
+                .body("renditions.web.size", greaterThan(0))
+                .body("renditions.print.width", equalTo(3000))
+                .body("renditions.print.height", equalTo(2000))
+                .body("renditions.print.size", greaterThan(0));
+
+        assertThat(renditionRows()).isEqualTo(3);
+        assertThat(objects()).hasSize(4);
+    }
+
+    @Test
+    void mediumPngIsNotEnlargedForWebAndPrint() {
+        long id = upload(publisher, "opaque.png", bytes("opaque.png"), "image/png", 201).jsonPath().getLong("id");
+
+        as(publisher).get("/api/media/" + id).then().statusCode(200)
+                .body("renditions.thumbnail.width", equalTo(480))
+                .body("renditions.thumbnail.height", equalTo(320))
+                .body("renditions.web.width", equalTo(1200))
+                .body("renditions.web.height", equalTo(800))
+                .body("renditions.print.width", equalTo(1200))
+                .body("renditions.print.height", equalTo(800));
+    }
+
+    @Test
+    void everyRenditionCanBeDownloaded() {
+        ExtractableResponse<Response> created = upload(publisher, "big.jpg", MediaFixtures.jpeg(6000, 4000),
+                "image/jpeg", 201);
+        long id = created.jsonPath().getLong("id");
+
+        for (String kind : List.of("thumbnail", "web", "print")) {
+            Response response = as(publisher).get("/api/media/%d/renditions/%s".formatted(id, kind));
+            response.then()
+                    .statusCode(200)
+                    .header("Content-Type", equalTo("image/jpeg"))
+                    .header("Content-Disposition", equalTo("inline"))
+                    .header("X-Content-Type-Options", equalTo("nosniff"))
+                    .header("Cache-Control", equalTo("private, max-age=31536000, immutable"));
+            byte[] bytes = response.asByteArray();
+            assertThat(response.header("Content-Length")).isEqualTo(String.valueOf(bytes.length));
+            assertThat(bytes.length).isEqualTo(created.jsonPath().getInt("renditions." + kind + ".size"));
+            java.awt.image.BufferedImage image = MediaFixtures.read(bytes);
+            assertThat(image.getWidth()).as(kind).isEqualTo(created.jsonPath().getInt("renditions." + kind + ".width"));
+            assertThat(image.getHeight()).as(kind).isEqualTo(created.jsonPath().getInt("renditions." + kind + ".height"));
+            assertThat(directories(bytes)).doesNotContain("ExifIFD0Directory", "GpsDirectory", "XmpDirectory");
+        }
+    }
+
+    @Test
+    void unknownRenditionIsNotFound() {
+        long id = upload(publisher, "photo.jpg", bytes("photo-gps.jpg"), "image/jpeg", 201).jsonPath().getLong("id");
+
+        as(publisher).get("/api/media/%d/renditions/huge".formatted(id)).then().statusCode(404)
+                .contentType(ContentType.JSON).body("errors[0].field", equalTo(null));
+        as(publisher).get("/api/media/%d/renditions/WEB".formatted(id)).then().statusCode(404);
+        as(publisher).get("/api/media/999999/renditions/web").then().statusCode(404)
+                .contentType(ContentType.JSON);
+    }
+
+    @Test
+    void storeFailureDuringARenditionLeavesNothingBehind() {
+        QuarkusMock.installMockForType(new FailingMediaStore(s3, store.bucket(), 3), MediaStore.class);
+
+        upload(publisher, "photo.jpg", bytes("photo-gps.jpg"), "image/jpeg", 503);
+
+        assertThat(mediaRows()).isZero();
+        assertThat(renditionRows()).isZero();
+        assertThat(objects()).isEmpty();
+    }
+
+    @Test
+    void backfillProducesRenditionsForOldMedia() {
+        long id = upload(publisher, "big.jpg", MediaFixtures.jpeg(2000, 1000), "image/jpeg", 201).jsonPath()
+                .getLong("id");
+        // as if uploaded before renditions existed
+        List<String> renditionKeys = objects().stream().filter(key -> !key.equals(masterKey())).toList();
+        sql("DELETE FROM media_rendition");
+        renditionKeys.forEach(key -> s3.deleteObject(b -> b.bucket(store.bucket()).key(key)));
+        as(publisher).get("/api/media/" + id).then().statusCode(200).body("renditions.size()", equalTo(0));
+        as(publisher).get("/api/media/%d/renditions/web".formatted(id)).then().statusCode(404);
+        given().get("/q/health/ready").then().statusCode(200);
+
+        assertThat(backfill.run()).isEqualTo(1);
+
+        as(publisher).get("/api/media/" + id).then().statusCode(200)
+                .body("renditions.thumbnail.width", equalTo(480))
+                .body("renditions.web.width", equalTo(1600))
+                .body("renditions.print.width", equalTo(2000));
+        as(publisher).get("/api/media/%d/renditions/thumbnail".formatted(id)).then().statusCode(200);
+        assertThat(objects()).hasSize(4);
+        assertThat(backfill.run()).isZero();
     }
 
     @Test

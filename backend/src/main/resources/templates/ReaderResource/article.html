@@ -11,6 +11,9 @@
     {#if article.subheadline}
     <p class="subheadline">{article.subheadline}</p>
     {/if}
+    {#if article.leadImage}
+    {#leadImage image=article.leadImage kind="web" sizes="(min-width: 60rem) 60rem, 100vw" /}
+    {/if}
     {#if article.lead}
     <p class="lead">{article.lead}</p>
     {/if}

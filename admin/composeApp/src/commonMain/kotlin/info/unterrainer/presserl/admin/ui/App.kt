@@ -59,6 +59,8 @@ import info.unterrainer.presserl.admin.ui.section.SectionFormScreen
 import info.unterrainer.presserl.admin.ui.section.SectionListScreen
 import info.unterrainer.presserl.admin.ui.section.SectionMembersScreen
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import org.jetbrains.compose.resources.stringResource
 
 sealed interface Screen {
@@ -90,6 +92,9 @@ sealed interface Route {
     data class AccountSlip(val created: CreatedAccountDto) : Route
     data object Newspaper : Route
 }
+
+/** The deployment's upload limit among the newspaper settings (e.g. `10M`). */
+private const val MAX_UPLOAD_SIZE = "media.max-size"
 
 /** [siteUrl] is the origin of the reader, used for "View in reader" and on the account slip. */
 @Composable
@@ -185,6 +190,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                             api,
                             route.articleId,
                             readerUrl = { "$siteUrl/articles/$it" },
+                            maxUploadSize = screen.newspaper.settings[MAX_UPLOAD_SIZE]?.jsonPrimitive?.contentOrNull,
                             onBack = back,
                             onRevisions = { push(Route.Revisions(route.articleId)) },
                         )

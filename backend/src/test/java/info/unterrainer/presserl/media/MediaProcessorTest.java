@@ -8,13 +8,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.List;
+
+import javax.imageio.ImageIO;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import info.unterrainer.presserl.media.MediaProcessor.Rendition;
 
 import jakarta.ws.rs.core.Response.Status;
 
@@ -206,6 +212,94 @@ class MediaProcessorTest {
 
         assertThat(result.width()).isEqualTo(100);
         assertThat(result.height()).isEqualTo(50);
+    }
+
+    @Test
+    void largePhotoGetsThreeRenditions() throws IOException {
+        List<Rendition> renditions = process(MediaFixtures.jpeg(6000, 4000)).renditions();
+
+        assertThat(renditions).extracting(Rendition::kind)
+                .containsExactly(RenditionKind.PRINT, RenditionKind.WEB, RenditionKind.THUMBNAIL);
+        assertThat(renditions).extracting(r -> r.width() + "x" + r.height())
+                .containsExactly("3000x2000", "1600x1067", "480x320");
+        for (Rendition rendition : renditions) {
+            assertThat(rendition.contentType()).isEqualTo("image/jpeg");
+            assertThat(rendition.extension()).isEqualTo("jpg");
+            BufferedImage image = read(rendition.bytes());
+            assertThat(image.getWidth()).isEqualTo(rendition.width());
+            assertThat(image.getHeight()).isEqualTo(rendition.height());
+        }
+    }
+
+    @Test
+    void smallOpaquePngGetsRenditionsOfItsOwnSizeAsJpeg() throws IOException {
+        BufferedImage small = new BufferedImage(400, 300, BufferedImage.TYPE_INT_RGB);
+        ByteArrayOutputStream png = new ByteArrayOutputStream();
+        ImageIO.write(small, "png", png);
+
+        List<Rendition> renditions = process(png.toByteArray()).renditions();
+
+        assertThat(renditions).hasSize(3).allSatisfy(rendition -> {
+            assertThat(rendition.contentType()).isEqualTo("image/jpeg");
+            assertThat(rendition.width()).isEqualTo(400);
+            assertThat(rendition.height()).isEqualTo(300);
+            assertThat(read(rendition.bytes()).getWidth()).isEqualTo(400);
+        });
+    }
+
+    @Test
+    void transparentPngGetsPngRenditionsWithAlpha() throws IOException {
+        List<Rendition> renditions = process(bytes("transparent.png")).renditions();
+
+        assertThat(renditions).hasSize(3).allSatisfy(rendition -> {
+            assertThat(rendition.contentType()).isEqualTo("image/png");
+            assertThat(rendition.extension()).isEqualTo("png");
+            BufferedImage image = read(rendition.bytes());
+            assertThat(image.getColorModel().hasAlpha()).isTrue();
+            assertThat(MediaProcessor.hasTransparency(image)).isTrue();
+        });
+    }
+
+    @Test
+    void portraitRenditionsKeepTheOrientationOfTheSides() throws IOException {
+        List<Rendition> renditions = process(MediaFixtures.jpeg(3000, 5000)).renditions();
+
+        assertThat(renditions).extracting(r -> r.width() + "x" + r.height())
+                .containsExactly("1800x3000", "960x1600", "288x480");
+    }
+
+    @Test
+    void renditionsCarryNoMetadata() throws IOException {
+        for (Rendition rendition : process(bytes("photo-gps.jpg")).renditions()) {
+            assertThat(directories(rendition.bytes())).as(rendition.kind().value())
+                    .doesNotContain(FORBIDDEN_DIRECTORIES);
+        }
+    }
+
+    @Test
+    void renditionsAreDerivedFromAStoredImage() throws IOException {
+        MediaProcessor.Processed stored = process(MediaFixtures.jpeg(6000, 4000));
+
+        List<Rendition> derived = processor.deriveRenditions(stored.bytes());
+
+        assertThat(derived).extracting(r -> r.kind().value() + " " + r.width() + "x" + r.height() + " " + r.contentType())
+                .containsExactly("print 3000x2000 image/jpeg", "web 1600x1067 image/jpeg",
+                        "thumbnail 480x320 image/jpeg");
+    }
+
+    @Test
+    void renditionsOfAStoredTransparentImageStayPng() throws IOException {
+        byte[] stored = process(bytes("transparent.png")).bytes();
+
+        assertThat(processor.deriveRenditions(stored)).allSatisfy(rendition -> {
+            assertThat(rendition.contentType()).isEqualTo("image/png");
+            assertThat(MediaProcessor.hasTransparency(read(rendition.bytes()))).isTrue();
+        });
+    }
+
+    @Test
+    void derivingFromDamagedBytesIsRefused() {
+        assertThatThrownBy(() -> processor.deriveRenditions(bytes("cat.jpg"))).isInstanceOf(MediaException.class);
     }
 
     @Test

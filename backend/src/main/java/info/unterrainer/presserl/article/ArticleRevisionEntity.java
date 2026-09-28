@@ -1,6 +1,7 @@
 package info.unterrainer.presserl.article;
 
 import java.time.Instant;
+import java.util.Objects;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -49,6 +50,18 @@ public class ArticleRevisionEntity extends PanacheEntityBase {
     @Column(columnDefinition = "jsonb", nullable = false)
     public JsonNode body;
 
+    /**
+     * The lead image's media; {@code null} for none.
+     */
+    @Column(name = "lead_image_media_id")
+    public Long leadImageMediaId;
+
+    /**
+     * The lead image's caption; empty without a lead image.
+     */
+    @Column(name = "lead_image_caption", columnDefinition = "text", nullable = false)
+    public String leadImageCaption = "";
+
     @Column(name = "created_at", nullable = false)
     public Instant createdAt;
 
@@ -68,7 +81,14 @@ public class ArticleRevisionEntity extends PanacheEntityBase {
     boolean holds(ArticleContent content) {
         return kicker.equals(content.kicker()) && headline.equals(content.headline())
                 && subheadline.equals(content.subheadline()) && lead.equals(content.lead())
-                && body.equals(content.body());
+                && body.equals(content.body()) && Objects.equals(leadImage(), content.leadImage());
+    }
+
+    /**
+     * The lead image, {@code null} for none.
+     */
+    public ArticleContent.LeadImage leadImage() {
+        return leadImageMediaId == null ? null : new ArticleContent.LeadImage(leadImageMediaId, leadImageCaption);
     }
 
     void apply(ArticleContent content) {
@@ -77,5 +97,7 @@ public class ArticleRevisionEntity extends PanacheEntityBase {
         subheadline = content.subheadline();
         lead = content.lead();
         body = content.body();
+        leadImageMediaId = content.leadImage() == null ? null : content.leadImage().mediaId();
+        leadImageCaption = content.leadImage() == null ? "" : content.leadImage().caption();
     }
 }

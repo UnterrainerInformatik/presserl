@@ -41,6 +41,13 @@ Content-Type: image/jpeg
         client.assert(response.body.size > 0, "size " + response.body.size);
         client.assert(response.body.uploadedBy.username === "publisher", "uploadedBy " + JSON.stringify(response.body.uploadedBy));
     });
+    client.test("three renditions, the small image is not enlarged", () => {
+        const r = response.body.renditions;
+        client.assert(r.thumbnail.width === 480 && r.thumbnail.height === 360, "thumbnail " + JSON.stringify(r.thumbnail));
+        client.assert(r.web.width === 640 && r.web.height === 480, "web " + JSON.stringify(r.web));
+        client.assert(r.print.width === 640 && r.print.height === 480, "print " + JSON.stringify(r.print));
+        client.assert(r.thumbnail.size > 0 && r.web.size > 0 && r.print.size > 0, "sizes " + JSON.stringify(r));
+    });
     client.global.set("photoId", response.body.id);
 %}
 
@@ -95,6 +102,49 @@ Authorization: Bearer {{accessToken}}
     });
 %}
 
+### Download the thumbnail rendition
+GET {{baseUrl}}/api/media/{{photoId}}/renditions/thumbnail
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200 with the rendition and the headers of /content", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.headers.valueOf("Content-Type") === "image/jpeg", "type " + response.headers.valueOf("Content-Type"));
+        client.assert(response.headers.valueOf("Content-Disposition") === "inline", "disposition");
+        client.assert(response.headers.valueOf("X-Content-Type-Options") === "nosniff", "nosniff");
+        client.assert(response.headers.valueOf("Cache-Control") === "private, max-age=31536000, immutable",
+            "cache " + response.headers.valueOf("Cache-Control"));
+        client.assert(Number(response.headers.valueOf("Content-Length")) > 0, "length");
+    });
+%}
+
+### Download the web rendition
+GET {{baseUrl}}/api/media/{{photoId}}/renditions/web
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200, "status " + response.status));
+%}
+
+### Download the print rendition
+GET {{baseUrl}}/api/media/{{photoId}}/renditions/print
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200, "status " + response.status));
+%}
+
+### Unknown rendition kind
+GET {{baseUrl}}/api/media/{{photoId}}/renditions/huge
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("404 with an error body", () => {
+        client.assert(response.status === 404, "status " + response.status);
+        client.assert(response.body.errors[0].field === null, JSON.stringify(response.body));
+    });
+%}
+
 ### HTML disguised as a JPEG (media/cat.jpg)
 POST {{baseUrl}}/api/media
 Authorization: Bearer {{accessToken}}
@@ -134,6 +184,16 @@ Content-Type: image/jpeg
 
 ### Readers may not download
 GET {{baseUrl}}/api/media/{{photoId}}/content
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("403", () => {
+        client.assert(response.status === 403, "status " + response.status);
+    });
+%}
+
+### Readers may not download renditions
+GET {{baseUrl}}/api/media/{{photoId}}/renditions/web
 Authorization: Bearer {{readerToken}}
 
 > {%

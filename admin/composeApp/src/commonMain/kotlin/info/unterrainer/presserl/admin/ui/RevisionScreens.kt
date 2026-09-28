@@ -36,6 +36,7 @@ import info.unterrainer.presserl.admin.resources.revision_n
 import info.unterrainer.presserl.admin.resources.revisions
 import info.unterrainer.presserl.admin.ui.editor.IdSource
 import info.unterrainer.presserl.admin.ui.editor.draftOf
+import info.unterrainer.presserl.admin.ui.media.Thumbnails
 import org.jetbrains.compose.resources.stringResource
 
 /** Revision history of an article, newest first as returned by the server. */
@@ -84,6 +85,7 @@ fun RevisionScreen(api: ApiClient, articleId: Long, number: Int, onBack: () -> U
         error = null
         revision = attempt({ error = it }) { api.revision(articleId, number) }
     }
+    val thumbnails = remember { Thumbnails { api.mediaRendition(it, "thumbnail") } }
 
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -96,7 +98,7 @@ fun RevisionScreen(api: ApiClient, articleId: Long, number: Int, onBack: () -> U
             current == null -> Text(stringResource(Res.string.loading))
             else -> {
                 Text(revisionDetails(current.updatedAt, current.publishedAt), style = MaterialTheme.typography.bodyMedium)
-                ArticleView(remember(current) { draftOf(current, IdSource()) })
+                ArticleView(remember(current) { draftOf(current, IdSource()) }, thumbnails)
             }
         }
     }

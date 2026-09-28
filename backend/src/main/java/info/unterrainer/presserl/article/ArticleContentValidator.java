@@ -14,15 +14,22 @@ import info.unterrainer.presserl.api.FieldError;
 /**
  * Reads an article request body strictly: the four text fields (default empty, trimmed, length
  * limited, no control characters), the body (default empty document, validated by
- * {@link ArticleBodyValidator}), the optional {@code sectionId} and, for saves, the required
- * {@code version}. Unknown fields are rejected. All violations are reported together. Whether the
- * section exists and may be written in is checked by {@link ArticleService}.
+ * {@link ArticleBodyValidator}), the optional {@code leadImage} ({@code mediaId} and
+ * {@code caption}), the optional {@code sectionId} and, for saves, the required {@code version}.
+ * Unknown fields are rejected, also inside {@code leadImage}. All violations are reported together.
+ * Whether the section and the media exist and the section may be written in is checked by
+ * {@link ArticleService}.
  */
 public final class ArticleContentValidator {
 
     public static final String VERSION = "version";
     public static final String SECTION_ID = "sectionId";
-    private static final Set<String> CONTENT_FIELDS = Set.of("kicker", "headline", "subheadline", "lead", "body");
+    public static final String LEAD_IMAGE = "leadImage";
+    public static final String LEAD_IMAGE_MEDIA_ID = "leadImage.mediaId";
+    public static final String LEAD_IMAGE_CAPTION = "leadImage.caption";
+    private static final Set<String> CONTENT_FIELDS = Set.of("kicker", "headline", "subheadline", "lead", "body",
+            LEAD_IMAGE);
+    private static final Set<String> LEAD_IMAGE_FIELDS = Set.of("mediaId", "caption");
 
     private ArticleContentValidator() {
     }
@@ -63,6 +70,7 @@ public final class ArticleContentValidator {
         } else {
             errors.addAll(ArticleBodyValidator.validate(body, "body"));
         }
+        ArticleContent.LeadImage leadImage = leadImage(json.get(LEAD_IMAGE), errors);
         Long sectionId = null;
         JsonNode section = json.get(SECTION_ID);
         if (section != null && !section.isNull()) {
@@ -86,7 +94,7 @@ public final class ArticleContentValidator {
         if (!errors.isEmpty()) {
             throw ArticleException.invalid(errors);
         }
-        return new Request(new ArticleContent(kicker, headline, subheadline, lead, body), sectionId, version);
+        return new Request(new ArticleContent(kicker, headline, subheadline, lead, body, leadImage), sectionId, version);
     }
 
     /**
@@ -99,22 +107,60 @@ public final class ArticleContentValidator {
         return body;
     }
 
+    /**
+     * The lead image, {@code null} when absent or {@code null}; violations are named
+     * {@code leadImage.<field>}.
+     */
+    private static ArticleContent.LeadImage leadImage(JsonNode node, List<FieldError> errors) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (!node.isObject()) {
+            errors.add(new FieldError(LEAD_IMAGE, "must be an object or null"));
+            return null;
+        }
+        for (Iterator<String> names = node.fieldNames(); names.hasNext();) {
+            String name = names.next();
+            if (!LEAD_IMAGE_FIELDS.contains(name)) {
+                errors.add(new FieldError(LEAD_IMAGE + "." + name, "unknown field"));
+            }
+        }
+        long mediaId = 0;
+        JsonNode id = node.get("mediaId");
+        if (id == null || id.isNull()) {
+            errors.add(new FieldError(LEAD_IMAGE_MEDIA_ID, "is required"));
+        } else if (!id.isIntegralNumber() || !id.canConvertToLong() || id.asLong() <= 0) {
+            errors.add(new FieldError(LEAD_IMAGE_MEDIA_ID, "must be a positive integer"));
+        } else {
+            mediaId = id.asLong();
+        }
+        String caption = text(node, "caption", LEAD_IMAGE_CAPTION, ArticleLimits.CAPTION_MAX, errors);
+        return mediaId > 0 ? new ArticleContent.LeadImage(mediaId, caption) : null;
+    }
+
     private static String text(JsonNode json, String field, int max, List<FieldError> errors) {
+        return text(json, field, field, max, errors);
+    }
+
+    /**
+     * @param name the field name in error messages
+     */
+    private static String text(JsonNode json, String field, String name, int max, List<FieldError> errors) {
         JsonNode node = json.get(field);
         if (node == null || node.isNull()) {
             return "";
         }
         if (!node.isTextual()) {
-            errors.add(new FieldError(field, "must be a string"));
+            errors.add(new FieldError(name, "must be a string"));
             return "";
         }
         String value = node.asText();
         if (TextRules.hasControlCharacter(value, false)) {
-            errors.add(new FieldError(field, "must not contain control characters or line breaks"));
+            errors.add(new FieldError(name, "must not contain control characters or line breaks"));
         }
         value = value.strip();
         if (TextRules.length(value) > max) {
-            errors.add(new FieldError(field, "must be at most " + max + " characters"));
+            errors.add(new FieldError(name, "must be at most " + max + " characters"));
         }
         return value;
     }

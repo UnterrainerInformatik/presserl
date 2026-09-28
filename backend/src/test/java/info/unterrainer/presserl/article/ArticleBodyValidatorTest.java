@@ -183,7 +183,7 @@ class ArticleBodyValidatorTest {
     void textFieldsDefaultToEmptyAndAreTrimmed() {
         ArticleContentValidator.Request request = ArticleContentValidator.validate(
                 json("{'headline': '  Hello  ', 'lead': null}"), false);
-        assertThat(request.content()).isEqualTo(new ArticleContent("", "Hello", "", "", ArticleContentValidator.emptyBody()));
+        assertThat(request.content()).isEqualTo(new ArticleContent("", "Hello", "", "", ArticleContentValidator.emptyBody(), null));
         assertThat(request.version()).isNull();
     }
 

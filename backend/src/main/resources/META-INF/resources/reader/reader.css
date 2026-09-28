@@ -10,11 +10,11 @@
  *   views    <main data-view="frontpage | article | not-found">
  *   classes  .masthead .masthead__name .masthead__subtitle .section-bar .section-tag
  *            .text-size-switch .lead-article .article-card .kicker .headline .subheadline .lead
- *            .byline .article .article__body .note
+ *            .byline .article .article__body .lead-image .lead-image__caption .note
  * Tokens prefixed --presserl-_ and all other classes are internal and may change.
  *
  * Layers: fonts, tokens, text sizes, dark scheme, base typography, masthead and navigation,
- * front page, article, notes.
+ * front page, article, lead images, notes.
  */
 
 /* ---------------------------------------------------------------------------------------------
@@ -576,6 +576,34 @@ button:focus-visible {
 
 .article__body blockquote p {
   margin: 0;
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * Lead images: as wide as their column, never wider than the rendition; caption below the image
+ * ------------------------------------------------------------------------------------------- */
+
+.lead-image {
+  margin: 1rem 0;
+  break-inside: avoid;
+}
+
+.lead-article .lead-image,
+.article-card .lead-image {
+  margin: 0.25rem 0;
+}
+
+.lead-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  background: var(--presserl-color-rule);
+}
+
+.lead-image__caption {
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--presserl-color-muted);
 }
 
 /* ---------------------------------------------------------------------------------------------

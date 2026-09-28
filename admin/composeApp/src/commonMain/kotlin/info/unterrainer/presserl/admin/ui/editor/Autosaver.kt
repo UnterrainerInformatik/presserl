@@ -28,21 +28,31 @@ sealed interface SaveState {
     data object Conflict : SaveState
 }
 
-/** Server messages sorted to the editor's fields; [blocks] is keyed by block index, [section] belongs to the chooser. */
+/**
+ * Server messages sorted to the editor's fields; [blocks] is keyed by block index, [section] belongs to the chooser,
+ * [leadImage] to the lead-image field.
+ */
 data class FieldErrors(
     val header: Map<HeaderField, String> = emptyMap(),
     val blocks: Map<Int, String> = emptyMap(),
     val general: List<String> = emptyList(),
     val section: String? = null,
+    val leadImage: String? = null,
 )
 
 private const val SECTION_FIELD = "sectionId"
 
+private const val LEAD_IMAGE_FIELD = "leadImage"
+
 private val BLOCK_PATH = Regex("""^body\.blocks\[(\d+)]""")
 
-/** Maps `FieldErrorDto.field` paths (`sectionId`, `headline`, `body.blocks[2].content[0].text`) to fields. */
+/**
+ * Maps `FieldErrorDto.field` paths (`sectionId`, `headline`, `body.blocks[2].content[0].text`, `leadImage.caption`) to
+ * fields.
+ */
 fun fieldErrors(errors: List<FieldErrorDto>): FieldErrors {
     var section: String? = null
+    var leadImage: String? = null
     val header = mutableMapOf<HeaderField, String>()
     val blocks = mutableMapOf<Int, String>()
     val general = mutableListOf<String>()
@@ -52,12 +62,13 @@ fun fieldErrors(errors: List<FieldErrorDto>): FieldErrors {
         val block = field?.let { BLOCK_PATH.find(it) }?.groupValues?.get(1)?.toIntOrNull()
         when {
             field == SECTION_FIELD -> section = section ?: error.message
+            field == LEAD_IMAGE_FIELD || field?.startsWith("$LEAD_IMAGE_FIELD.") == true -> leadImage = leadImage ?: error.message
             headerField != null -> header.getOrPut(headerField) { error.message }
             block != null -> blocks.getOrPut(block) { error.message }
             else -> general += error.message
         }
     }
-    return FieldErrors(header, blocks, general, section)
+    return FieldErrors(header, blocks, general, section, leadImage)
 }
 
 /** Field errors of a refused request, or `null` if [e] is no `4xx` answer with an error body. */

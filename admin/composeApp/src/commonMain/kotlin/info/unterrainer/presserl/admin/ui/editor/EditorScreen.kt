@@ -5,10 +5,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,6 +19,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -71,9 +75,15 @@ import info.unterrainer.presserl.admin.resources.delete
 import info.unterrainer.presserl.admin.resources.delete_text
 import info.unterrainer.presserl.admin.resources.delete_title
 import info.unterrainer.presserl.admin.resources.empty_body
+import info.unterrainer.presserl.admin.resources.field_caption
 import info.unterrainer.presserl.admin.resources.field_headline
 import info.unterrainer.presserl.admin.resources.field_kicker
 import info.unterrainer.presserl.admin.resources.field_lead
+import info.unterrainer.presserl.admin.resources.field_lead_image
+import info.unterrainer.presserl.admin.resources.lead_image_choose
+import info.unterrainer.presserl.admin.resources.lead_image_remove
+import info.unterrainer.presserl.admin.resources.lead_image_replace
+import info.unterrainer.presserl.admin.resources.lead_image_uploading
 import info.unterrainer.presserl.admin.resources.field_section
 import info.unterrainer.presserl.admin.resources.field_subheadline
 import info.unterrainer.presserl.admin.resources.leave
@@ -108,6 +118,12 @@ import info.unterrainer.presserl.admin.resources.take_offline
 import info.unterrainer.presserl.admin.resources.undo
 import info.unterrainer.presserl.admin.resources.unlock
 import info.unterrainer.presserl.admin.resources.unpublished_changes
+import info.unterrainer.presserl.admin.resources.upload_damaged
+import info.unterrainer.presserl.admin.resources.upload_failed
+import info.unterrainer.presserl.admin.resources.upload_too_large
+import info.unterrainer.presserl.admin.resources.upload_too_large_unknown
+import info.unterrainer.presserl.admin.resources.upload_unreachable
+import info.unterrainer.presserl.admin.resources.upload_unsupported
 import info.unterrainer.presserl.admin.resources.view_in_reader
 import info.unterrainer.presserl.admin.resources.withdraw
 import info.unterrainer.presserl.admin.ui.ArticleView
@@ -119,6 +135,11 @@ import info.unterrainer.presserl.admin.ui.attempt
 import info.unterrainer.presserl.admin.ui.decisionText
 import info.unterrainer.presserl.admin.ui.describe
 import info.unterrainer.presserl.admin.ui.formatTimestamp
+import info.unterrainer.presserl.admin.ui.media.LeadImagePreview
+import info.unterrainer.presserl.admin.ui.media.PictureIcon
+import info.unterrainer.presserl.admin.ui.media.Thumbnails
+import info.unterrainer.presserl.admin.ui.media.formatMaxSize
+import info.unterrainer.presserl.admin.ui.media.pickImageFile
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
 import info.unterrainer.presserl.admin.ui.statusText
 import info.unterrainer.presserl.admin.ui.waitingText
@@ -130,10 +151,18 @@ import kotlin.time.TimeSource
 
 /**
  * The article editor at level `standard`. [readerUrl] gives the reader page of an article;
- * [onBack] and [onRevisions] are called once pending changes are saved.
+ * [onBack] and [onRevisions] are called once pending changes are saved. [maxUploadSize] is the
+ * newspaper's `media.max-size`, named when an image is too large.
  */
 @Composable
-fun EditorScreen(api: ApiClient, articleId: Long, readerUrl: (Long) -> String, onBack: () -> Unit, onRevisions: () -> Unit) {
+fun EditorScreen(
+    api: ApiClient,
+    articleId: Long,
+    readerUrl: (Long) -> String,
+    onBack: () -> Unit,
+    onRevisions: () -> Unit,
+    maxUploadSize: String? = null,
+) {
     // A new load (after a conflict) starts with fresh editor state
     var loads by remember { mutableStateOf(0) }
     key(loads) {
@@ -147,7 +176,7 @@ fun EditorScreen(api: ApiClient, articleId: Long, readerUrl: (Long) -> String, o
                 LoadFailed(error!!, onReload = { loads++ })
             }
             loaded == null -> Text(stringResource(Res.string.loading))
-            else -> Editor(api, loaded, readerUrl, onBack, onRevisions, onReload = { loads++ })
+            else -> Editor(api, loaded, readerUrl, maxUploadSize, onBack, onRevisions, onReload = { loads++ })
         }
     }
 }
@@ -157,6 +186,7 @@ private fun Editor(
     api: ApiClient,
     loaded: ArticleDto,
     readerUrl: (Long) -> String,
+    maxUploadSize: String?,
     onBack: () -> Unit,
     onRevisions: () -> Unit,
     onReload: () -> Unit,
@@ -177,6 +207,7 @@ private fun Editor(
             onSaved = { article = it },
         )
     }
+    val thumbnails = remember { Thumbnails { api.mediaRendition(it, "thumbnail") } }
     val actions = actionsFor(article.allowedActions)
     // Loaded once for the chooser; without them the chooser shows the current section only
     var sections by remember { mutableStateOf<List<SectionDto>?>(null) }
@@ -260,6 +291,7 @@ private fun Editor(
         blocks = saveErrors.blocks + actionErrors.blocks,
         general = saveErrors.general + actionErrors.general,
         section = actionErrors.section ?: saveErrors.section,
+        leadImage = actionErrors.leadImage ?: saveErrors.leadImage,
     )
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -301,10 +333,13 @@ private fun Editor(
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (actions.editable) {
                 SectionChooser(model, article.section, sections.orEmpty(), errors.section, enabled = saveState != SaveState.Conflict)
-                EditableArticle(model, errors, enabled = saveState != SaveState.Conflict)
+                val leadImage = LeadImageSlot(thumbnails, maxUploadSize, onChoose = {
+                    scope.launch { pickImageFile()?.let { model.uploadLeadImage(it, api::uploadMedia) } }
+                })
+                EditableArticle(model, errors, leadImage, enabled = saveState != SaveState.Conflict)
             } else {
                 article.section?.let { SectionLabel(it.name, it.color) }
-                ArticleView(model.draft)
+                ArticleView(model.draft, thumbnails)
             }
             if (reviews.isNotEmpty()) Reviews(reviews)
         }
@@ -521,9 +556,14 @@ private fun SectionChooser(model: EditorModel, current: SectionRefDto?, sections
     }
 }
 
+/** What the lead-image field needs besides the model. */
+private class LeadImageSlot(val thumbnails: Thumbnails, val maxUploadSize: String?, val onChoose: () -> Unit)
+
 @Composable
-private fun EditableArticle(model: EditorModel, errors: FieldErrors, enabled: Boolean) {
+private fun EditableArticle(model: EditorModel, errors: FieldErrors, leadImage: LeadImageSlot, enabled: Boolean) {
     HeaderField.entries.forEach { field ->
+        // The reader's order: the lead image follows the headline block
+        if (field == HeaderField.LEAD) LeadImageField(model, leadImage, errors.leadImage, enabled)
         val value = model.draft[field]
         val error = errors.header[field]
         OutlinedTextField(
@@ -552,6 +592,71 @@ private fun EditableArticle(model: EditorModel, errors: FieldErrors, enabled: Bo
             AddBlockButton(afterId = block.id, model, enabled)
         }
     }
+}
+
+/**
+ * The lead image: a big choose button (symbol and word) that uploads the chosen file, the preview, the caption,
+ * replace and remove. Upload refusals are explained in plain words; the previous image stays.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LeadImageField(model: EditorModel, slot: LeadImageSlot, error: String?, enabled: Boolean) {
+    val image = model.draft.leadImage
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(Res.string.field_lead_image), style = MaterialTheme.typography.labelLarge)
+        if (image != null) {
+            LeadImagePreview(image, slot.thumbnails)
+            OutlinedTextField(
+                value = image.caption,
+                onValueChange = { changed ->
+                    if (changed.filterNot { it == '\n' || it == '\r' } != image.caption) model.dispatch(EditorIntent.EditCaption(changed))
+                },
+                label = { Text(stringResource(Res.string.field_caption)) },
+                singleLine = true,
+                isError = error != null,
+                supportingText = error?.let { { Text(it) } },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else if (error != null) {
+            Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+            val choose = if (image == null) Res.string.lead_image_choose else Res.string.lead_image_replace
+            Button(
+                onClick = slot.onChoose,
+                enabled = enabled && !model.uploading,
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
+            ) {
+                PictureIcon()
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(choose), style = MaterialTheme.typography.titleSmall)
+            }
+            if (image != null) {
+                OutlinedButton(onClick = { model.dispatch(EditorIntent.RemoveLeadImage) }, enabled = enabled && !model.uploading) {
+                    Text("✕ " + stringResource(Res.string.lead_image_remove))
+                }
+            }
+            if (model.uploading) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text(stringResource(Res.string.lead_image_uploading), style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        model.uploadError?.let { uploadError ->
+            Text(uploadErrorText(uploadError, slot.maxUploadSize), color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+@Composable
+private fun uploadErrorText(error: UploadError, maxUploadSize: String?): String = when (error) {
+    UploadError.TooLarge -> maxUploadSize?.let { stringResource(Res.string.upload_too_large, formatMaxSize(it)) }
+        ?: stringResource(Res.string.upload_too_large_unknown)
+    UploadError.Unsupported -> stringResource(Res.string.upload_unsupported)
+    UploadError.Damaged -> stringResource(Res.string.upload_damaged)
+    UploadError.Unreachable -> stringResource(Res.string.upload_unreachable)
+    is UploadError.Other -> stringResource(Res.string.upload_failed, error.message)
 }
 
 @Composable

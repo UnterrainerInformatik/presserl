@@ -4,6 +4,7 @@ import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -60,25 +61,89 @@ public class MediaProcessor {
     }
 
     /**
-     * The re-encoded image.
+     * The re-encoded image with its renditions.
      */
-    public record Processed(byte[] bytes, String contentType, String extension, int width, int height) {
+    public record Processed(byte[] bytes, String contentType, String extension, int width, int height,
+            List<Rendition> renditions) {
     }
 
     /**
-     * Processes the uploaded file.
+     * A re-encoded smaller copy, in the format of the image it was derived from.
+     */
+    public record Rendition(RenditionKind kind, byte[] bytes, String contentType, String extension, int width,
+            int height) {
+    }
+
+    /**
+     * Processes the uploaded file and derives the renditions from the scaled pixels.
      *
      * @throws MediaException {@code 415} for unsupported types, {@code 400} for oversized or undecodable images
      */
     public Processed process(Path file) {
         InputType type = sniff(head(file));
-        BufferedImage decoded = decode(file, type);
+        BufferedImage decoded;
+        try (ImageInputStream in = ImageIO.createImageInputStream(file.toFile())) {
+            decoded = decode(in, type);
+        } catch (IOException e) {
+            throw MediaException.invalid("the image cannot be decoded", e);
+        }
         BufferedImage oriented = orient(decoded, orientation(file));
         boolean alpha = hasTransparency(oriented);
         BufferedImage scaled = scale(toSrgb(oriented, alpha), MAX_LONG_SIDE);
-        return alpha
-                ? new Processed(encode(scaled, "png", null), "image/png", "png", scaled.getWidth(), scaled.getHeight())
-                : new Processed(encodeJpeg(scaled), "image/jpeg", "jpg", scaled.getWidth(), scaled.getHeight());
+        Format format = alpha ? Format.PNG : Format.JPEG;
+        return new Processed(format.encode(scaled), format.contentType, format.extension, scaled.getWidth(),
+                scaled.getHeight(), renditions(scaled, format));
+    }
+
+    /**
+     * The renditions of a stored image (for media stored before renditions existed). The bytes pass
+     * the same sniffing and decoding as an upload; the format of the stored image is kept.
+     *
+     * @throws MediaException {@code 415} for unsupported types, {@code 400} for oversized or undecodable images
+     */
+    public List<Rendition> deriveRenditions(byte[] stored) {
+        InputType type = sniff(Arrays.copyOf(stored, Math.min(stored.length, HEAD_LENGTH)));
+        BufferedImage decoded;
+        try (ImageInputStream in = ImageIO.createImageInputStream(new ByteArrayInputStream(stored))) {
+            decoded = decode(in, type);
+        } catch (IOException e) {
+            throw MediaException.invalid("the image cannot be decoded", e);
+        }
+        boolean alpha = type == InputType.PNG && decoded.getColorModel().hasAlpha();
+        return renditions(toSrgb(decoded, alpha), alpha ? Format.PNG : Format.JPEG);
+    }
+
+    /**
+     * Every {@link RenditionKind}, largest first, each scaled from the previous one (never enlarged).
+     */
+    private static List<Rendition> renditions(BufferedImage image, Format format) {
+        List<Rendition> renditions = new ArrayList<>();
+        BufferedImage current = image;
+        for (RenditionKind kind : RenditionKind.values()) {
+            current = scale(current, kind.maxLongSide());
+            renditions.add(new Rendition(kind, format.encode(current), format.contentType, format.extension,
+                    current.getWidth(), current.getHeight()));
+        }
+        return List.copyOf(renditions);
+    }
+
+    /**
+     * The two stored formats: JPEG for opaque images, PNG for images with transparency.
+     */
+    private enum Format {
+        JPEG("image/jpeg", "jpg"), PNG("image/png", "png");
+
+        final String contentType;
+        final String extension;
+
+        Format(String contentType, String extension) {
+            this.contentType = contentType;
+            this.extension = extension;
+        }
+
+        byte[] encode(BufferedImage image) {
+            return this == PNG ? MediaProcessor.encode(image, "png", null) : encodeJpeg(image);
+        }
     }
 
     /**
@@ -107,8 +172,8 @@ public class MediaProcessor {
         throw MediaException.unsupported("only JPEG, PNG and WebP images are accepted");
     }
 
-    private static BufferedImage decode(Path file, InputType type) {
-        try (ImageInputStream in = ImageIO.createImageInputStream(file.toFile())) {
+    private static BufferedImage decode(ImageInputStream in, InputType type) {
+        try {
             ImageReader reader = reader(type);
             try {
                 List<String> warnings = new ArrayList<>();

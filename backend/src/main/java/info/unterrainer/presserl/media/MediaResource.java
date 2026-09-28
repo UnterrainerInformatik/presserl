@@ -24,7 +24,8 @@ import jakarta.ws.rs.core.MediaType;
 
 /**
  * Media endpoints for writers ({@link Newsroom#isWriter()}, {@code WRITE_ARTICLES}): upload an image
- * and read it back. Everyone else gets {@code 403}. Uploads are re-encoded by {@link MediaProcessor}.
+ * and read it back with its renditions. Everyone else gets {@code 403}. Uploads are re-encoded by
+ * {@link MediaProcessor}.
  */
 @Path("/api/media")
 @Authenticated
@@ -75,13 +76,25 @@ public class MediaResource {
     @GET
     @Path("/{id}/content")
     public Uni<RestResponse<byte[]>> content(@PathParam("id") long id) {
-        return newsroom().flatMap(newsroom -> service.content(newsroom, id))
-                .map(content -> RestResponse.ResponseBuilder.ok(content.bytes())
-                        .type(content.media().contentType)
-                        .header("Content-Disposition", "inline")
-                        .header("X-Content-Type-Options", "nosniff")
-                        .header("Cache-Control", "private, max-age=31536000, immutable")
-                        .build());
+        return newsroom().flatMap(newsroom -> service.content(newsroom, id)).map(MediaResource::bytes);
+    }
+
+    /**
+     * One rendition ({@link RenditionKind#value()}), with the headers of {@link #content}.
+     */
+    @GET
+    @Path("/{id}/renditions/{kind}")
+    public Uni<RestResponse<byte[]>> rendition(@PathParam("id") long id, @PathParam("kind") String kind) {
+        return newsroom().flatMap(newsroom -> service.rendition(newsroom, id, kind)).map(MediaResource::bytes);
+    }
+
+    private static RestResponse<byte[]> bytes(MediaService.Content content) {
+        return RestResponse.ResponseBuilder.ok(content.bytes())
+                .type(content.contentType())
+                .header("Content-Disposition", "inline")
+                .header("X-Content-Type-Options", "nosniff")
+                .header("Cache-Control", "private, max-age=31536000, immutable")
+                .build();
     }
 
     private Uni<Newsroom> newsroom() {

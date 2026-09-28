@@ -170,15 +170,17 @@ public class ArticleResource {
     @GET
     @Path("/{id}/revisions/{number}")
     public Uni<RevisionDto> revision(@PathParam("id") long id, @PathParam("number") int number) {
-        return writer().flatMap(newsroom -> service.revision(newsroom, id, number).map(RevisionDto::of));
+        return writer().flatMap(newsroom -> service.revision(newsroom, id, number)
+                .flatMap(view -> service.leadImage(view.revision()).map(leadImage -> RevisionDto.of(view, leadImage))));
     }
 
     /**
-     * Maps the article with the staffing its {@code allowedActions} need.
+     * Maps the article with the staffing its {@code allowedActions} need and its lead image.
      */
     private Uni<ArticleDto> dto(Newsroom newsroom, Uni<ArticleView> view) {
         return view.flatMap(v -> staffing.forArticles(newsroom, List.of(v.article()))
-                .map(staffed -> ArticleDto.of(v, newsroom, staffed)));
+                .flatMap(staffed -> service.leadImage(v.revision())
+                        .map(leadImage -> ArticleDto.of(v, newsroom, staffed, leadImage))));
     }
 
     /**

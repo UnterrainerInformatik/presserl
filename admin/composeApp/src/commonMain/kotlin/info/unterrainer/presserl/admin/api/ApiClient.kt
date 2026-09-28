@@ -94,7 +94,10 @@ class ApiClient(
         http.put("$baseUrl/api/articles/$id") {
             bearerAuth(accessToken())
             contentType(ContentType.Application.Json)
-            setBody(ArticleSave(content.kicker, content.headline, content.subheadline, content.lead, content.body, version, content.sectionId))
+            setBody(
+                ArticleSave(content.kicker, content.headline, content.subheadline, content.lead, content.body, content.leadImage,
+                    version, content.sectionId),
+            )
         }.body()
 
     suspend fun deleteArticle(id: Long) {
@@ -255,6 +258,10 @@ class ApiClient(
     /** The stored image bytes (`image/jpeg` or `image/png`, see [MediaDto.contentType]). */
     suspend fun mediaContent(id: Long): ByteArray =
         http.get("$baseUrl/api/media/$id/content") { bearerAuth(accessToken()) }.body()
+
+    /** The bytes of a rendition ([kind] `thumbnail`, `web` or `print`); `404` while it is not produced yet. */
+    suspend fun mediaRendition(id: Long, kind: String): ByteArray =
+        http.get("$baseUrl/api/media/$id/renditions/$kind") { bearerAuth(accessToken()) }.body()
 }
 
 /** A file name safe inside a quoted `Content-Disposition` parameter. */
@@ -272,7 +279,10 @@ private data class SectionOrder(val ids: List<Long>)
 @Serializable
 private data class MemberRole(val role: String)
 
-/** Body of `PUT /api/articles/{id}`: [ArticleContent] plus the article version; a `null` [sectionId] is left out. */
+/**
+ * Body of `PUT /api/articles/{id}`: [ArticleContent] plus the article version; a `null` [sectionId] is left out, a
+ * `null` [leadImage] is sent (it removes the image).
+ */
 @Serializable
 private data class ArticleSave(
     val kicker: String,
@@ -280,6 +290,7 @@ private data class ArticleSave(
     val subheadline: String,
     val lead: String,
     val body: JsonObject?,
+    val leadImage: LeadImageRequest?,
     val version: Long,
     val sectionId: Long? = null,
 )

@@ -1,6 +1,8 @@
 package info.unterrainer.presserl.media;
 
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -30,6 +32,14 @@ public class MediaBucketBootstrap {
     MediaStore store;
 
     private ScheduledExecutorService executor;
+    private final CompletableFuture<Void> bucketReady = new CompletableFuture<>();
+
+    /**
+     * Completes once the bucket exists; never completes while the store stays unreachable.
+     */
+    public CompletionStage<Void> bucketReady() {
+        return bucketReady;
+    }
 
     void onStart(@Observes StartupEvent event) {
         executor = Executors.newSingleThreadScheduledExecutor(Thread.ofPlatform().name("media-bucket").daemon().factory());
@@ -50,6 +60,7 @@ public class MediaBucketBootstrap {
             } else {
                 LOG.infof("Media bucket %s present", store.bucket());
             }
+            bucketReady.complete(null);
         } catch (RuntimeException e) {
             Duration delay = backoff.next();
             LOG.errorf("Media bucket %s not available, object store unreachable or refusing the credentials: %s - retrying in %d s",

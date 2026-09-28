@@ -46,6 +46,41 @@ final class ReaderFixtures {
     }
 
     /**
+     * Deletes every article and every media record (the objects stay in the store).
+     */
+    void deleteAllArticlesAndMedia() {
+        execute("DELETE FROM article");
+        execute("DELETE FROM media");
+    }
+
+    /**
+     * Sets the lead image of revision {@code number}.
+     */
+    void leadImage(long articleId, int number, long mediaId, String caption) {
+        String sql = "UPDATE article_revision SET lead_image_media_id = ?, lead_image_caption = ? "
+                + "WHERE article_id = ? AND number = ?";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, mediaId);
+            statement.setString(2, caption);
+            statement.setLong(3, articleId);
+            statement.setInt(4, number);
+            if (statement.executeUpdate() != 1) {
+                throw new IllegalStateException("no revision " + number + " of article " + articleId);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * Sets the status of an article, e.g. {@code OFFLINE}.
+     */
+    void status(long articleId, String status) {
+        execute("UPDATE article SET status = '" + status + "' WHERE id = " + articleId);
+    }
+
+    /**
      * A section at {@code position} with palette colour {@code color}.
      */
     long section(String name, String color, int position) {

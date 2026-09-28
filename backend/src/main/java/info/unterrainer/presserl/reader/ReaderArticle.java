@@ -17,6 +17,7 @@ import info.unterrainer.presserl.section.SectionEntity;
  * @param publishedAt first publication of the article
  * @param revisedAt   when the live revision was published
  * @param section     the article's section
+ * @param leadImage   the live revision's lead image, {@code null} for none
  */
 public record ReaderArticle(
         long id,
@@ -28,12 +29,14 @@ public record ReaderArticle(
         String byline,
         Instant publishedAt,
         Instant revisedAt,
-        ReaderSection section) {
+        ReaderSection section,
+        ReaderImage leadImage) {
 
-    static ReaderArticle of(ArticleEntity article, ArticleRevisionEntity live, SectionEntity section) {
+    static ReaderArticle of(ArticleEntity article, ArticleRevisionEntity live, SectionEntity section,
+            ReaderImage leadImage) {
         String byline = article.authorDisplayName.isBlank() ? article.authorUsername : article.authorDisplayName;
         return new ReaderArticle(article.id, live.kicker, live.headline, live.subheadline, live.lead, live.body,
-                byline, article.publishedAt, live.publishedAt, ReaderSection.of(section));
+                byline, article.publishedAt, live.publishedAt, ReaderSection.of(section), leadImage);
     }
 
     /**

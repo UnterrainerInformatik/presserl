@@ -1,5 +1,7 @@
 package info.unterrainer.presserl.admin.api
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
@@ -57,7 +59,8 @@ data class AuthorDto(
 
 /**
  * `POST /api/media` and `GET /api/media/{id}`: an uploaded image as stored after re-encoding. [contentType] is
- * `image/jpeg` or `image/png`, [size] the stored file's bytes; [uploadedAt] is an ISO-8601 string.
+ * `image/jpeg` or `image/png`, [size] the stored file's bytes; [uploadedAt] is an ISO-8601 string. [renditions] maps
+ * `thumbnail`, `web` and `print` to their sizes; empty while the server has not produced them yet.
  */
 @Serializable
 data class MediaDto(
@@ -68,7 +71,20 @@ data class MediaDto(
     val size: Long,
     val uploadedBy: AuthorDto,
     val uploadedAt: String,
+    val renditions: Map<String, RenditionDto> = emptyMap(),
 )
+
+/** Size of one rendition of a [MediaDto]. */
+@Serializable
+data class RenditionDto(val width: Int, val height: Int, val size: Long)
+
+/** The lead image of a revision as the server returns it; [width] and [height] are those of the stored image. */
+@Serializable
+data class LeadImageDto(val mediaId: Long, val caption: String, val width: Int, val height: Int)
+
+/** The lead image in an article request: an uploaded media and its caption (plain text, at most 300 characters). */
+@Serializable
+data class LeadImageRequest(val mediaId: Long, val caption: String)
 
 /** The section an article belongs to; [color] is a palette key. */
 @Serializable
@@ -108,6 +124,7 @@ data class ArticleDto(
     val subheadline: String,
     val lead: String,
     val body: JsonObject,
+    val leadImage: LeadImageDto? = null,
     val allowedActions: List<String>,
 )
 
@@ -133,7 +150,10 @@ data class ArticleSummaryDto(
 /**
  * Request body of `POST /api/articles` and, with a version, `PUT /api/articles/{id}`. A missing [body] means an
  * empty document; a missing [sectionId] lets the server choose the section (create) or keeps it (save).
+ * [leadImage] is always sent, `null` included: the server replaces the whole content, so leaving it out would
+ * remove the image.
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class ArticleContent(
     val kicker: String = "",
@@ -142,6 +162,7 @@ data class ArticleContent(
     val lead: String = "",
     val body: JsonObject? = null,
     val sectionId: Long? = null,
+    @EncodeDefault val leadImage: LeadImageRequest? = null,
 )
 
 /** Entry of `GET /api/articles/{id}/revisions`. */
@@ -168,6 +189,7 @@ data class RevisionDto(
     val subheadline: String,
     val lead: String,
     val body: JsonObject,
+    val leadImage: LeadImageDto? = null,
 )
 
 /**
