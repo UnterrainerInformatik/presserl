@@ -1,11 +1,4 @@
-# newspaper-settings Specification
-
-## Purpose
-
-Resolves the newspaper's effective settings from the configuration layers (code default,
-deployment environment, newspaper overrides in the database) and exposes them to clients.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Layered resolution of newspaper settings
 The system SHALL resolve each newspaper setting from the layers code default, deployment
