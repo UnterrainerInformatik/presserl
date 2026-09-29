@@ -18,3 +18,9 @@ same rule as other uploaders (only while no live revision and no pending submiss
 not write articles. Assigned from editor-in-chief upward. Needs a Keycloak group, delegation and
 password-reset rules, the account form, the realm template, and decoupling the media endpoints and
 the "Images" header entry from `WRITE_ARTICLES` (own action). Builds on media-view-crop-blur.
+
+## init-runner-action on Node 24
+`UnterrainerInformatik/init-runner-action` (used by every shared workflow, incl.
+docker-build-workflow) still checks out with `actions/checkout@v4` and pre-fetches v4/v3 actions,
+which GitHub forces onto Node 24 with a deprecation annotation. Raise to the current majors
+(checkout v7 at the time of ci-build-speed). Lives outside this repo; affects all callers.

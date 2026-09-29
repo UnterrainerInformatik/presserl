@@ -5,25 +5,26 @@
 
 # 1) Admin app: Compose Multiplatform Wasm distribution
 FROM --platform=$BUILDPLATFORM gradle:9.8.0-jdk21 AS admin
-# The Node.js binary the Kotlin/Wasm toolchain downloads needs libatomic
-RUN apt-get update && apt-get install -y --no-install-recommends libatomic1 && rm -rf /var/lib/apt/lists/*
+# The Node.js binary the Kotlin/Wasm toolchain downloads needs libatomic; brotli pre-compresses
+# the bundle
+RUN apt-get update && apt-get install -y --no-install-recommends libatomic1 brotli && rm -rf /var/lib/apt/lists/*
 WORKDIR /src/admin
 COPY admin/ ./
 RUN --mount=type=cache,target=/home/gradle/.gradle/caches \
     gradle --no-daemon --console=plain wasmJsBrowserDistribution
+# Brotli variants next to the originals, sent to browsers that accept br (PrecompressedAdminBundle).
+# Done here rather than in the backend stage so a backend-only change keeps this step cached.
+RUN find composeApp/build/dist/wasmJs/productionExecutable/ -type f \( -name '*.wasm' -o -name '*.js' \) -print0 \
+        | xargs -0 -P "$(nproc)" -n 1 brotli --best --keep
 
 # 2) Backend with the admin bundle as static resources
 FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-21 AS backend
-# Without unzip the Maven wrapper fetches the .tar.gz and checks it against the .zip checksum;
-# brotli pre-compresses the admin bundle
-RUN apt-get update && apt-get install -y --no-install-recommends unzip brotli && rm -rf /var/lib/apt/lists/*
+# Without unzip the Maven wrapper fetches the .tar.gz and checks it against the .zip checksum
+RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/*
 WORKDIR /src/backend
 COPY backend/ ./
 COPY --from=admin /src/admin/composeApp/build/dist/wasmJs/productionExecutable/ src/main/resources/META-INF/resources/admin/
 RUN rm -f src/main/resources/META-INF/resources/admin/*.map
-# Brotli variants next to the originals, sent to browsers that accept br (PrecompressedAdminBundle)
-RUN find src/main/resources/META-INF/resources/admin/ -type f \( -name '*.wasm' -o -name '*.js' \) \
-        -exec brotli --best --keep {} +
 RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw -B -q package -DskipTests
 

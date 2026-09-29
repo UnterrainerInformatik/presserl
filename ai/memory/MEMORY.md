@@ -20,3 +20,4 @@
 - [Diagrams always PlantUML](feedback_diagrams_plantuml.md) — .puml + rendered SVG; render via plantuml.unterrainer.info with -L and charset=utf-8
 - [Click through UI checks myself](feedback_ui_tests_myself.md) — Manual-check tasks: drive the apps headless (Playwright) myself, don't hand click steps to Gerald
 - [Stop own servers](feedback_stop_own_servers.md) — Stop every server/daemon/container I started and verify with ps/ss/docker
+- [CI runners](reference_ci_runners.md) — babylon5 (Ryzen, fast, label `babylon5`) vs dev1 (old Xeon VM, 3–4× slower); measured 2026-09-29
