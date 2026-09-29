@@ -39,4 +39,15 @@ pushes keep Gradle and Brotli cached. Not yet observed: a second babylon5 runner
 existing node container (both measured runs ran on runner3). babylon5 busy/down ⇒ presserl builds
 queue; drop the label in `pipeline.yml` as fallback.
 
+**Runner too old ⇒ jobs stay `queued` forever while GitHub shows the runners online/idle.** Seen
+2026-09-29: image runner 2.333.1, GitHub pushed 2.337.0; the runner downloads the update, exits,
+the container restarts from the old image and the loop repeats every ~2 min (log: `Downloading
+2.337.0 runner` … `Runner will exit shortly for update` … `Current runner version: '2.333.1'`).
+Fix on babylon5: `cd ~/scripts/github-runner && docker compose build --pull && docker compose up -d
+--force-recreate --remove-orphans` (every service has `build: .` on `myoung34/github-runner:ubuntu-noble`
++ maven; images `github-runner-worker*`). Check with `docker logs <c> | grep 'Current runner version'`.
+dev1 (`ssh dev1`, needs VPN; user `elite`, `~/scripts/github-runner`, not a git repo) needs the same
+commands; there the failed update left the containers restart-looping with `Cannot configure the
+runner because it is already configured` (exit 2) — recreating the containers clears that too.
+
 See [[reference_build_and_test]].
