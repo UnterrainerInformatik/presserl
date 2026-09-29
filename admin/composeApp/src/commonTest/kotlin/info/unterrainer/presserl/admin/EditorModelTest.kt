@@ -3,6 +3,7 @@ package info.unterrainer.presserl.admin
 import info.unterrainer.presserl.admin.api.ArticleDto
 import info.unterrainer.presserl.admin.api.AuthorDto
 import info.unterrainer.presserl.admin.api.ReviewDto
+import info.unterrainer.presserl.admin.api.SpellMatchDto
 import info.unterrainer.presserl.admin.api.json
 import info.unterrainer.presserl.admin.article.Run
 import info.unterrainer.presserl.admin.ui.editor.BlockType
@@ -19,10 +20,12 @@ import info.unterrainer.presserl.admin.ui.editor.canConfirmReject
 import info.unterrainer.presserl.admin.ui.editor.limitNote
 import info.unterrainer.presserl.admin.ui.editor.rejectionToShow
 import info.unterrainer.presserl.admin.ui.editor.draftOf
+import info.unterrainer.presserl.admin.ui.spell.SpellChecker
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class EditorModelTest {
@@ -124,6 +127,46 @@ class EditorModelTest {
         assertEquals(listOf(Run("It started", bold = true)), (draft.blocks[0] as EditorBlock.Paragraph).runs)
         dispatch(EditorIntent.Undo)
         assertEquals(listOf(Run("It started")), (draft.blocks[0] as EditorBlock.Paragraph).runs)
+    }
+
+    @Test
+    fun aChosenSuggestionIsItsOwnUndoStepEvenRightAfterTyping() {
+        dispatch(EditorIntent.EditHeader(HeaderField.HEADLINE, "Der Hund ist gro"))
+        dispatch(EditorIntent.EditHeader(HeaderField.HEADLINE, "Der Hund ist gros"), afterMillis = 300)
+        dispatch(EditorIntent.EditHeader(HeaderField.HEADLINE, "Der Hund ist groß", ownStep = true), afterMillis = 300)
+        assertEquals("Der Hund ist groß", draft.headline)
+
+        dispatch(EditorIntent.Undo)
+        assertEquals("Der Hund ist gros", draft.headline)
+        dispatch(EditorIntent.Undo)
+        assertEquals(article.headline, draft.headline)
+    }
+
+    @Test
+    fun typingAfterASuggestionStartsANewStep() {
+        val paragraph = draft.blocks[0].id
+        dispatch(EditorIntent.EditRuns(paragraph, null, listOf(Run("Ein gros"))))
+        dispatch(EditorIntent.EditRuns(paragraph, null, listOf(Run("Ein groß")), ownStep = true), afterMillis = 100)
+        dispatch(EditorIntent.EditRuns(paragraph, null, listOf(Run("Ein großer"))), afterMillis = 100)
+
+        dispatch(EditorIntent.Undo)
+        assertEquals(listOf(Run("Ein groß")), (draft.blocks[0] as EditorBlock.Paragraph).runs)
+        dispatch(EditorIntent.Undo)
+        assertEquals(listOf(Run("Ein gros")), (draft.blocks[0] as EditorBlock.Paragraph).runs)
+    }
+
+    @Test
+    fun spellCheckingAloneChangesNothingInTheModel() = kotlinx.coroutines.test.runTest {
+        val before = draft
+        val checker = SpellChecker(backgroundScope, enabled = true, check = {
+            listOf(SpellMatchDto(0, 3, "Tippfehler", listOf("The")))
+        }, clock = { testScheduler.currentTime })
+        checker.checkNow("headline", draft.headline)
+        testScheduler.runCurrent()
+
+        assertEquals(1, checker.findings("headline", draft.headline).size)
+        assertSame(before, draft)
+        assertFalse(model.canUndo)
     }
 
     @Test

@@ -11,10 +11,11 @@
 | Administration app | **Compose Multiplatform** (Kotlin, Gradle), **Wasm web target** first, Android/iOS later from the same code base; OIDC auth code + PKCE via a small in-house browser flow behind an `AuthClient` interface (M0 spike: the KMP OIDC library's web flow is popup-only) |
 | Database | **PostgreSQL** |
 | Media store | **RustFS** (S3-compatible, Apache-2.0) in the reference deployment, reached only by the backend through the plain S3 API (Quarkiverse `quarkus-amazon-s3`, URL-connection client, path-style); any S3-compatible store works by configuration. Images are decoded and re-encoded with ImageIO + TwelveMonkeys (JPEG, WebP), EXIF orientation read with `metadata-extractor` |
+| Spell check | **LanguageTool** (LGPL, image `erikvl87/languagetool`, no n-gram data) in the reference deployment, reached only by the backend: `POST /api/spell-check` forwards to its `/v2/check` (Quarkus REST client, 5 s timeouts) and keeps spelling, casing, grammar, punctuation and typography findings. The admin app draws the marks itself — Compose renders on a canvas, so the browser's spell check never sees the text: a `VisualTransformation` for plain fields, an overlay over the rich-text editor. Optional: when off or down, the endpoint answers `503` and nothing else is affected |
 | Identity | **Keycloak provided by the operator** (usually shared): a dedicated realm imported from `deploy/keycloak/presserl-realm.json`; newspaper-wide roles as groups; public client `presserl-admin` (PKCE, audience `presserl-backend`, `groups` claim); confidential client `presserl-backend` whose **service account** manages users and groups (`manage-users`, `view-users`, `query-users`, `query-groups`) |
-| Development | **Quarkus Dev Services** start PostgreSQL and Keycloak automatically, RustFS via Compose Dev Services (`backend/compose-devservices.yml`) — `quarkus dev` needs no configuration |
+| Development | **Quarkus Dev Services** start PostgreSQL and Keycloak automatically, RustFS and LanguageTool via Compose Dev Services (`backend/compose-devservices.yml`; LanguageTool in the compose profile `spell-check`, dev only — tests use a stub) — `quarkus dev` needs no configuration |
 | CI/CD | UnterrainerInformatik workflows (`docker-build-workflow`, `deploy-workflow`, `bump-semver-workflow`); the admin Wasm bundle is built with Gradle and packaged into the backend image. CI builds and ships images only (bump → image build → staging dispatch on push to `master`); it runs no tests — the backend (`./mvnw verify`) and admin (`./gradlew check`) suites run locally before every push |
-| Operations | docker compose: `presserl` (API + reader + static admin bundle), `postgres` and `rustfs` (media, no published port) only. The TLS-terminating reverse proxy (Traefik via labels, or Caddy) and Keycloak are the operator's; `deploy/INSTALL.md` shows how to attach them |
+| Operations | docker compose: `presserl` (API + reader + static admin bundle), `postgres`, `rustfs` (media) and `languagetool` (spell check) only, the last two without a published port; `presserl` does not wait for `languagetool`. The TLS-terminating reverse proxy (Traefik via labels, or Caddy) and Keycloak are the operator's; `deploy/INSTALL.md` shows how to attach them |
 
 Java toolchain: JDK 21 (`maven.compiler.release=21`, Temurin 21 in the image; see `ai/memory/reference_machine_jdk.md` — Lombok constraints).
 
@@ -81,6 +82,9 @@ The database layers store only overrides, never copies of defaults. The backend 
 | `presserl.media.s3.endpoint` | `http://rustfs:9000` | any S3-compatible endpoint | deployment |
 | `presserl.media.s3.region` | `us-east-1` | any | deployment |
 | `presserl.media.s3.bucket` | `presserl-media` | any (created on start if missing) | deployment |
+| `presserl.spell-check.enabled` | `true` | `false` (the admin app then sends no checks) | deployment |
+| `presserl.spell-check.url` | `http://languagetool:8010` | any LanguageTool server | deployment |
+| `presserl.spell-check.language` | `de-DE` | any LanguageTool code, e.g. `de-AT`, `de-CH` | deployment |
 | `presserl.theme.dir` | `/deployments/theme` | any directory | deployment |
 | `presserl.reader.cookie-secure` | `true` (`false` in dev/test) | `false` | deployment |
 

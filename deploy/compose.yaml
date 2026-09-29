@@ -1,6 +1,8 @@
-# Presserl reference deployment: the Presserl image, PostgreSQL and RustFS (S3-compatible store for
-# uploaded images) - nothing else. Keycloak and the TLS-terminating reverse proxy are provided by
-# the operator (see INSTALL.md). RustFS publishes no port: only presserl reaches it.
+# Presserl reference deployment: the Presserl image, PostgreSQL, RustFS (S3-compatible store for
+# uploaded images) and LanguageTool (German spell check) - nothing else. Keycloak and the
+# TLS-terminating reverse proxy are provided by the operator (see INSTALL.md). RustFS and
+# LanguageTool publish no port: only presserl reaches them. presserl does not wait for LanguageTool;
+# until it is up, spell checks answer 503 and everything else works.
 name: presserl
 
 services:
@@ -58,6 +60,20 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  languagetool:
+    image: erikvl87/languagetool:6.8
+    restart: unless-stopped
+    environment:
+      # Heap of the checker; the container takes about 1 GB RAM (see INSTALL.md)
+      Java_Xms: 256m
+      Java_Xmx: 768m
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8010/v2/languages"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
 
 volumes:
   presserl-db:

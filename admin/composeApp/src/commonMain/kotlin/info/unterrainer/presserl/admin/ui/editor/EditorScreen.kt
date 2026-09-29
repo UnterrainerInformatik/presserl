@@ -49,16 +49,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.ui.material3.OutlinedRichTextEditor
+import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.ArticleDto
 import info.unterrainer.presserl.admin.api.ReviewDto
 import info.unterrainer.presserl.admin.api.SectionDto
 import info.unterrainer.presserl.admin.api.SectionRefDto
 import info.unterrainer.presserl.admin.article.Run
+import info.unterrainer.presserl.admin.article.replaceInRuns
 import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.action_failed
 import info.unterrainer.presserl.admin.resources.add_block
@@ -142,6 +146,14 @@ import info.unterrainer.presserl.admin.ui.media.Thumbnails
 import info.unterrainer.presserl.admin.ui.media.formatMaxSize
 import info.unterrainer.presserl.admin.ui.media.pickImageFile
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
+import info.unterrainer.presserl.admin.ui.spell.CheckField
+import info.unterrainer.presserl.admin.ui.spell.SpellChecker
+import info.unterrainer.presserl.admin.ui.spell.SpellCheckedTextField
+import info.unterrainer.presserl.admin.ui.spell.SpellNotice
+import info.unterrainer.presserl.admin.ui.spell.SpellSuggestionRow
+import info.unterrainer.presserl.admin.ui.spell.findingAt
+import info.unterrainer.presserl.admin.ui.spell.spellChecker
+import info.unterrainer.presserl.admin.ui.spell.spellMarksOverlay
 import info.unterrainer.presserl.admin.ui.statusText
 import info.unterrainer.presserl.admin.ui.waitingText
 import kotlinx.coroutines.CancellationException
@@ -163,6 +175,7 @@ fun EditorScreen(
     onBack: () -> Unit,
     onRevisions: () -> Unit,
     maxUploadSize: String? = null,
+    spellCheck: Boolean = false,
 ) {
     // A new load (after a conflict) starts with fresh editor state
     var loads by remember { mutableStateOf(0) }
@@ -177,7 +190,7 @@ fun EditorScreen(
                 LoadFailed(error!!, onReload = { loads++ })
             }
             loaded == null -> Text(stringResource(Res.string.loading))
-            else -> Editor(api, loaded, readerUrl, maxUploadSize, onBack, onRevisions, onReload = { loads++ })
+            else -> Editor(api, loaded, readerUrl, maxUploadSize, spellCheck, onBack, onRevisions, onReload = { loads++ })
         }
     }
 }
@@ -188,6 +201,7 @@ private fun Editor(
     loaded: ArticleDto,
     readerUrl: (Long) -> String,
     maxUploadSize: String?,
+    spellCheck: Boolean,
     onBack: () -> Unit,
     onRevisions: () -> Unit,
     onReload: () -> Unit,
@@ -209,6 +223,8 @@ private fun Editor(
         )
     }
     val thumbnails = remember { Thumbnails { api.mediaRendition(it, "thumbnail") } }
+    // Only the editable fields ask; a read-only article composes none
+    val checker = remember { spellChecker(scope, spellCheck, api) }
     val actions = actionsFor(article.allowedActions)
     // Loaded once for the chooser; without them the chooser shows the current section only
     var sections by remember { mutableStateOf<List<SectionDto>?>(null) }
@@ -344,7 +360,8 @@ private fun Editor(
                 val leadImage = LeadImageSlot(thumbnails, maxUploadSize, onChoose = {
                     scope.launch { pickImageFile()?.let { model.uploadLeadImage(it, api::uploadMedia) } }
                 })
-                EditableArticle(model, errors, leadImage, help, enabled = saveState != SaveState.Conflict)
+                SpellNotice(checker)
+                EditableArticle(model, errors, leadImage, help, checker, enabled = saveState != SaveState.Conflict)
             } else {
                 article.section?.let { SectionLabel(it.name, it.color) }
                 ArticleView(model.draft, thumbnails)
@@ -387,20 +404,26 @@ private fun Editor(
         )
     }
     rejectNote?.let { note ->
+        val noteChecker = remember { spellChecker(scope, spellCheck, api) }
         AlertDialog(
             onDismissRequest = { if (!busy) rejectNote = null },
             title = { Text(stringResource(Res.string.reject_title)) },
             text = {
-                OutlinedTextField(
-                    value = note,
-                    onValueChange = { rejectNote = limitNote(it); rejectError = null },
-                    label = { Text(stringResource(Res.string.reject_hint)) },
-                    isError = rejectError != null,
-                    supportingText = rejectError?.let { { Text(it) } },
-                    minLines = 3,
-                    maxLines = 8,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    SpellCheckedTextField(
+                        value = note,
+                        onChange = { rejectNote = limitNote(it); rejectError = null },
+                        checker = noteChecker,
+                        key = "rejectNote",
+                        label = { Text(stringResource(Res.string.reject_hint)) },
+                        isError = rejectError != null,
+                        supportingText = rejectError?.let { { Text(it) } },
+                        minLines = 3,
+                        maxLines = 8,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    SpellNotice(noteChecker)
+                }
             },
             confirmButton = {
                 Button(onClick = { reject(note) }, enabled = !busy && canConfirmReject(note)) {
@@ -587,18 +610,28 @@ private fun SectionChooser(model: EditorModel, current: SectionRefDto?, sections
 private class LeadImageSlot(val thumbnails: Thumbnails, val maxUploadSize: String?, val onChoose: () -> Unit)
 
 @Composable
-private fun EditableArticle(model: EditorModel, errors: FieldErrors, leadImage: LeadImageSlot, help: FieldHelpState, enabled: Boolean) {
+private fun EditableArticle(
+    model: EditorModel,
+    errors: FieldErrors,
+    leadImage: LeadImageSlot,
+    help: FieldHelpState,
+    checker: SpellChecker,
+    enabled: Boolean,
+) {
     HeaderField.entries.forEach { field ->
         // The reader's order: the lead image follows the headline block
-        if (field == HeaderField.LEAD) LeadImageField(model, leadImage, errors.leadImage, help, enabled)
+        if (field == HeaderField.LEAD) LeadImageField(model, leadImage, errors.leadImage, help, checker, enabled)
         val value = model.draft[field]
         val error = errors.header[field]
-        OutlinedTextField(
+        SpellCheckedTextField(
             value = value,
-            onValueChange = { changed ->
+            onChange = { changed ->
                 // Enter adds nothing; pasted line breaks become spaces in the model
                 if (changed.filterNot { it == '\n' || it == '\r' } != value) model.dispatch(EditorIntent.EditHeader(field, changed))
             },
+            onReplace = { model.dispatch(EditorIntent.EditHeader(field, it, ownStep = true)) },
+            checker = checker,
+            key = field.name.lowercase(),
             label = { Text(stringResource(HEADER_LABELS.getValue(field))) },
             trailingIcon = { FieldHelp(field.helpPart, help) },
             singleLine = field != HeaderField.LEAD,
@@ -616,7 +649,7 @@ private fun EditableArticle(model: EditorModel, errors: FieldErrors, leadImage: 
     val blocks = model.draft.blocks
     blocks.forEachIndexed { index, block ->
         key(block.id) {
-            BlockCard(model, block, first = index == 0, last = index == blocks.lastIndex, error = errors.blocks[index], help, enabled)
+            BlockCard(model, block, first = index == 0, last = index == blocks.lastIndex, error = errors.blocks[index], help, checker, enabled)
             AddBlockButton(afterId = block.id, model, enabled)
         }
     }
@@ -628,7 +661,7 @@ private fun EditableArticle(model: EditorModel, errors: FieldErrors, leadImage: 
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun LeadImageField(model: EditorModel, slot: LeadImageSlot, error: String?, help: FieldHelpState, enabled: Boolean) {
+private fun LeadImageField(model: EditorModel, slot: LeadImageSlot, error: String?, help: FieldHelpState, checker: SpellChecker, enabled: Boolean) {
     val image = model.draft.leadImage
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -637,11 +670,14 @@ private fun LeadImageField(model: EditorModel, slot: LeadImageSlot, error: Strin
         }
         if (image != null) {
             LeadImagePreview(image, slot.thumbnails)
-            OutlinedTextField(
+            SpellCheckedTextField(
                 value = image.caption,
-                onValueChange = { changed ->
+                onChange = { changed ->
                     if (changed.filterNot { it == '\n' || it == '\r' } != image.caption) model.dispatch(EditorIntent.EditCaption(changed))
                 },
+                onReplace = { model.dispatch(EditorIntent.EditCaption(it, ownStep = true)) },
+                checker = checker,
+                key = "caption",
                 label = { Text(stringResource(Res.string.field_caption)) },
                 trailingIcon = { FieldHelp(HelpPart.CAPTION, help) },
                 singleLine = true,
@@ -715,7 +751,16 @@ private data class BoldTarget(val itemId: Long?, val state: RichTextState)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun BlockCard(model: EditorModel, block: EditorBlock, first: Boolean, last: Boolean, error: String?, help: FieldHelpState, enabled: Boolean) {
+private fun BlockCard(
+    model: EditorModel,
+    block: EditorBlock,
+    first: Boolean,
+    last: Boolean,
+    error: String?,
+    help: FieldHelpState,
+    checker: SpellChecker,
+    enabled: Boolean,
+) {
     var boldTarget by remember { mutableStateOf<BoldTarget?>(null) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -750,11 +795,14 @@ private fun BlockCard(model: EditorModel, block: EditorBlock, first: Boolean, la
                 }
             }
             when (block) {
-                is EditorBlock.Subhead -> OutlinedTextField(
+                is EditorBlock.Subhead -> SpellCheckedTextField(
                     value = block.text,
-                    onValueChange = { changed ->
+                    onChange = { changed ->
                         if (changed.filterNot { it == '\n' || it == '\r' } != block.text) model.dispatch(EditorIntent.EditSubhead(block.id, changed))
                     },
+                    onReplace = { model.dispatch(EditorIntent.EditSubhead(block.id, it, ownStep = true)) },
+                    checker = checker,
+                    key = "block:${block.id}",
                     singleLine = true,
                     isError = error != null,
                     enabled = enabled,
@@ -762,7 +810,7 @@ private fun BlockCard(model: EditorModel, block: EditorBlock, first: Boolean, la
                     modifier = Modifier.fillMaxWidth(),
                 )
                 is EditorBlock.Paragraph, is EditorBlock.Quote -> RichRunsField(
-                    model, block.id, itemId = null, enabled, isError = error != null,
+                    model, block.id, itemId = null, checker, enabled, isError = error != null,
                     onFocus = { boldTarget = BoldTarget(null, it) },
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -772,7 +820,7 @@ private fun BlockCard(model: EditorModel, block: EditorBlock, first: Boolean, la
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("•", Modifier.width(20.dp), style = MaterialTheme.typography.bodyLarge)
                                 RichRunsField(
-                                    model, block.id, item.id, enabled, isError = error != null,
+                                    model, block.id, item.id, checker, enabled, isError = error != null,
                                     onFocus = { boldTarget = BoldTarget(item.id, it) },
                                     label = Res.string.list_item to index + 1,
                                     modifier = Modifier.weight(1f),
@@ -803,6 +851,7 @@ private fun RichRunsField(
     model: EditorModel,
     blockId: Long,
     itemId: Long?,
+    checker: SpellChecker,
     enabled: Boolean,
     isError: Boolean,
     onFocus: (RichTextState) -> Unit,
@@ -823,15 +872,45 @@ private fun RichRunsField(
             if (runs != current()) model.dispatch(EditorIntent.EditRuns(blockId, itemId, runs))
         }
     }
-    OutlinedRichTextEditor(
-        state = state,
-        enabled = enabled,
-        isError = isError,
-        label = label?.let { (resource, number) -> { Text(stringResource(resource, number)) } },
-        minLines = if (itemId == null) 3 else 1,
-        textStyle = MaterialTheme.typography.bodyLarge,
-        modifier = modifier.onFocusChanged { if (it.isFocused) onFocus(state) },
-    )
+    val text = current().joinToString("") { it.text }
+    val key = if (itemId == null) "block:$blockId" else "item:$itemId"
+    CheckField(checker, key, text)
+    val findings = if (enabled) checker.findings(key, text) else emptyList()
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var focused by remember { mutableStateOf(false) }
+    val padding = RichTextEditorDefaults.outlinedRichTextEditorPadding()
+    Column(modifier.onFocusChanged { focused = it.hasFocus }, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        OutlinedRichTextEditor(
+            state = state,
+            enabled = enabled,
+            isError = isError,
+            label = label?.let { (resource, number) -> { Text(stringResource(resource, number)) } },
+            minLines = if (itemId == null) 3 else 1,
+            textStyle = MaterialTheme.typography.bodyLarge,
+            onTextLayout = { layout = it },
+            contentPadding = padding,
+            modifier = Modifier.fillMaxWidth()
+                .spellMarksOverlay(
+                    findings, text, { layout }, MaterialTheme.colorScheme.error,
+                    originX = padding.calculateLeftPadding(LayoutDirection.Ltr),
+                    // The outlined editor moves down by 8 dp to make room for a label
+                    originY = padding.calculateTopPadding() + if (label != null) 8.dp else 0.dp,
+                )
+                .onFocusChanged { if (it.isFocused) onFocus(state) },
+        )
+        val finding = if (focused) findingAt(findings, state.selection) else null
+        if (finding != null) {
+            SpellSuggestionRow(
+                finding,
+                onReplace = { replacement ->
+                    val runs = replaceInRuns(current(), finding.start, finding.end, replacement)
+                    state.load(runs, caret = finding.start + replacement.length)
+                    model.dispatch(EditorIntent.EditRuns(blockId, itemId, runs, ownStep = true))
+                },
+                onIgnore = { checker.ignore(finding.word) },
+            )
+        }
+    }
 }
 
 private fun Draft.runsOf(blockId: Long, itemId: Long?): List<Run> = when (val block = blocks.firstOrNull { it.id == blockId }) {

@@ -18,9 +18,26 @@ data class NewspaperDto(
     val overrides: JsonObject = JsonObject(emptyMap()),
 )
 
-/** `GET /api/client-config` */
+/** `GET /api/client-config`; [spellCheck] is `false` on older servers that do not send it. */
 @Serializable
-data class ClientConfigDto(val oidc: OidcDto)
+data class ClientConfigDto(val oidc: OidcDto, val spellCheck: Boolean = false)
+
+/** Body of `POST /api/spell-check`. */
+@Serializable
+data class SpellCheckRequestDto(val text: String)
+
+/** Response of `POST /api/spell-check`: the findings in text order. */
+@Serializable
+data class SpellCheckResponseDto(val matches: List<SpellMatchDto>)
+
+/** One finding; [offset] and [length] are UTF-16 code units of the checked text, like Kotlin string indices. */
+@Serializable
+data class SpellMatchDto(
+    val offset: Int,
+    val length: Int,
+    val message: String,
+    val replacements: List<String> = emptyList(),
+)
 
 @Serializable
 data class OidcDto(

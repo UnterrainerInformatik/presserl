@@ -282,4 +282,8 @@
     <string name="media_discard_text">Your crop and pixelated areas are not saved yet.</string>
     <string name="media_discard">Discard</string>
     <string name="cancel_edit">Keep editing</string>
+    <string name="spell_unavailable">Spell check is currently unavailable</string>
+    <string name="spell_ignore">Ignore</string>
+    <string name="spell_ignore_label">Stop marking “%1$s” as a mistake</string>
+    <string name="spell_replace_label">Replace “%1$s” with “%2$s”</string>
 </resources>

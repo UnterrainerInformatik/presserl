@@ -16,6 +16,12 @@ Verified 2026-09-26 on Gerald's machine (JDK 21, Docker running) unless marked o
   in `presserl-dev.rustfs.port`, from which `%dev,test.presserl.media.s3.endpoint` is built.
   Credentials `presserl-dev` / `presserl-dev-secret`, bucket `presserl-media` created by the backend.
   Needs `docker compose` (v2) on the PATH; stopped together with dev mode / the tests.
+- **LanguageTool in dev (verified 2026-09-29):** `quarkus:dev` starts `erikvl87/languagetool:6.8`
+  from `backend/compose-devservices.yml` (compose profile `spell-check`, `%dev` only); `@QuarkusTest`
+  runs do not start it and use `LanguageToolStub` (a global test resource) instead. The first checks
+  after a cold start take longer than the 5 s timeout and answer `503`. `docker stop`/`start` of the
+  dev container gives it a new host port the running backend does not know — simulate an outage
+  with `docker pause`/`unpause` instead, or restart dev mode.
 - **Backend tests:** `cd backend && ./mvnw verify` (needs Docker for Dev Services). Single class:
   `./mvnw test -Dtest=AdminDeliveryTest`. Surefire XML in `target/surefire-reports/` — check the
   file timestamp; stale reports from earlier runs stay there. `@QuarkusTest` binds port 8081 —

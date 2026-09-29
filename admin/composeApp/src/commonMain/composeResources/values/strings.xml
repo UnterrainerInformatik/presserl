@@ -282,4 +282,8 @@
     <string name="media_discard_text">Dein Zuschnitt und deine verpixelten Flächen sind noch nicht gespeichert.</string>
     <string name="media_discard">Verwerfen</string>
     <string name="cancel_edit">Weiter bearbeiten</string>
+    <string name="spell_unavailable">Rechtschreibprüfung gerade nicht verfügbar</string>
+    <string name="spell_ignore">Ignorieren</string>
+    <string name="spell_ignore_label">„%1$s“ nicht mehr als Fehler markieren</string>
+    <string name="spell_replace_label">„%1$s“ durch „%2$s“ ersetzen</string>
 </resources>

@@ -1,8 +1,9 @@
 # Installing Presserl
 
-Presserl runs as three containers under docker compose: `presserl` (API, reader and admin app in
-one image), `postgres` and `rustfs` (an S3-compatible object store for uploaded images, reachable
-only by `presserl`). You provide the rest:
+Presserl runs as four containers under docker compose: `presserl` (API, reader and admin app in
+one image), `postgres`, `rustfs` (an S3-compatible object store for uploaded images) and
+`languagetool` (the German spell checker of the admin app); `rustfs` and `languagetool` are
+reachable only by `presserl`. You provide the rest:
 
 - **Keycloak** for logins — Presserl gets its own realm in your existing Keycloak.
 - **A TLS-terminating reverse proxy** (Traefik, Caddy, …) in front of `presserl`.
@@ -10,6 +11,8 @@ only by `presserl`). You provide the rest:
 ## 1. Prerequisites
 
 - Docker with the compose plugin (`docker compose version`).
+- About 2 GB RAM for the whole stack; the spell checker alone takes about 1 GB (see
+  [Spell check](#spell-check) to switch it off on smaller hosts).
 - A running Keycloak (version 26 or newer) you can administer, reachable over HTTPS.
 - A reverse proxy that terminates TLS, e.g. Traefik with a certificate resolver.
 - A DNS name for Presserl pointing to the proxy, e.g. `news.example.org`. In this guide it
@@ -94,7 +97,8 @@ docker compose up -d
 docker compose ps
 ```
 
-`postgres` and `rustfs` become healthy within seconds. `presserl` becomes healthy once the
+`postgres` and `rustfs` become healthy within seconds, `languagetool` within about a minute;
+`presserl` does not wait for it. `presserl` becomes healthy once the
 database is migrated, the first publisher exists in Keycloak and the media bucket is reachable
 (`presserl` creates it on its first start). Check without the proxy:
 
@@ -204,6 +208,30 @@ Own fonts go into `theme/fonts/`, images anywhere in `theme/`; reference them re
 The default text size of the reader (S/M/L/XL) is set by a publisher or editor-in-chief in the
 admin app under **Newspaper**; every reader can still choose their own size on the page.
 
+### Spell check
+
+While writing, the admin app marks German spelling, grammar and punctuation mistakes and suggests
+corrections. The texts go from `presserl` to the bundled `languagetool` service
+([LanguageTool](https://languagetool.org), image `erikvl87/languagetool`) and never leave the
+installation; `languagetool` publishes no port and opens no outbound connection. Findings never
+block saving, submitting or publishing, and while `languagetool` is starting or down the admin
+app shows a short notice and everything else works as usual.
+
+- **Language:** `PRESSERL_SPELL_CHECK_LANGUAGE` in `.env`, a LanguageTool code: `de-DE` (default),
+  `de-AT` (accepts *Jänner*, *heuer*) or `de-CH`.
+- **Memory:** the service is limited to a 768 MB heap and takes about 1 GB RAM in total.
+- **Switching it off** (e.g. on hosts with less than 2 GB RAM): set
+  `PRESSERL_SPELL_CHECK_ENABLED=false` in `.env`, so the admin app no longer checks, and keep the
+  service from starting with a `compose.override.yaml`:
+
+  ```yaml
+  services:
+    languagetool:
+      profiles: [disabled]
+  ```
+
+  Then `docker compose up -d --remove-orphans`.
+
 ## 7. Updating
 
 Set the new version in `.env` (`PRESSERL_IMAGE=gufalcon/presserl:<tag>`), then:
@@ -221,6 +249,10 @@ not `docker compose down -v`).
 service. Before pulling the new image, copy the new `compose.yaml` over the old one and add
 `PRESSERL_MEDIA_S3_ACCESS_KEY` and `PRESSERL_MEDIA_S3_SECRET_KEY` to `.env` (see step 3).
 Without them `docker compose` refuses to start, naming the missing variable.
+
+**Updating from a version without spell check:** copy the new `compose.yaml` over the old one
+before `docker compose up -d`, so the `languagetool` service starts; without it the spell check
+answers "currently unavailable" and nothing else is affected.
 
 **Updating from a version without issues:** the update creates issue 1, not yet live, holding
 every article published so far (nothing changes for readers). Open *Issues* in the admin app
@@ -285,4 +317,5 @@ Backups of the images are then a matter of that store.
 | `presserl` exits at start naming a variable | A mandatory variable in `.env` is missing or empty, or an optional one has an invalid value; the message lists the allowed values. |
 | Admin app loads but API calls answer **401** | `PRESSERL_OIDC_ISSUER` differs from the issuer in the tokens (check scheme, host and realm name), or the realm was changed so `presserl-admin` tokens no longer carry the `presserl-backend` audience. |
 | Admin app stays blank; the browser console shows **WebAssembly … unsupported MIME type 'text/html'** or a `.wasm` request answers **404** | A stale cached `composeApp.js` from the previous version references `.wasm` files the new image no longer contains. Hard-reload the page (Ctrl+Shift+R); if a CDN or caching proxy is in front, purge its cache for `/admin/*` (see step 7). |
+| The admin app says **Spell check is currently unavailable** | `presserl` cannot reach `languagetool`: it is still starting (about a minute), stopped, or missing from an old `compose.yaml` (step 7). Check `docker compose ps languagetool` and `docker compose logs languagetool`. Marking resumes by itself once it answers. |
 | Uploading an image answers **413** | The file is larger than `PRESSERL_MEDIA_MAX_SIZE` (default `10M`, at most `60M`). A reverse proxy may have a smaller body limit of its own (e.g. nginx `client_max_body_size`). |

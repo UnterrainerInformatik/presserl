@@ -74,6 +74,8 @@ import info.unterrainer.presserl.admin.ui.section.SectionFormScreen
 import info.unterrainer.presserl.admin.ui.section.SectionListScreen
 import info.unterrainer.presserl.admin.ui.section.SectionMembersScreen
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import org.jetbrains.compose.resources.stringResource
@@ -81,7 +83,8 @@ import org.jetbrains.compose.resources.stringResource
 sealed interface Screen {
     data object Loading : Screen
     data class LoginFailed(val reason: String) : Screen
-    data class LoggedIn(val newspaper: NewspaperDto, val me: MeDto) : Screen {
+    /** [spellCheck]: the installation offers the spell check (`GET /api/client-config`). */
+    data class LoggedIn(val newspaper: NewspaperDto, val me: MeDto, val spellCheck: Boolean = false) : Screen {
         val navEntries: List<NavEntry> get() = navEntries(me.allowedActions)
 
         /** Without it the article list is replaced by a notice. */
@@ -126,7 +129,11 @@ fun App(auth: AuthClient, api: ApiClient, siteUrl: String, slipPrinter: SlipPrin
             when (val state = auth.start()) {
                 AuthState.Redirecting -> Screen.Loading
                 is AuthState.LoginFailed -> Screen.LoginFailed(state.reason)
-                AuthState.LoggedIn -> Screen.LoggedIn(api.newspaper(), api.me())
+                AuthState.LoggedIn -> coroutineScope {
+                    // Without the configuration the app works as before, only unchecked
+                    val spellCheck = async { attempt({}) { api.clientConfig().spellCheck } ?: false }
+                    Screen.LoggedIn(api.newspaper(), api.me(), spellCheck.await())
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -220,6 +227,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                             route.articleId,
                             readerUrl = { "$siteUrl/articles/$it" },
                             maxUploadSize = screen.newspaper.settings[MAX_UPLOAD_SIZE]?.jsonPrimitive?.contentOrNull,
+                            spellCheck = screen.spellCheck,
                             onBack = back,
                             onRevisions = { push(Route.Revisions(route.articleId)) },
                         )
@@ -233,7 +241,14 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                         onOpen = { push(Route.SectionMembers(it)) },
                     )
                     is Route.SectionForm -> key(route) {
-                        SectionFormScreen(api, route.section, route.defaultColor, onBack = back, onSaved = { stack = listOf(Route.Sections) })
+                        SectionFormScreen(
+                            api,
+                            route.section,
+                            route.defaultColor,
+                            spellCheck = screen.spellCheck,
+                            onBack = back,
+                            onSaved = { stack = listOf(Route.Sections) },
+                        )
                     }
                     is Route.SectionMembers -> key(route) { SectionMembersScreen(api, route.section, onBack = back) }
                     Route.Issues -> IssueListScreen(api, onOpen = { push(Route.IssueDetail(it)) })

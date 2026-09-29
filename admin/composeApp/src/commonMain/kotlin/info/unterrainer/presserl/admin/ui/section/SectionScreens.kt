@@ -1,5 +1,8 @@
 package info.unterrainer.presserl.admin.ui.section
 
+import info.unterrainer.presserl.admin.ui.spell.SpellCheckedTextField
+import info.unterrainer.presserl.admin.ui.spell.SpellNotice
+import info.unterrainer.presserl.admin.ui.spell.spellChecker
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,7 +27,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -221,8 +223,16 @@ private fun SectionRow(
 
 /** "New section" ([section] `null`) or "Edit"; [onSaved] follows a successful save. */
 @Composable
-fun SectionFormScreen(api: ApiClient, section: SectionDto?, defaultColor: String, onBack: () -> Unit, onSaved: () -> Unit) {
+fun SectionFormScreen(
+    api: ApiClient,
+    section: SectionDto?,
+    defaultColor: String,
+    onBack: () -> Unit,
+    onSaved: () -> Unit,
+    spellCheck: Boolean = false,
+) {
     val scope = rememberCoroutineScope()
+    val checker = remember { spellChecker(scope, spellCheck, api) }
     val model = remember(section) {
         SectionFormModel(scope, section, defaultColor) { request ->
             if (section == null) api.createSection(request) else api.updateSection(section.id, request)
@@ -238,15 +248,18 @@ fun SectionFormScreen(api: ApiClient, section: SectionDto?, defaultColor: String
         )
         state.general?.let { Banner(it) }
         val nameError = state.errors[SectionField.NAME]
-        OutlinedTextField(
+        SpellCheckedTextField(
             value = state.name,
-            onValueChange = { changed -> model.name(changed.filterNot { it == '\n' || it == '\r' }) },
+            onChange = { changed -> model.name(changed.filterNot { it == '\n' || it == '\r' }) },
+            checker = checker,
+            key = "sectionName",
             label = { Text(stringResource(Res.string.field_section_name)) },
             singleLine = true,
             isError = nameError != null,
             supportingText = nameError?.let { { Text(it) } },
             modifier = Modifier.fillMaxWidth(),
         )
+        SpellNotice(checker)
         Text(stringResource(Res.string.field_color), style = MaterialTheme.typography.titleSmall)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SECTION_COLORS.forEach { color -> Swatch(color, selected = color == state.color, onClick = { model.color(color) }) }

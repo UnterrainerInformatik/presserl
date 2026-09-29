@@ -1,6 +1,8 @@
 # Compose Dev Services: started by Quarkus in dev and test next to the PostgreSQL and Keycloak
 # Dev Services. RustFS is the S3-compatible media store; its mapped host port becomes
 # presserl-dev.rustfs.port, from which application.properties builds the endpoint.
+# LanguageTool (spell check) sits in the compose profile spell-check, which only %dev activates:
+# tests use a stub instead of a 450 MB container with a 20 s start.
 services:
   rustfs:
     image: rustfs/rustfs:1.0.0
@@ -17,3 +19,18 @@ services:
       retries: 30
     labels:
       io.quarkus.devservices.compose.config_map.port.9000: presserl-dev.rustfs.port
+  languagetool:
+    image: erikvl87/languagetool:6.8
+    profiles: ['spell-check']
+    ports:
+      - '8010'
+    environment:
+      Java_Xms: 256m
+      Java_Xmx: 768m
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8010/v2/languages']
+      interval: 2s
+      timeout: 2s
+      retries: 60
+    labels:
+      io.quarkus.devservices.compose.config_map.port.8010: presserl-dev.languagetool.port

@@ -9,4 +9,7 @@ Accept: application/json
         client.assert(response.body.oidc.clientId === "presserl-admin", "clientId");
         client.assert(response.body.oidc.scopes.includes("openid"), "scopes");
     });
+    client.test("spell check offered by default", () => {
+        client.assert(response.body.spellCheck === true, "spellCheck " + response.body.spellCheck);
+    });
 %}

@@ -156,16 +156,17 @@ private fun draftOf(kicker: String, headline: String, subheadline: String, lead:
 sealed interface EditorIntent {
     /** Moves the article to another section; its own undo step. */
     data class ChooseSection(val sectionId: Long) : EditorIntent
-    data class EditHeader(val field: HeaderField, val value: String) : EditorIntent
+    /** [ownStep]: a chosen spell-check suggestion, recorded as its own undo step instead of joining the typing. */
+    data class EditHeader(val field: HeaderField, val value: String, val ownStep: Boolean = false) : EditorIntent
 
     /** Sets (or replaces) the lead image; a replaced image's caption is kept. Its own undo step. */
     data class SetLeadImage(val mediaId: Long, val width: Int, val height: Int) : EditorIntent
-    data class EditCaption(val value: String) : EditorIntent
+    data class EditCaption(val value: String, val ownStep: Boolean = false) : EditorIntent
     data object RemoveLeadImage : EditorIntent
-    data class EditSubhead(val blockId: Long, val text: String) : EditorIntent
+    data class EditSubhead(val blockId: Long, val text: String, val ownStep: Boolean = false) : EditorIntent
 
     /** Typed text of a paragraph or quote ([itemId] `null`) or of a list item. */
-    data class EditRuns(val blockId: Long, val itemId: Long?, val runs: List<Run>) : EditorIntent
+    data class EditRuns(val blockId: Long, val itemId: Long?, val runs: List<Run>, val ownStep: Boolean = false) : EditorIntent
 
     /** Like [EditRuns], but recorded as its own undo step: the result of toggling bold. */
     data class ToggleBold(val blockId: Long, val itemId: Long?, val runs: List<Run>) : EditorIntent
@@ -228,14 +229,14 @@ class EditorModel(
             )
             is EditorIntent.EditCaption -> {
                 val image = draft.leadImage ?: return
-                change(draft.copy(leadImage = image.copy(caption = singleLine(intent.value, CAPTION_MAX))), typing = CAPTION_KEY)
+                change(draft.copy(leadImage = image.copy(caption = singleLine(intent.value, CAPTION_MAX))), typing = CAPTION_KEY.unless(intent.ownStep))
             }
             EditorIntent.RemoveLeadImage -> change(draft.copy(leadImage = null))
             is EditorIntent.EditHeader ->
-                change(draft.with(intent.field, singleLine(intent.value, intent.field.maxLength)), typing = intent.field)
+                change(draft.with(intent.field, singleLine(intent.value, intent.field.maxLength)), typing = intent.field.unless(intent.ownStep))
             is EditorIntent.EditSubhead ->
-                change(draft.mapBlock(intent.blockId) { (it as? EditorBlock.Subhead)?.copy(text = singleLine(intent.text, Int.MAX_VALUE)) ?: it }, typing = intent.blockId)
-            is EditorIntent.EditRuns -> change(draft.withRuns(intent.blockId, intent.itemId, intent.runs), typing = intent.blockId to intent.itemId)
+                change(draft.mapBlock(intent.blockId) { (it as? EditorBlock.Subhead)?.copy(text = singleLine(intent.text, Int.MAX_VALUE)) ?: it }, typing = intent.blockId.unless(intent.ownStep))
+            is EditorIntent.EditRuns -> change(draft.withRuns(intent.blockId, intent.itemId, intent.runs), typing = (intent.blockId to intent.itemId).unless(intent.ownStep))
             is EditorIntent.ToggleBold -> change(draft.withRuns(intent.blockId, intent.itemId, intent.runs))
             is EditorIntent.AddBlock -> {
                 val at = if (intent.afterId == null) 0 else draft.indexOf(intent.afterId) + 1
@@ -333,6 +334,9 @@ class EditorModel(
         BlockType.LIST -> EditorBlock.BulletList(ids.next(), listOf(ListItem(ids.next(), emptyList())))
     }
 }
+
+/** No typing key for an edit that is its own undo step. */
+private fun Any.unless(ownStep: Boolean): Any? = if (ownStep) null else this
 
 private fun Draft.indexOf(blockId: Long): Int = blocks.indexOfFirst { it.id == blockId }
 

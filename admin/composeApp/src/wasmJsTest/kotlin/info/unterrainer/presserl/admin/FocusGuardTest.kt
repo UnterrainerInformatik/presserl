@@ -28,17 +28,32 @@ private fun composeLikeContainer(): Element = js(
 })()""",
 )
 
-/** Removes the focused input, as Compose does when focus moves from a text field to a button. */
+/**
+ * Removes the focused input, as Compose does when focus moves from a text field to a button, and waits until the
+ * canvas holds focus (polling up to a deadline). Chrome fires `focusout` for a removed focused element only while the
+ * window has system focus; the headless test browser sometimes runs without it (`document.hasFocus()` is `false`,
+ * also in Karma's parent page), and then the event a user's browser would send is dispatched here instead.
+ */
 private fun removeInputAndCheckCanvasFocused(container: Element): Promise<JsAny?> = js(
     """new Promise((resolve, reject) => {
     const root = container.firstChild.shadowRoot;
     if (root.activeElement?.tagName !== 'INPUT') { reject(new Error('input not focused at start')); return; }
-    root.querySelector('input').remove();
-    setTimeout(() => {
-        const focused = root.activeElement?.tagName;
-        container.remove();
-        focused === 'CANVAS' ? resolve(null) : reject(new Error('focus is on ' + document.activeElement.tagName));
-    }, 20);
+    const input = root.querySelector('input');
+    if (!document.hasFocus()) input.dispatchEvent(new FocusEvent('focusout', { bubbles: true, composed: true }));
+    input.remove();
+    const deadline = performance.now() + 2000;
+    const check = () => {
+        if (root.activeElement?.tagName === 'CANVAS') {
+            container.remove();
+            resolve(null);
+        } else if (performance.now() > deadline) {
+            container.remove();
+            reject(new Error('focus is on ' + document.activeElement.tagName));
+        } else {
+            setTimeout(check, 10);
+        }
+    };
+    setTimeout(check, 0);
 })""",
 )
 

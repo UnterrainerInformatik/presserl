@@ -80,3 +80,27 @@ private fun String.takeCodePoints(max: Int): String {
     }
     return this
 }
+
+/**
+ * [runs] with the characters [start] until [end] replaced by [text]. The new text takes the mark of the first
+ * replaced character (of the character before it for an empty range), so a corrected bold word stays bold.
+ */
+fun replaceInRuns(runs: List<Run>, start: Int, end: Int, text: String): List<Run> {
+    val all = runs.joinToString("") { it.text }
+    val bold = BooleanArray(all.length)
+    var at = 0
+    runs.forEach { run ->
+        for (i in run.text.indices) bold[at + i] = run.bold
+        at += run.text.length
+    }
+    val newBold = bold.getOrNull(start) ?: bold.getOrNull(start - 1) ?: false
+    val annotated = buildAnnotatedString {
+        append(all.substring(0, start))
+        append(text)
+        append(all.substring(end))
+        for (i in 0 until start) if (bold[i]) addStyle(BOLD, i, i + 1)
+        if (newBold && text.isNotEmpty()) addStyle(BOLD, start, start + text.length)
+        for (i in end until all.length) if (bold[i]) addStyle(BOLD, i - end + start + text.length, i - end + start + text.length + 1)
+    }
+    return annotatedToRuns(annotated)
+}

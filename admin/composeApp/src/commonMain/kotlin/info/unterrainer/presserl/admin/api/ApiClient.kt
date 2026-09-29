@@ -2,7 +2,9 @@ package info.unterrainer.presserl.admin.api
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.timeout
 import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.forms.formData
@@ -18,6 +20,7 @@ import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
@@ -26,9 +29,13 @@ import kotlinx.serialization.json.JsonPrimitive
 
 val json = Json { ignoreUnknownKeys = true }
 
+/** The backend gives LanguageTool 5 s; a little more covers the way there and back. */
+private const val SPELL_CHECK_TIMEOUT_MILLIS = 8_000L
+
 fun HttpClient.withJson(): HttpClient = config {
     expectSuccess = true
     install(ContentNegotiation) { json(json) }
+    install(HttpTimeout)
 }
 
 /**
@@ -43,6 +50,24 @@ class ApiClient(
     private val http = http.withJson()
 
     suspend fun clientConfig(): ClientConfigDto = http.get("$baseUrl/api/client-config").body()
+
+    /**
+     * Checks [text] for spelling, grammar and punctuation mistakes; `null` when the check is unavailable (`503`, any
+     * other failed answer, network error or timeout), so callers never have to handle an exception.
+     */
+    suspend fun spellCheck(text: String): List<SpellMatchDto>? = try {
+        http.post("$baseUrl/api/spell-check") {
+            bearerAuth(accessToken())
+            contentType(ContentType.Application.Json)
+            setBody(SpellCheckRequestDto(text))
+            timeout { requestTimeoutMillis = SPELL_CHECK_TIMEOUT_MILLIS }
+        }.body<SpellCheckResponseDto>().matches
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Throwable) {
+        // Browser fetch failures surface as kotlin.Error, not Exception
+        null
+    }
 
     suspend fun newspaper(): NewspaperDto = http.get("$baseUrl/api/newspaper").body()
 

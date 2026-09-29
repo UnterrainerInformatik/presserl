@@ -88,7 +88,7 @@ Sets or clears newspaper overrides. Writable in this version: `reader.text-size`
 
 ## `GET /api/client-config`
 
-OIDC settings the admin app needs to start the login.
+OIDC settings the admin app needs to start the login, and whether the spell check is offered.
 
 - **Auth:** public
 - **Params / body:** none
@@ -99,10 +99,14 @@ OIDC settings the admin app needs to start the login.
       "issuer": "https://auth.unterrainer.info/realms/presserl",
       "clientId": "presserl-admin",
       "scopes": ["openid", "profile"]
-    }
+    },
+    "spellCheck": true
   }
   ```
   `issuer` is `PRESSERL_OIDC_ISSUER`, `clientId` is `PRESSERL_OIDC_ADMIN_CLIENT_ID`.
+  `spellCheck` is `PRESSERL_SPELL_CHECK_ENABLED` (default `true`), independent of whether
+  LanguageTool currently answers; when `false` the admin app sends no spell-check requests.
+  Clients treat a missing `spellCheck` (older servers) as `false`.
 - **Errors:** none specific.
 - **Side effects:** none.
 
@@ -1285,6 +1289,46 @@ editor's preview and the media view.
 - **Errors:** `403`, `404` unknown id, unknown kind or a rendition not produced yet (JSON error
   body, field `null`), `503` object store unreachable.
 - **Side effects:** none.
+
+---
+
+## `POST /api/spell-check`
+
+Checks a German text for spelling, casing, grammar, punctuation and typography mistakes. The
+backend forwards the text to LanguageTool inside the installation (`PRESSERL_SPELL_CHECK_URL`,
+language `PRESSERL_SPELL_CHECK_LANGUAGE`, default `de-DE`); style advice is filtered out. The
+admin app calls it about a second after the user stops typing in a prose field.
+
+- **Auth:** `WRITE_ARTICLES`
+- **Body:**
+  ```json
+  { "text": "Der Hund ist gros." }
+  ```
+  `text`: a string of at most 10,000 code points; other fields are ignored.
+- **Response `200`:**
+  ```json
+  {
+    "matches": [
+      { "offset": 13, "length": 4,
+        "message": "Möglicher Tippfehler gefunden.",
+        "replacements": ["groß", "Gros", "grob"] }
+    ]
+  }
+  ```
+  - `matches`: in text order; `[]` for a correct, empty or whitespace-only text (the latter two
+    without contacting LanguageTool).
+  - `offset`, `length`: UTF-16 code units of `text` (the unit of JavaScript and Kotlin strings; an
+    emoji counts two).
+  - `message`: LanguageTool's German explanation, shown as is.
+  - `replacements`: at most five suggestions, possibly `[]`.
+- **Errors:**
+  - `400` `{"errors": [{"field": "text", "message": "text must be a string of at most 10000 code points"}]}`
+    for a missing or non-string `text`, a body that is not an object, or a longer text.
+  - `401` (empty body) without a valid token; `403` (empty body) without `WRITE_ARTICLES`.
+  - `503` `{"errors": [{"field": null, "message": "the spell check is currently unavailable"}]}`
+    when the spell check is switched off (`PRESSERL_SPELL_CHECK_ENABLED=false`) or LanguageTool
+    does not answer within 5 s or answers with an error. Readiness does not depend on it.
+- **Side effects:** none; the text is not stored and not logged.
 
 ---
 

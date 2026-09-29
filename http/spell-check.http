@@ -1,0 +1,141 @@
+### Token for the publisher (a writer)
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{username}}&password={{password}}
+
+> {%
+    client.global.set("accessToken", response.body.access_token);
+%}
+
+### Token for a reader
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{readerUsername}}&password={{readerPassword}}
+
+> {%
+    client.global.set("readerToken", response.body.access_token);
+%}
+
+### Misspelled word (needs LanguageTool, e.g. from quarkus:dev)
+POST {{baseUrl}}/api/spell-check
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "text": "Der Hund ist gros." }
+
+> {%
+    client.test("200 with a finding on gros and groß suggested", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const m = response.body.matches.find(m => m.offset === 13 && m.length === 4);
+        client.assert(m !== undefined, "matches " + JSON.stringify(response.body.matches));
+        client.assert(m.replacements.includes("groß"), "replacements " + JSON.stringify(m.replacements));
+        client.assert(m.replacements.length <= 5, "at most five replacements");
+        client.assert(m.message.length > 0, "message");
+    });
+%}
+
+### Lower-case noun
+POST {{baseUrl}}/api/spell-check
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "text": "Wir haben einen hund." }
+
+> {%
+    client.test("200 with a finding on hund suggesting Hund", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const m = response.body.matches.find(m => m.offset === 16 && m.length === 4);
+        client.assert(m !== undefined && m.replacements.includes("Hund"), "matches " + JSON.stringify(response.body.matches));
+    });
+%}
+
+### Offsets after an emoji are UTF-16 code units
+POST {{baseUrl}}/api/spell-check
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "text": "😀 Der Hund ist gros." }
+
+> {%
+    client.test("the finding points at gros in a JavaScript string", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const text = "😀 Der Hund ist gros.";
+        const m = response.body.matches[0];
+        client.assert(m && text.substring(m.offset, m.offset + m.length) === "gros", "matches " + JSON.stringify(response.body.matches));
+    });
+%}
+
+### Correct text
+POST {{baseUrl}}/api/spell-check
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "text": "Heute scheint die Sonne." }
+
+> {%
+    client.test("200 without findings", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.matches.length === 0, "matches " + JSON.stringify(response.body.matches));
+    });
+%}
+
+### Blank text
+POST {{baseUrl}}/api/spell-check
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "text": "   " }
+
+> {%
+    client.test("200 without findings", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.matches.length === 0, "matches");
+    });
+%}
+
+### Missing text
+POST {{baseUrl}}/api/spell-check
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{}
+
+> {%
+    client.test("400 naming text", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "text", "errors " + JSON.stringify(response.body.errors));
+    });
+%}
+
+### Too long (10,001 code points)
+< {%
+    request.variables.set("longText", "a".repeat(10001));
+%}
+POST {{baseUrl}}/api/spell-check
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "text": "{{longText}}" }
+
+> {%
+    client.test("400 naming text", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "text", "errors " + JSON.stringify(response.body.errors));
+    });
+%}
+
+### A reader may not check
+POST {{baseUrl}}/api/spell-check
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{ "text": "Der Hund ist gros." }
+
+> {%
+    client.test("403 with an empty body", () => {
+        client.assert(response.status === 403, "status " + response.status);
+        client.assert(!response.body, "body " + response.body);
+    });
+%}
