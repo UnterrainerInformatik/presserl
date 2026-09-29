@@ -32,16 +32,32 @@ import info.unterrainer.presserl.admin.resources.newspaper_text_size
 import info.unterrainer.presserl.admin.resources.newspaper_text_size_effective
 import info.unterrainer.presserl.admin.resources.newspaper_text_size_hint
 import info.unterrainer.presserl.admin.resources.save_saving
+import info.unterrainer.presserl.admin.resources.spell_help_default
+import info.unterrainer.presserl.admin.resources.spell_help_effective
+import info.unterrainer.presserl.admin.resources.spell_help_hint
+import info.unterrainer.presserl.admin.resources.spell_help_marks
+import info.unterrainer.presserl.admin.resources.spell_help_marks_description
+import info.unterrainer.presserl.admin.resources.spell_help_messages
+import info.unterrainer.presserl.admin.resources.spell_help_messages_description
+import info.unterrainer.presserl.admin.resources.spell_help_publisher_only
+import info.unterrainer.presserl.admin.resources.spell_help_suggestions
+import info.unterrainer.presserl.admin.resources.spell_help_suggestions_description
+import info.unterrainer.presserl.admin.resources.spell_help_title
 import info.unterrainer.presserl.admin.resources.text_size_default
 import info.unterrainer.presserl.admin.resources.text_size_l
 import info.unterrainer.presserl.admin.resources.text_size_m
 import info.unterrainer.presserl.admin.resources.text_size_s
 import info.unterrainer.presserl.admin.resources.text_size_xl
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
-/** The newspaper settings: the default text size of the reader, saved on selection. */
+/**
+ * The newspaper settings, saved on selection: the default text size of the reader and, when the installation offers the
+ * spell check ([spellCheck]), the spell-check help, which only users with [mayConfigureSpellCheck]
+ * (`CONFIGURE_SPELL_CHECK`) change; everyone else sees it read-only.
+ */
 @Composable
-fun NewspaperScreen(api: ApiClient) {
+fun NewspaperScreen(api: ApiClient, spellCheck: Boolean, mayConfigureSpellCheck: Boolean) {
     val scope = rememberCoroutineScope()
     val model = remember { NewspaperSettingsModel(scope, load = api::newspaper, save = api::updateNewspaperSettings) }
     val state by model.state.collectAsState()
@@ -55,12 +71,12 @@ fun NewspaperScreen(api: ApiClient) {
             Text(stringResource(Res.string.loading))
         } else {
             Column(Modifier.selectableGroup()) {
-                TextSizeChoice(stringResource(Res.string.text_size_default), state.textSize == null, !state.saving) {
-                    model.textSize(null)
+                SettingChoice(stringResource(Res.string.text_size_default), null, state.textSize == null, !state.saving) {
+                    model.choose(READER_TEXT_SIZE, null)
                 }
                 for ((size, px) in TEXT_SIZES) {
-                    TextSizeChoice(stringResource(textSizeName(size), px), state.textSize == size, !state.saving) {
-                        model.textSize(size)
+                    SettingChoice(stringResource(textSizeName(size), px), null, state.textSize == size, !state.saving) {
+                        model.choose(READER_TEXT_SIZE, size)
                     }
                 }
             }
@@ -69,6 +85,7 @@ fun NewspaperScreen(api: ApiClient) {
                 val name = if (px == null) effective else stringResource(textSizeName(effective), px)
                 Text(stringResource(Res.string.newspaper_text_size_effective, name), style = MaterialTheme.typography.bodyMedium)
             }
+            if (spellCheck) SpellCheckHelpSection(state, mayConfigureSpellCheck) { model.choose(SPELL_CHECK_HELP, it) }
             if (state.saving) Text(stringResource(Res.string.save_saving), style = MaterialTheme.typography.bodySmall)
         }
         state.error?.let {
@@ -85,7 +102,36 @@ private fun textSizeName(size: String) = when (size) {
 }
 
 @Composable
-private fun TextSizeChoice(label: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+private fun SpellCheckHelpSection(state: NewspaperSettingsState, editable: Boolean, onChoose: (String?) -> Unit) {
+    val enabled = editable && !state.saving
+    Text(stringResource(Res.string.spell_help_title), style = MaterialTheme.typography.titleMedium)
+    Text(stringResource(Res.string.spell_help_hint), style = MaterialTheme.typography.bodyMedium)
+    Column(Modifier.selectableGroup()) {
+        SettingChoice(stringResource(Res.string.spell_help_default), null, state.spellCheckHelp == null, enabled) {
+            onChoose(null)
+        }
+        for (level in SPELL_CHECK_HELP_LEVELS) {
+            val (name, description) = spellCheckHelpTexts(level)
+            SettingChoice(stringResource(name), stringResource(description), state.spellCheckHelp == level, enabled) {
+                onChoose(level)
+            }
+        }
+    }
+    state.effectiveSpellCheckHelp?.let { effective ->
+        val name = if (effective in SPELL_CHECK_HELP_LEVELS) stringResource(spellCheckHelpTexts(effective).first) else effective
+        Text(stringResource(Res.string.spell_help_effective, name), style = MaterialTheme.typography.bodyMedium)
+    }
+    if (!editable) Text(stringResource(Res.string.spell_help_publisher_only), style = MaterialTheme.typography.bodyMedium)
+}
+
+private fun spellCheckHelpTexts(level: String): Pair<StringResource, StringResource> = when (level) {
+    "suggestions" -> Res.string.spell_help_suggestions to Res.string.spell_help_suggestions_description
+    "messages" -> Res.string.spell_help_messages to Res.string.spell_help_messages_description
+    else -> Res.string.spell_help_marks to Res.string.spell_help_marks_description
+}
+
+@Composable
+private fun SettingChoice(label: String, description: String?, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -96,6 +142,9 @@ private fun TextSizeChoice(label: String, selected: Boolean, enabled: Boolean, o
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         RadioButton(selected = selected, onClick = null, enabled = enabled)
-        Text(label)
+        Column(Modifier.padding(vertical = 4.dp)) {
+            Text(label)
+            if (description != null) Text(description, style = MaterialTheme.typography.bodySmall)
+        }
     }
 }

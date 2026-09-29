@@ -76,6 +76,13 @@ public record Newsroom(CurrentUser user, Map<Long, SectionRole> sectionRoles) {
     }
 
     /**
+     * Only publishers choose how much help the spell check gives ({@code spell-check.help}).
+     */
+    public boolean mayConfigureSpellCheck() {
+        return user.has(NewspaperRole.PUBLISHER);
+    }
+
+    /**
      * Administrators and every holder of a section role may use the article endpoints.
      */
     public boolean isWriter() {
@@ -120,6 +127,9 @@ public record Newsroom(CurrentUser user, Map<Long, SectionRole> sectionRoles) {
         }
         if (mayConfigureNewspaper()) {
             actions.add(NewspaperAction.CONFIGURE_NEWSPAPER);
+        }
+        if (mayConfigureSpellCheck()) {
+            actions.add(NewspaperAction.CONFIGURE_SPELL_CHECK);
         }
         return List.copyOf(actions);
     }

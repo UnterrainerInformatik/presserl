@@ -211,6 +211,17 @@
     <string name="text_size_xl">XL – sehr groß (%1$d px)</string>
     <string name="newspaper_text_size_effective">Im Leser gilt jetzt: %1$s</string>
     <string name="newspaper_save_failed">Nicht gespeichert: %1$s</string>
+    <string name="spell_help_title">Rechtschreibhilfe</string>
+    <string name="spell_help_hint">Wie viel Hilfe die Rechtschreibprüfung beim Schreiben gibt. Gilt ab der nächsten Prüfung eines Feldes.</string>
+    <string name="spell_help_default">Voreinstellung der Installation</string>
+    <string name="spell_help_suggestions">Markieren, erklären und Korrekturen vorschlagen</string>
+    <string name="spell_help_suggestions_description">Fehler werden markiert und erklärt, Korrekturen lassen sich mit einem Klick übernehmen.</string>
+    <string name="spell_help_messages">Markieren und erklären</string>
+    <string name="spell_help_messages_description">Fehler werden markiert und erklärt, ohne Korrekturvorschläge. Die Erklärung kann das richtige Wort nennen.</string>
+    <string name="spell_help_marks">Nur markieren</string>
+    <string name="spell_help_marks_description">Fehler werden nur markiert; das richtige Wort finden die Schreibenden selbst.</string>
+    <string name="spell_help_effective">Beim Schreiben gilt jetzt: %1$s</string>
+    <string name="spell_help_publisher_only">Nur die Herausgeberin oder der Herausgeber kann das ändern.</string>
     <string name="nav_issues">Ausgaben</string>
     <string name="new_issue">Neue Ausgabe</string>
     <string name="create">Anlegen</string>

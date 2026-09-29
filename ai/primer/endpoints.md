@@ -37,7 +37,8 @@ Effective newspaper settings (code default → environment → database override
       "section.default": "General",
       "editor.level": "standard",
       "reader.text-size": "m",
-      "media.max-size": "10M"
+      "media.max-size": "10M",
+      "spell-check.help": "suggestions"
     },
     "overrides": {}
   }
@@ -46,7 +47,10 @@ Effective newspaper settings (code default → environment → database override
   - `visibility`: `public` | `private`.
   - `settings` keys are the config keys without the `presserl.` prefix. `editor.level`:
     `starter` | `standard` | `profi`; `reader.text-size`: `s` | `m` | `l` | `xl`;
-    `media.max-size`: largest accepted image upload (deployment-only, `PRESSERL_MEDIA_MAX_SIZE`).
+    `media.max-size`: largest accepted image upload (deployment-only, `PRESSERL_MEDIA_MAX_SIZE`);
+    `spell-check.help`: how much help `POST /api/spell-check` gives — `suggestions` (message and
+    replacements) | `messages` (message, no replacements) | `marks` (neither), deployment value
+    `PRESSERL_SPELL_CHECK_HELP`.
   - `overrides`: the entries of `settings` whose value currently comes from a valid newspaper
     override (database), keyed like `settings`; `{}` when none. A key missing here uses the
     deployment value or the code default. Clients treat a missing `overrides` (older servers) as
@@ -56,35 +60,44 @@ Effective newspaper settings (code default → environment → database override
 
 ## `PUT /api/newspaper/settings`
 
-Sets or clears newspaper overrides. Writable in this version: `reader.text-size` only.
+Sets or clears newspaper overrides. Writable in this version: `reader.text-size` and
+`spell-check.help`.
 
 - **Auth:** bearer token; `PUBLISHER` or `EDITOR_IN_CHIEF` (`allowedActions` contains
-  `CONFIGURE_NEWSPAPER`)
+  `CONFIGURE_NEWSPAPER`). `spell-check.help` is writable by `PUBLISHER` only (`allowedActions`
+  contains `CONFIGURE_SPELL_CHECK`).
 - **Body:** JSON object of setting name → value. A value stores the override; `null` removes it,
-  so the deployment value (`PRESSERL_READER_TEXT_SIZE`) or the code default applies again. Keys not
-  in the body stay unchanged; `{}` changes nothing. All or nothing: nothing is written when any key
-  is refused.
+  so the deployment value (`PRESSERL_READER_TEXT_SIZE`, `PRESSERL_SPELL_CHECK_HELP`) or the code
+  default applies again. Keys not in the body stay unchanged; `{}` changes nothing. All or
+  nothing: nothing is written when any key is refused.
   ```json
   { "reader.text-size": "l" }
   ```
   ```json
   { "reader.text-size": null }
   ```
+  ```json
+  { "spell-check.help": "marks" }
+  ```
 - **Response `200`:** the same body as `GET /api/newspaper` after the change, e.g.
   ```json
   { "name": "My Newspaper", "subtitle": "", "visibility": "public",
     "settings": { "retract.author-can-retract": true, "section.default": "General",
-                  "editor.level": "standard", "reader.text-size": "l", "media.max-size": "10M" },
+                  "editor.level": "standard", "reader.text-size": "l", "media.max-size": "10M",
+                  "spell-check.help": "suggestions" },
     "overrides": { "reader.text-size": "l" } }
   ```
 - **Errors:**
   - `400` `{"errors": [...]}` naming every offending key as `field`: a value outside the allowed
-    set or not a string (`"must be one of s, m, l, xl"`), an unknown or non-writable key
-    (`"is not a writable setting"`); `field` `null` when the body is not a JSON object.
+    set or not a string (`"must be one of s, m, l, xl"`, `"must be one of suggestions, messages,
+    marks"`), an unknown or non-writable key (`"is not a writable setting"`); `field` `null` when
+    the body is not a JSON object. Checked before the key-level `403`.
   - `401` (empty body) without a valid token; `403` (empty body) without `PUBLISHER` or
-    `EDITOR_IN_CHIEF`.
+    `EDITOR_IN_CHIEF`, and `403` (empty body, nothing stored) when a user without `PUBLISHER`
+    sends `spell-check.help` — also together with keys they may write.
 - **Side effects:** updates `newspaper.settings`; the reader uses the new `reader.text-size` for
-  visitors without their own choice from the next page load.
+  visitors without their own choice from the next page load; the new `spell-check.help` applies
+  from the next `POST /api/spell-check`.
 
 ## `GET /api/client-config`
 
@@ -126,7 +139,7 @@ The logged-in user as seen by the backend.
   ```json
   { "username": "publisher", "displayName": "publisher", "roles": ["PUBLISHER"], "sectionRoles": [],
     "allowedActions": ["WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "MANAGE_ISSUES",
-                       "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER"] }
+                       "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER", "CONFIGURE_SPELL_CHECK"] }
   ```
   - `username`: `preferred_username` claim, falling back to `sub`.
   - `displayName`: `name` claim, falling back to `username`.
@@ -148,6 +161,7 @@ The logged-in user as seen by the backend.
     | `MANAGE_ISSUES` | `PUBLISHER` or `EDITOR_IN_CHIEF` | the issue endpoints (`/api/issues…`) |
     | `ADMINISTER_ACCOUNTS` | `PUBLISHER`, `EDITOR_IN_CHIEF`, or `SECTION_EDITOR` in any section | listing and creating accounts |
     | `CONFIGURE_NEWSPAPER` | `PUBLISHER` or `EDITOR_IN_CHIEF` | changing the newspaper settings (`PUT /api/newspaper/settings`) |
+    | `CONFIGURE_SPELL_CHECK` | `PUBLISHER` | changing the newspaper's spell-check help (`spell-check.help` in `PUT /api/newspaper/settings`) |
 - **Errors:** `401` (empty body) without a valid token.
 - **Side effects:** none.
 
@@ -1319,8 +1333,15 @@ admin app calls it about a second after the user stops typing in a prose field.
     without contacting LanguageTool).
   - `offset`, `length`: UTF-16 code units of `text` (the unit of JavaScript and Kotlin strings; an
     emoji counts two).
-  - `message`: LanguageTool's German explanation, shown as is.
-  - `replacements`: at most five suggestions, possibly `[]`.
+  - `message`: LanguageTool's German explanation, shown as is; `""` when the newspaper's
+    `spell-check.help` is `marks`.
+  - `replacements`: at most five suggestions, possibly `[]`; always `[]` when `spell-check.help`
+    is `messages` or `marks`.
+  - The effective `spell-check.help` is read per request; `offset`, `length` and the set of
+    matches are the same on every level. With `marks`:
+    ```json
+    { "matches": [ { "offset": 13, "length": 4, "message": "", "replacements": [] } ] }
+    ```
 - **Errors:**
   - `400` `{"errors": [{"field": "text", "message": "text must be a string of at most 10000 code points"}]}`
     for a missing or non-string `text`, a body that is not an object, or a longer text.

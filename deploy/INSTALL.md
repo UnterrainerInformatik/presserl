@@ -219,6 +219,11 @@ app shows a short notice and everything else works as usual.
 
 - **Language:** `PRESSERL_SPELL_CHECK_LANGUAGE` in `.env`, a LanguageTool code: `de-DE` (default),
   `de-AT` (accepts *Jänner*, *heuer*) or `de-CH`.
+- **Help level:** `PRESSERL_SPELL_CHECK_HELP` in `.env` sets how much help writers get by
+  default: `suggestions` (default: mark, explain and suggest corrections), `messages` (mark and
+  explain, no corrections) or `marks` (mark only; writers find the correct spelling themselves).
+  The publisher can override it for the newspaper in the admin app under *Newspaper*; an invalid
+  value stops the startup with an error naming the variable.
 - **Memory:** the service is limited to a 768 MB heap and takes about 1 GB RAM in total.
 - **Switching it off** (e.g. on hosts with less than 2 GB RAM): set
   `PRESSERL_SPELL_CHECK_ENABLED=false` in `.env`, so the admin app no longer checks, and keep the

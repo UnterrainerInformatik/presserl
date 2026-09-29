@@ -22,7 +22,7 @@ Accept: application/json
     });
     client.test("publisher may do everything", () => {
         const expected = ["WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "MANAGE_ISSUES", "ADMINISTER_ACCOUNTS",
-            "CONFIGURE_NEWSPAPER"];
+            "CONFIGURE_NEWSPAPER", "CONFIGURE_SPELL_CHECK"];
         client.assert(JSON.stringify(response.body.allowedActions) === JSON.stringify(expected),
             "allowedActions " + JSON.stringify(response.body.allowedActions));
     });

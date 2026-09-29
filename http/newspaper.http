@@ -102,6 +102,85 @@ Content-Type: application/json
     });
 %}
 
+### Publisher limits the spell-check help to marks
+PUT {{baseUrl}}/api/newspaper/settings
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "spell-check.help": "marks" }
+
+> {%
+    client.test("200 with the override", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.settings["spell-check.help"] === "marks", "settings " + JSON.stringify(response.body.settings));
+        client.assert(response.body.overrides["spell-check.help"] === "marks", "overrides " + JSON.stringify(response.body.overrides));
+    });
+%}
+
+### An invalid spell-check help is refused
+PUT {{baseUrl}}/api/newspaper/settings
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "spell-check.help": "hints" }
+
+> {%
+    client.test("400 naming the key and the allowed values", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "spell-check.help", JSON.stringify(response.body));
+        client.assert(response.body.errors[0].message === "must be one of suggestions, messages, marks", JSON.stringify(response.body));
+    });
+%}
+
+### Token for the editor-in-chief
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{chiefUsername}}&password={{chiefPassword}}
+
+> {%
+    client.global.set("chiefToken", response.body.access_token);
+%}
+
+### The editor-in-chief may not change the spell-check help, not even together with the text size
+PUT {{baseUrl}}/api/newspaper/settings
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "reader.text-size": "l", "spell-check.help": "suggestions" }
+
+> {%
+    client.test("403 with an empty body", () => {
+        client.assert(response.status === 403, "status " + response.status);
+        client.assert(!response.body, "body " + response.body);
+    });
+%}
+
+### Nothing was stored
+GET {{baseUrl}}/api/newspaper
+
+> {%
+    client.test("spell-check help still marks, text size unchanged", () => {
+        client.assert(response.body.overrides["spell-check.help"] === "marks", "overrides " + JSON.stringify(response.body.overrides));
+        client.assert(response.body.overrides["reader.text-size"] === undefined, "overrides " + JSON.stringify(response.body.overrides));
+    });
+%}
+
+### Publisher clears the spell-check help
+PUT {{baseUrl}}/api/newspaper/settings
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "spell-check.help": null }
+
+> {%
+    client.test("override cleared", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.overrides["spell-check.help"] === undefined, "overrides " + JSON.stringify(response.body.overrides));
+        client.assert(response.body.settings["spell-check.help"] === "suggestions", "settings " + JSON.stringify(response.body.settings));
+    });
+%}
+
 ### Token for a reader
 POST {{issuer}}/protocol/openid-connect/token
 Content-Type: application/x-www-form-urlencoded

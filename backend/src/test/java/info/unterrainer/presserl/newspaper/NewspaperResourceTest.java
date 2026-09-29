@@ -48,7 +48,8 @@ class NewspaperResourceTest {
                 .body("settings.'editor.level'", equalTo("standard"))
                 .body("settings.'reader.text-size'", equalTo("m"))
                 .body("settings.'media.max-size'", equalTo("10M"))
-                .body("settings.size()", equalTo(5))
+                .body("settings.'spell-check.help'", equalTo("suggestions"))
+                .body("settings.size()", equalTo(6))
                 .body("overrides", is(anEmptyMap()));
     }
 
@@ -176,6 +177,64 @@ class NewspaperResourceTest {
                 .statusCode(403)
                 .body(equalTo(""));
         assertThat(storedSettings()).isEqualTo("{}");
+    }
+
+    @Test
+    void publisherLimitsAndClearsTheSpellCheckHelp() throws SQLException {
+        TestSupport.awaitReady();
+        String publisher = TestSupport.token("publisher", "publisher");
+
+        put(publisher, "{\"spell-check.help\": \"marks\"}").then()
+                .statusCode(200)
+                .body("settings.'spell-check.help'", equalTo("marks"))
+                .body("overrides.size()", equalTo(1))
+                .body("overrides.'spell-check.help'", equalTo("marks"));
+        assertThat(storedSettings()).contains("\"spell-check.help\": \"marks\"");
+
+        put(publisher, "{\"spell-check.help\": null}").then()
+                .statusCode(200)
+                .body("settings.'spell-check.help'", equalTo("suggestions"))
+                .body("overrides", is(anEmptyMap()));
+        assertThat(storedSettings()).isEqualTo("{}");
+    }
+
+    @Test
+    void invalidSpellCheckHelpIsRefused() {
+        TestSupport.awaitReady();
+
+        put(TestSupport.token("publisher", "publisher"), "{\"spell-check.help\": \"hints\"}").then()
+                .statusCode(400)
+                .body("errors.size()", equalTo(1))
+                .body("errors[0].field", equalTo("spell-check.help"))
+                .body("errors[0].message", equalTo("must be one of suggestions, messages, marks"));
+    }
+
+    @Test
+    void editorInChiefMayNotChooseTheSpellCheckHelp() throws SQLException {
+        TestSupport.awaitReady();
+        String chief = TestSupport.token("chief", "chief");
+        execute("UPDATE newspaper SET settings = '{\"spell-check.help\": \"messages\"}' WHERE id = 1");
+
+        put(chief, "{\"spell-check.help\": \"marks\"}").then()
+                .statusCode(403)
+                .body(equalTo(""));
+        // all or nothing: the text size the editor-in-chief may write is not stored either
+        put(chief, "{\"reader.text-size\": \"l\", \"spell-check.help\": \"suggestions\"}").then()
+                .statusCode(403)
+                .body(equalTo(""));
+        put(chief, "{\"spell-check.help\": null}").then()
+                .statusCode(403);
+        assertThat(storedSettings()).isEqualTo("{\"spell-check.help\": \"messages\"}");
+    }
+
+    @Test
+    void editorInChiefStillSetsTheTextSize() throws SQLException {
+        TestSupport.awaitReady();
+
+        put(TestSupport.token("chief", "chief"), "{\"reader.text-size\": \"l\"}").then()
+                .statusCode(200)
+                .body("overrides.'reader.text-size'", equalTo("l"));
+        assertThat(storedSettings()).contains("\"reader.text-size\": \"l\"");
     }
 
     @Test

@@ -66,15 +66,21 @@ fun findingAt(findings: List<SpellFinding>, selection: TextRange): SpellFinding?
 fun replaceFinding(text: String, finding: SpellFinding, replacement: String): String =
     text.replaceRange(finding.start, finding.end, replacement)
 
+/** The message the row below a field shows for [finding]; `null` when the server withheld it (spell-check help `marks`). */
+fun rowMessage(finding: SpellFinding): String? = finding.message.takeIf { it.isNotBlank() }
+
 /**
- * The explanation below a field: the finding's message, one button per suggestion and *Ignore*. The buttons are
- * ordinary focusable buttons with labels naming the word, so they are reachable with Tab and screen readers.
+ * The explanation below a field: the finding's message (none when the newspaper's spell-check help withholds it), one
+ * button per suggestion and *Ignore*. The buttons are ordinary focusable buttons with labels naming the word, so they
+ * are reachable with Tab and screen readers.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SpellSuggestionRow(finding: SpellFinding, onReplace: (String) -> Unit, onIgnore: () -> Unit) {
     Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(finding.message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+        rowMessage(finding)?.let { message ->
+            Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+        }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             finding.replacements.forEach { replacement ->
                 val label = stringResource(Res.string.spell_replace_label, finding.word, replacement)

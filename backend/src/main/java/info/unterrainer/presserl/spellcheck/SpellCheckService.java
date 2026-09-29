@@ -8,14 +8,18 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
 
+import info.unterrainer.presserl.newspaper.EffectiveSettings;
+import info.unterrainer.presserl.newspaper.NewspaperSettings;
+import info.unterrainer.presserl.newspaper.SpellCheckHelp;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 /**
  * Checks a text with LanguageTool and keeps only spelling, casing, grammar, punctuation and
- * typography findings, so children are not flooded with style advice. The checked text is never
- * logged; an outage is logged once until the next successful check.
+ * typography findings, so children are not flooded with style advice. The newspaper's
+ * {@code spell-check.help} decides whether a finding carries its message and replacements. The checked
+ * text is never logged; an outage is logged once until the next successful check.
  */
 @ApplicationScoped
 public class SpellCheckService {
@@ -35,6 +39,9 @@ public class SpellCheckService {
     @RestClient
     LanguageToolClient client;
 
+    @Inject
+    NewspaperSettings settings;
+
     private final AtomicBoolean down = new AtomicBoolean();
 
     /**
@@ -48,6 +55,15 @@ public class SpellCheckService {
         if (text.isBlank()) {
             return Uni.createFrom().item(List.of());
         }
+        // read per check, not cached, so a changed level applies to the next check; a failed read fails
+        // the request instead of falling back to more help
+        return settings.effective()
+                .map(EffectiveSettings::spellCheckHelp)
+                .flatMap(help -> languageTool(text)
+                        .map(matches -> matches.stream().map(match -> shaped(match, help)).toList()));
+    }
+
+    private Uni<List<SpellMatchDto>> languageTool(String text) {
         return client.check(text, config.language(), "default")
                 .map(SpellCheckService::matches)
                 .invoke(() -> {
@@ -62,6 +78,18 @@ public class SpellCheckService {
                     }
                     return new SpellCheckUnavailableException(e);
                 });
+    }
+
+    /**
+     * The finding as the help level allows: {@code messages} drops the replacements, {@code marks} also
+     * the message.
+     */
+    static SpellMatchDto shaped(SpellMatchDto match, SpellCheckHelp help) {
+        return switch (help) {
+            case SUGGESTIONS -> match;
+            case MESSAGES -> new SpellMatchDto(match.offset(), match.length(), match.message(), List.of());
+            case MARKS -> new SpellMatchDto(match.offset(), match.length(), "", List.of());
+        };
     }
 
     static List<SpellMatchDto> matches(LanguageToolResponse response) {

@@ -99,11 +99,12 @@ class NewsroomTest {
         assertThat(newsroom(Map.of(), NewspaperRole.PUBLISHER).allowedActions()).containsExactly(
                 NewspaperAction.WRITE_ARTICLES, NewspaperAction.MANAGE_SECTIONS,
                 NewspaperAction.ASSIGN_SECTION_ROLES, NewspaperAction.MANAGE_ISSUES,
-                NewspaperAction.ADMINISTER_ACCOUNTS, NewspaperAction.CONFIGURE_NEWSPAPER);
+                NewspaperAction.ADMINISTER_ACCOUNTS, NewspaperAction.CONFIGURE_NEWSPAPER,
+                NewspaperAction.CONFIGURE_SPELL_CHECK);
     }
 
     @Test
-    void editorInChiefMayDoEverything() {
+    void editorInChiefMayDoEverythingButChooseTheSpellCheckHelp() {
         assertThat(newsroom(Map.of(), NewspaperRole.EDITOR_IN_CHIEF).allowedActions()).containsExactly(
                 NewspaperAction.WRITE_ARTICLES, NewspaperAction.MANAGE_SECTIONS,
                 NewspaperAction.ASSIGN_SECTION_ROLES, NewspaperAction.MANAGE_ISSUES,

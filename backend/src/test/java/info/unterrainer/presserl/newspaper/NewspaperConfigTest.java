@@ -28,7 +28,7 @@ class NewspaperConfigTest {
         EffectiveSettings settings = EffectiveSettings.resolve(config(Map.of()), "10M", null);
 
         assertThat(settings).isEqualTo(new EffectiveSettings("My Newspaper", "", Visibility.PUBLIC, true, "General",
-                EditorLevel.STANDARD, TextSize.M, "10M", Set.of()));
+                EditorLevel.STANDARD, TextSize.M, "10M", SpellCheckHelp.SUGGESTIONS, Set.of()));
         assertThat(settings.overridesMap()).isEmpty();
     }
 
@@ -142,6 +142,35 @@ class NewspaperConfigTest {
                 Map.entry("section.default", "General"),
                 Map.entry("editor.level", "standard"),
                 Map.entry("reader.text-size", "m"),
-                Map.entry("media.max-size", "10M"));
+                Map.entry("media.max-size", "10M"),
+                Map.entry("spell-check.help", "suggestions"));
+    }
+
+    @Test
+    void deploymentChoosesTheSpellCheckHelp() {
+        EffectiveSettings settings = EffectiveSettings.resolve(
+                config(Map.of("PRESSERL_SPELL_CHECK_HELP", "messages")), "10M", new NewspaperEntity());
+
+        assertThat(settings.spellCheckHelp()).isEqualTo(SpellCheckHelp.MESSAGES);
+        assertThat(settings.overridesMap()).isEmpty();
+    }
+
+    @Test
+    void databaseOverrideWinsForTheSpellCheckHelp() {
+        NewspaperEntity row = new NewspaperEntity();
+        row.settings = new HashMap<>(Map.of("spell-check.help", "marks"));
+
+        EffectiveSettings settings = EffectiveSettings.resolve(
+                config(Map.of("PRESSERL_SPELL_CHECK_HELP", "messages")), "10M", row);
+
+        assertThat(settings.spellCheckHelp()).isEqualTo(SpellCheckHelp.MARKS);
+        assertThat(settings.overridesMap()).containsExactly(Map.entry("spell-check.help", "marks"));
+    }
+
+    @Test
+    void unknownSpellCheckHelpFailsNamingVariableAndAllowedValues() {
+        assertThatThrownBy(() -> config(Map.of("PRESSERL_SPELL_CHECK_HELP", "hints")))
+                .hasStackTraceContaining("PRESSERL_SPELL_CHECK_HELP")
+                .hasStackTraceContaining("Allowed values: suggestions, messages, marks");
     }
 }

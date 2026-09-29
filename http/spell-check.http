@@ -36,6 +36,73 @@ Content-Type: application/json
     });
 %}
 
+### Help level messages: explanation without suggestions
+PUT {{baseUrl}}/api/newspaper/settings
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "spell-check.help": "messages" }
+
+> {%
+    client.test("200", () => client.assert(response.status === 200, "status " + response.status));
+%}
+
+### Misspelled word on level messages
+POST {{baseUrl}}/api/spell-check
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "text": "Der Hund ist gros." }
+
+> {%
+    client.test("200 with message and no replacements", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const m = response.body.matches.find(m => m.offset === 13 && m.length === 4);
+        client.assert(m !== undefined, "matches " + JSON.stringify(response.body.matches));
+        client.assert(m.message.length > 0, "message");
+        client.assert(m.replacements.length === 0, "replacements " + JSON.stringify(m.replacements));
+    });
+%}
+
+### Help level marks: mark only
+PUT {{baseUrl}}/api/newspaper/settings
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "spell-check.help": "marks" }
+
+> {%
+    client.test("200", () => client.assert(response.status === 200, "status " + response.status));
+%}
+
+### Misspelled word on level marks
+POST {{baseUrl}}/api/spell-check
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "text": "Der Hund ist gros." }
+
+> {%
+    client.test("200 with empty message and no replacements", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const m = response.body.matches.find(m => m.offset === 13 && m.length === 4);
+        client.assert(m !== undefined, "matches " + JSON.stringify(response.body.matches));
+        client.assert(m.message === "", "message " + m.message);
+        client.assert(m.replacements.length === 0, "replacements " + JSON.stringify(m.replacements));
+    });
+%}
+
+### Back to the installation default (suggestions)
+PUT {{baseUrl}}/api/newspaper/settings
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "spell-check.help": null }
+
+> {%
+    client.test("200", () => client.assert(response.status === 200, "status " + response.status));
+%}
+
 ### Lower-case noun
 POST {{baseUrl}}/api/spell-check
 Authorization: Bearer {{accessToken}}

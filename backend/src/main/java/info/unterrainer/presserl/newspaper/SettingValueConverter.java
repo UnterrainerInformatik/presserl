@@ -61,4 +61,11 @@ public final class SettingValueConverter {
             return SettingValueConverter.convert(TextSize.class, "presserl.reader.text-size", raw);
         }
     }
+
+    public static class SpellCheckHelpConverter implements Converter<SpellCheckHelp> {
+        @Override
+        public SpellCheckHelp convert(String raw) {
+            return SettingValueConverter.convert(SpellCheckHelp.class, "presserl.spell-check.help", raw);
+        }
+    }
 }

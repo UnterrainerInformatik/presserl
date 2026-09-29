@@ -3,6 +3,8 @@ package info.unterrainer.presserl.admin
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.NewspaperDto
 import info.unterrainer.presserl.admin.ui.newspaper.NewspaperSettingsModel
+import info.unterrainer.presserl.admin.ui.newspaper.READER_TEXT_SIZE
+import info.unterrainer.presserl.admin.ui.newspaper.SPELL_CHECK_HELP
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockEngineConfig
@@ -29,13 +31,16 @@ class NewspaperSettingsModelTest {
 
     private val sent = mutableListOf<Map<String, String?>>()
 
-    /** The deployment's text size, used when the newspaper has no override. */
+    /** The deployment's values, used when the newspaper has no override. */
     private var installationDefault = "m"
+    private var installationHelp = "suggestions"
     private var override: String? = null
+    private var helpOverride: String? = null
 
     /** Answers the save request; the default applies it like the server. */
     private var save: suspend (Map<String, String?>) -> NewspaperDto = { changes ->
-        override = changes["reader.text-size"]
+        if (READER_TEXT_SIZE in changes) override = changes[READER_TEXT_SIZE]
+        if (SPELL_CHECK_HELP in changes) helpOverride = changes[SPELL_CHECK_HELP]
         newspaper()
     }
 
@@ -43,8 +48,18 @@ class NewspaperSettingsModelTest {
         "My Newspaper",
         "",
         "public",
-        JsonObject(mapOf("reader.text-size" to JsonPrimitive(override ?: installationDefault))),
-        JsonObject(override?.let { mapOf("reader.text-size" to JsonPrimitive(it)) } ?: emptyMap()),
+        JsonObject(
+            mapOf(
+                READER_TEXT_SIZE to JsonPrimitive(override ?: installationDefault),
+                SPELL_CHECK_HELP to JsonPrimitive(helpOverride ?: installationHelp),
+            ),
+        ),
+        JsonObject(
+            listOfNotNull(
+                override?.let { READER_TEXT_SIZE to JsonPrimitive(it) },
+                helpOverride?.let { SPELL_CHECK_HELP to JsonPrimitive(it) },
+            ).toMap(),
+        ),
     )
 
     private fun TestScope.model() =
@@ -58,16 +73,78 @@ class NewspaperSettingsModelTest {
         assertFalse(state.loading)
         assertNull(state.textSize)
         assertEquals("m", state.effectiveTextSize)
+        assertNull(state.spellCheckHelp)
+        assertEquals("suggestions", state.effectiveSpellCheckHelp)
+    }
+
+    @Test
+    fun loadReadsBothOverrides() = runTest {
+        override = "l"
+        helpOverride = "messages"
+        installationHelp = "marks"
+
+        val state = model().state.value
+
+        assertEquals("l", state.textSize)
+        assertEquals("messages", state.spellCheckHelp)
+        assertEquals("messages", state.effectiveSpellCheckHelp)
+    }
+
+    @Test
+    fun choosingMarksSendsOnlyTheSpellCheckHelp() = runTest {
+        override = "l"
+        val model = model()
+
+        model.choose(SPELL_CHECK_HELP, "marks")
+        runCurrent()
+
+        assertEquals(listOf(mapOf<String, String?>(SPELL_CHECK_HELP to "marks")), sent)
+        assertEquals("marks", model.state.value.spellCheckHelp)
+        assertEquals("marks", model.state.value.effectiveSpellCheckHelp)
+        assertEquals("l", model.state.value.textSize)
+    }
+
+    @Test
+    fun spellCheckHelpBackToTheInstallationDefaultSendsNull() = runTest {
+        helpOverride = "marks"
+        installationHelp = "messages"
+        val model = model()
+
+        model.choose(SPELL_CHECK_HELP, null)
+        runCurrent()
+
+        assertEquals(listOf(mapOf<String, String?>(SPELL_CHECK_HELP to null)), sent)
+        assertNull(model.state.value.spellCheckHelp)
+        assertEquals("messages", model.state.value.effectiveSpellCheckHelp)
+    }
+
+    @Test
+    fun refusedSpellCheckHelpRestoresThePreviousLevelAndKeepsTheTextSize() = runTest {
+        override = "xl"
+        helpOverride = "messages"
+        val api = api(HttpStatusCode.Forbidden, "")
+        save = { api.updateNewspaperSettings(it) }
+        val model = model()
+
+        model.choose(SPELL_CHECK_HELP, "marks")
+        runCurrent()
+
+        assertEquals("messages", model.state.value.spellCheckHelp)
+        assertEquals("messages", model.state.value.effectiveSpellCheckHelp)
+        assertEquals("xl", model.state.value.textSize)
+        assertEquals("xl", model.state.value.effectiveTextSize)
+        assertTrue(model.state.value.error!!.isNotEmpty())
+        assertFalse(model.state.value.saving)
     }
 
     @Test
     fun choosingLSavesItAndShowsTheResponse() = runTest {
         val model = model()
 
-        model.textSize("l")
+        model.choose(READER_TEXT_SIZE, "l")
         runCurrent()
 
-        assertEquals(listOf(mapOf<String, String?>("reader.text-size" to "l")), sent)
+        assertEquals(listOf(mapOf<String, String?>(READER_TEXT_SIZE to "l")), sent)
         assertEquals("l", model.state.value.textSize)
         assertEquals("l", model.state.value.effectiveTextSize)
         assertFalse(model.state.value.saving)
@@ -80,10 +157,10 @@ class NewspaperSettingsModelTest {
         val model = model()
         assertEquals("l", model.state.value.textSize)
 
-        model.textSize(null)
+        model.choose(READER_TEXT_SIZE, null)
         runCurrent()
 
-        assertEquals(listOf(mapOf<String, String?>("reader.text-size" to null)), sent)
+        assertEquals(listOf(mapOf<String, String?>(READER_TEXT_SIZE to null)), sent)
         assertNull(model.state.value.textSize)
         assertEquals("xl", model.state.value.effectiveTextSize)
     }
@@ -94,9 +171,9 @@ class NewspaperSettingsModelTest {
         save = { answer.await() }
         val model = model()
 
-        model.textSize("xl")
+        model.choose(READER_TEXT_SIZE, "xl")
         runCurrent()
-        model.textSize("s")
+        model.choose(READER_TEXT_SIZE, "s")
 
         assertEquals("xl", model.state.value.textSize)
         assertTrue(model.state.value.saving)
@@ -113,7 +190,7 @@ class NewspaperSettingsModelTest {
         save = { api.updateNewspaperSettings(it) }
         val model = model()
 
-        model.textSize("l")
+        model.choose(READER_TEXT_SIZE, "l")
         runCurrent()
 
         assertNull(model.state.value.textSize)
@@ -129,7 +206,7 @@ class NewspaperSettingsModelTest {
         save = { api.updateNewspaperSettings(it) }
         val model = model()
 
-        model.textSize("l")
+        model.choose(READER_TEXT_SIZE, "l")
         runCurrent()
 
         assertEquals("must be one of s, m, l, xl", model.state.value.error)

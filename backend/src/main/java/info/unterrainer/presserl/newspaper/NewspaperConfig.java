@@ -3,6 +3,7 @@ package info.unterrainer.presserl.newspaper;
 import java.util.Optional;
 
 import info.unterrainer.presserl.newspaper.SettingValueConverter.EditorLevelConverter;
+import info.unterrainer.presserl.newspaper.SettingValueConverter.SpellCheckHelpConverter;
 import info.unterrainer.presserl.newspaper.SettingValueConverter.TextSizeConverter;
 import info.unterrainer.presserl.newspaper.SettingValueConverter.VisibilityConverter;
 import io.smallrye.config.ConfigMapping;
@@ -13,7 +14,8 @@ import io.smallrye.config.WithName;
 /**
  * Newspaper settings, configuration layers 1 (code default) and 2 (deployment environment).
  * {@code PRESSERL_NEWSPAPER_NAME} maps to {@code presserl.newspaper.name} and so on. The
- * deployment-only setting {@code media.max-size} lives in {@code MediaConfig}.
+ * deployment-only setting {@code media.max-size} lives in {@code MediaConfig}, the deployment-only
+ * spell-check settings ({@code enabled}, {@code url}, {@code language}) in {@code SpellCheckConfig}.
  */
 @ConfigMapping(prefix = "presserl")
 public interface NewspaperConfig {
@@ -27,6 +29,9 @@ public interface NewspaperConfig {
     Editor editor();
 
     Reader reader();
+
+    @WithName("spell-check")
+    SpellCheck spellCheck();
 
     interface Newspaper {
 
@@ -67,5 +72,12 @@ public interface NewspaperConfig {
         @WithDefault("m")
         @WithConverter(TextSizeConverter.class)
         TextSize textSize();
+    }
+
+    interface SpellCheck {
+
+        @WithDefault("suggestions")
+        @WithConverter(SpellCheckHelpConverter.class)
+        SpellCheckHelp help();
     }
 }

@@ -211,6 +211,17 @@
     <string name="text_size_xl">XL – extra large (%1$d px)</string>
     <string name="newspaper_text_size_effective">The reader now uses: %1$s</string>
     <string name="newspaper_save_failed">Not saved: %1$s</string>
+    <string name="spell_help_title">Spell-check help</string>
+    <string name="spell_help_hint">How much help the spell check gives while writing. Applies from the next check of a field.</string>
+    <string name="spell_help_default">Installation default</string>
+    <string name="spell_help_suggestions">Mark, explain and suggest corrections</string>
+    <string name="spell_help_suggestions_description">Mistakes are marked and explained; corrections can be applied with one click.</string>
+    <string name="spell_help_messages">Mark and explain</string>
+    <string name="spell_help_messages_description">Mistakes are marked and explained, without suggested corrections. The explanation may name the correct word.</string>
+    <string name="spell_help_marks">Mark only</string>
+    <string name="spell_help_marks_description">Mistakes are only marked; writers find the correct spelling themselves.</string>
+    <string name="spell_help_effective">While writing, this now applies: %1$s</string>
+    <string name="spell_help_publisher_only">Only the publisher can change this.</string>
     <string name="nav_issues">Issues</string>
     <string name="new_issue">New issue</string>
     <string name="create">Create</string>

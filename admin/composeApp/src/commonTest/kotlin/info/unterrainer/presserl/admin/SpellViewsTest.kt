@@ -8,6 +8,7 @@ import info.unterrainer.presserl.admin.ui.spell.SpellFinding
 import info.unterrainer.presserl.admin.ui.spell.SpellMarks
 import info.unterrainer.presserl.admin.ui.spell.findingAt
 import info.unterrainer.presserl.admin.ui.spell.replaceFinding
+import info.unterrainer.presserl.admin.ui.spell.rowMessage
 import info.unterrainer.presserl.admin.ui.spell.spellMarkStyle
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -51,5 +52,14 @@ class SpellViewsTest {
     @Test
     fun aSuggestionReplacesExactlyTheFinding() {
         assertEquals("Der Hund ist groß.", replaceFinding("Der Hund ist gros.", gros, "groß"))
+    }
+
+    @Test
+    fun theRowShowsTheMessageOnlyWhenTheServerSentOne() {
+        assertEquals("Tippfehler", rowMessage(gros))
+        // spell-check help "marks": no message and no replacements, so the row offers Ignore only
+        val marked = SpellFinding(13, 17, "gros", "", emptyList())
+        assertNull(rowMessage(marked))
+        assertNull(rowMessage(marked.copy(message = " ")))
     }
 }

@@ -287,7 +287,11 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                         slipPrinter,
                         onDone = { stack = listOf(Route.Accounts) },
                     )
-                    Route.Newspaper -> NewspaperScreen(api)
+                    Route.Newspaper -> NewspaperScreen(
+                        api,
+                        spellCheck = screen.spellCheck,
+                        mayConfigureSpellCheck = NewspaperAction.CONFIGURE_SPELL_CHECK in screen.me.allowedActions,
+                    )
                     Route.Media -> MediaGridScreen(mediaGrid, mediaThumbnails, onOpen = { push(Route.MediaDetail(it)) })
                     is Route.MediaDetail -> key(route) {
                         MediaDetailScreen(

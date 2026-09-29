@@ -1,5 +1,7 @@
 package info.unterrainer.presserl.newspaper;
 
+import java.util.Map;
+
 import org.eclipse.microprofile.jwt.JsonWebToken;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -19,7 +21,8 @@ import jakarta.ws.rs.core.MediaType;
 
 /**
  * The effective newspaper settings, public; publishers and editors-in-chief override writable settings
- * ({@link WritableSettings}). Refused access is answered with {@code 403} and an empty body.
+ * ({@link WritableSettings}), some keys are publisher-only. Refused access is answered with {@code 403}
+ * and an empty body; a body with a key the user may not write is refused as a whole.
  */
 @Path("/api/newspaper")
 public class NewspaperResource {
@@ -49,7 +52,11 @@ public class NewspaperResource {
             if (!newsroom.mayConfigureNewspaper()) {
                 throw new ForbiddenException();
             }
-            return settings.update(WritableSettings.changes(json));
+            Map<String, String> changes = WritableSettings.changes(json);
+            if (!WritableSettings.mayWrite(changes, newsroom)) {
+                throw new ForbiddenException();
+            }
+            return settings.update(changes);
         }).map(NewspaperDto::of);
     }
 }
