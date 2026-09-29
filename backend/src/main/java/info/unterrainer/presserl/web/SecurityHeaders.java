@@ -70,10 +70,14 @@ public class SecurityHeaders {
 
     /**
      * The webpack build names {@code .wasm} files by content hash, so they never change; should an
-     * unhashed {@code .wasm} ever be emitted, it would be cached as immutable too.
+     * unhashed {@code .wasm} ever be emitted, it would be cached as immutable too. A Brotli variant
+     * ({@link PrecompressedAdminBundle}) is cached like its original.
      */
     static String adminCacheControl(String path) {
-        return path.endsWith(".wasm") ? CACHE_IMMUTABLE : CACHE_REVALIDATE;
+        String original = path.endsWith(PrecompressedAdminBundle.BROTLI_SUFFIX)
+                ? path.substring(0, path.length() - PrecompressedAdminBundle.BROTLI_SUFFIX.length())
+                : path;
+        return original.endsWith(".wasm") ? CACHE_IMMUTABLE : CACHE_REVALIDATE;
     }
 
     /**

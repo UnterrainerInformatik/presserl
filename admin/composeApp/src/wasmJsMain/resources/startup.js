@@ -2,7 +2,8 @@
 // Wasm bundle is downloaded, loads composeApp.js only when they are met and otherwise shows a
 // plain HTML notice instead of a blank page. Until the app has drawn its first frame (Main.kt sets
 // data-presserl-started), load failures and uncaught errors show a generic "could not start"
-// notice. No innerHTML and no inline styles: the admin CSP stays as strict as it is.
+// notice, and a loading indicator replaces the blank page while the Wasm bundle downloads. No
+// innerHTML and no inline styles: the admin CSP stays as strict as it is.
 (function () {
     "use strict";
 
@@ -19,6 +20,7 @@
             wasmText: "Die Verwaltung braucht WebAssembly, und das kann dieser Browser nicht. Bitte verwende eine aktuelle Version von Firefox, Chrome, Edge oder Safari.",
             failedTitle: "Die Verwaltung konnte nicht starten",
             failedText: "Beim Laden ist ein Fehler aufgetreten. Bitte lade die Seite neu. Wenn das nicht hilft, versuche es später noch einmal oder mit einem anderen Browser.",
+            loadingText: "Die Verwaltung wird geladen …",
         },
         en: {
             webglTitle: "The administration needs WebGL",
@@ -32,6 +34,7 @@
             wasmText: "The administration needs WebAssembly, which this browser does not support. Please use a current version of Firefox, Chrome, Edge or Safari.",
             failedTitle: "The administration could not start",
             failedText: "An error occurred while loading. Please reload the page. If that does not help, try again later or with another browser.",
+            loadingText: "Loading the administration …",
         },
     };
 
@@ -56,7 +59,32 @@
         return document.documentElement.dataset.presserlStarted === "true";
     }
 
+    // Shown only when loading takes longer than this, so warm loads do not flash.
+    var LOADING_DELAY_MS = 500;
+
+    function removeLoading() {
+        var loading = document.getElementById("presserl-startup-loading");
+        if (loading) loading.remove();
+    }
+
+    function showLoading() {
+        if (started() || document.getElementById("presserl-startup-notice")) return;
+        if (document.getElementById("presserl-startup-loading")) return;
+        var loading = document.createElement("div");
+        loading.id = "presserl-startup-loading";
+        loading.setAttribute("role", "status");
+        loading.lang = language;
+        var spinner = document.createElement("div");
+        spinner.className = "presserl-startup-spinner";
+        loading.appendChild(spinner);
+        var paragraph = document.createElement("p");
+        paragraph.textContent = texts.loadingText;
+        loading.appendChild(paragraph);
+        document.body.appendChild(loading);
+    }
+
     function showNotice(title, text, remedies) {
+        removeLoading();
         if (document.getElementById("presserl-startup-notice")) return;
         var notice = document.createElement("div");
         notice.id = "presserl-startup-notice";
@@ -80,14 +108,18 @@
         document.body.appendChild(notice);
     }
 
-    function showWhenReady(title, text, remedies) {
+    function whenBodyReady(action) {
         if (document.body) {
-            showNotice(title, text, remedies);
+            action();
         } else {
-            document.addEventListener("DOMContentLoaded", function () {
-                showNotice(title, text, remedies);
-            });
+            document.addEventListener("DOMContentLoaded", action);
         }
+    }
+
+    function showWhenReady(title, text, remedies) {
+        whenBodyReady(function () {
+            showNotice(title, text, remedies);
+        });
     }
 
     function showStartFailure() {
@@ -118,4 +150,11 @@
     script.src = "composeApp.js";
     script.onerror = showStartFailure;
     document.head.appendChild(script);
+
+    new MutationObserver(function () {
+        if (started()) removeLoading();
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-presserl-started"] });
+    setTimeout(function () {
+        if (!started()) whenBodyReady(showLoading);
+    }, LOADING_DELAY_MS);
 })();

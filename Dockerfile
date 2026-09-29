@@ -14,12 +14,16 @@ RUN --mount=type=cache,target=/home/gradle/.gradle/caches \
 
 # 2) Backend with the admin bundle as static resources
 FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-21 AS backend
-# Without unzip the Maven wrapper fetches the .tar.gz and checks it against the .zip checksum
-RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/*
+# Without unzip the Maven wrapper fetches the .tar.gz and checks it against the .zip checksum;
+# brotli pre-compresses the admin bundle
+RUN apt-get update && apt-get install -y --no-install-recommends unzip brotli && rm -rf /var/lib/apt/lists/*
 WORKDIR /src/backend
 COPY backend/ ./
 COPY --from=admin /src/admin/composeApp/build/dist/wasmJs/productionExecutable/ src/main/resources/META-INF/resources/admin/
 RUN rm -f src/main/resources/META-INF/resources/admin/*.map
+# Brotli variants next to the originals, sent to browsers that accept br (PrecompressedAdminBundle)
+RUN find src/main/resources/META-INF/resources/admin/ -type f \( -name '*.wasm' -o -name '*.js' \) \
+        -exec brotli --best --keep {} +
 RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw -B -q package -DskipTests
 
