@@ -28,4 +28,10 @@
     "could not start"; spinner animation `none` under reduced motion; hidden in print; no
     `securitypolicyviolation` events. 1.3 is covered by Karma (`StartupScriptTest`).
 - [x] 4.3 Stop every server and container started for these checks. Verify with `ps`, `ss` and `docker ps`.
-- [ ] 4.4 After the rollout, measure the transferred Wasm size and cold-load time on staging and alexpresse.net with `curl` and Playwright, and record the numbers in the change.
+- [x] 4.4 After the rollout, measure the transferred Wasm size and cold-load time on staging and alexpresse.net with `curl` and Playwright, and record the numbers in the change.
+  - Result 2026-09-29, image 0.0.26 (Chromium/SwiftShader, empty cache, three runs each): staging transfers
+    1,295,412 + 2,619,7xx bytes of Wasm with `Content-Encoding: br` (before: 14.5 MB uncompressed) and reaches
+    Keycloak after 1.9–2.1 s; alexpresse.net transfers 1,295,6xx + 2,619,3xx bytes (before: about 4.9 MB of
+    Cloudflare Brotli) and reaches Keycloak after 2.0–2.2 s (before: 4.7 s). The loading indicator was shown
+    on every cold run. A `curl` right after the deploy still got Cloudflare's own Brotli (3,264,764 bytes for
+    `bfa5…wasm`); minutes later Cloudflare passed the origin's variant through (2,618,182 bytes).
