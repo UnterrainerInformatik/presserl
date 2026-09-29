@@ -11,13 +11,27 @@ Android/iOS targets of the admin app; the app reads the account slip's QR code
 pass-phrase) and logs in without typing; store publishing (Google Play Families policy, Apple
 developer account). The slip's QR code itself is done (qr-slip-login); no token exchange.
 
-## Photo-reporter role
-A new newspaper-wide role for someone who takes pictures but has no section (or whose sections are
-irrelevant): may upload images, use the media view ("Images") and edit their own uploads under the
-same rule as other uploaders (only while no live revision and no pending submission uses them); does
-not write articles. Assigned from editor-in-chief upward. Needs a Keycloak group, delegation and
-password-reset rules, the account form, the realm template, and decoupling the media endpoints and
-the "Images" header entry from `WRITE_ARTICLES` (own action). Builds on media-view-crop-blur.
+## Reporter without a section
+Instead of a separate photo-reporter role: a `REPORTER` who belongs to no section. They may upload
+images, use the media view ("Images") and edit their own uploads under the existing uploader rule
+(only while no live revision and no pending submission uses them); they write no articles, since
+every article needs a section. Images stay shared across the whole newspaper, as today. Needs a
+newspaper-wide marker for the sectionless reporter (per-section reporter rows cannot express it),
+assignment from editor-in-chief upward (a section editor only assigns within their own sections),
+password-reset and role-change rules, the account form, the realm template, and decoupling the media
+endpoints and the "Images" header entry from `WRITE_ARTICLES` (own action). Removing a reporter from
+their last section leaves them a photographer instead of an account without any writing right.
+Builds on media-view-crop-blur.
+
+## Higher levels edit articles
+Approvers may correct an article instead of rejecting it with a note: the section editor of the
+article's section, editors-in-chief and publishers. Allowed while a submission is pending and on
+published or offline articles, not on drafts (a child's draft stays theirs). The edit creates a new
+revision recorded with the editor as its author. The approval chain must not be bypassed: once
+someone other than the author changed the content, the levels above that editor apply as if the
+editor had written the article (trust in the original author does not skip them). The author sees
+who changed what as a diff between revisions in the editor. Concurrent edits by author and reviewer
+are refused with a reload offer, as for images.
 
 ## init-runner-action on Node 24
 `UnterrainerInformatik/init-runner-action` (used by every shared workflow, incl.
