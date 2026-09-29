@@ -29,6 +29,14 @@ Hierarchy: **Publisher > Editor-in-chief > Section editor > Reporter > Reader.**
 - **Locking** by publishers only, never of a publisher or of their own account. A locked account cannot log in; unlocking restores it with its password.
 - **Setup**: on first start the backend creates the first account as publisher from `PRESSERL_PUBLISHER_USERNAME` / `PRESSERL_PUBLISHER_PASSWORD`. That account holds all roles. The publisher logs in and creates an editor-in-chief.
 
+## Images
+
+Every writer (publisher, editor-in-chief or any section role) sees every image of the newspaper in the admin app's **Images** view: who uploaded it when and which articles use it (live, in the current working version or only in older versions). An image can be **cropped** and areas of it **pixelated** (faces, name tags, number plates). The edit replaces the image under the same id in every article at once and cannot be undone.
+
+- **Publishers and editors-in-chief** may edit every image, also one that is live.
+- **The uploader** may edit their own image only while no article shows it live and no article waiting for approval uses it — otherwise the change would pass the approval chain. Everyone else may not edit it.
+- Two people editing the same image: the second save is refused and the app offers to reload the image; nothing is overwritten silently.
+
 ## Article lifecycle
 
 ![Article lifecycle](diagrams/article-lifecycle.svg)

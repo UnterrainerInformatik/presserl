@@ -33,6 +33,8 @@ import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.AccountDto
 import info.unterrainer.presserl.admin.api.ArticleSummaryDto
 import info.unterrainer.presserl.admin.api.CreatedAccountDto
+import info.unterrainer.presserl.admin.api.MediaDto
+import info.unterrainer.presserl.admin.api.MediaUsageDto
 import info.unterrainer.presserl.admin.api.MeDto
 import info.unterrainer.presserl.admin.api.NewspaperDto
 import info.unterrainer.presserl.admin.api.SectionDto
@@ -44,6 +46,7 @@ import info.unterrainer.presserl.admin.resources.log_in_again
 import info.unterrainer.presserl.admin.resources.log_out
 import info.unterrainer.presserl.admin.resources.nav_accounts
 import info.unterrainer.presserl.admin.resources.nav_articles
+import info.unterrainer.presserl.admin.resources.nav_images
 import info.unterrainer.presserl.admin.resources.nav_issues
 import info.unterrainer.presserl.admin.resources.nav_newspaper
 import info.unterrainer.presserl.admin.resources.nav_sections
@@ -60,6 +63,12 @@ import info.unterrainer.presserl.admin.ui.account.SlipPrinter
 import info.unterrainer.presserl.admin.ui.editor.EditorScreen
 import info.unterrainer.presserl.admin.ui.issue.IssueDetailScreen
 import info.unterrainer.presserl.admin.ui.issue.IssueListScreen
+import info.unterrainer.presserl.admin.ui.media.MEDIA_PAGE_SIZE
+import info.unterrainer.presserl.admin.ui.media.MediaDetailScreen
+import info.unterrainer.presserl.admin.ui.media.MediaEditScreen
+import info.unterrainer.presserl.admin.ui.media.MediaGridModel
+import info.unterrainer.presserl.admin.ui.media.MediaGridScreen
+import info.unterrainer.presserl.admin.ui.media.Thumbnails
 import info.unterrainer.presserl.admin.ui.newspaper.NewspaperScreen
 import info.unterrainer.presserl.admin.ui.section.SectionFormScreen
 import info.unterrainer.presserl.admin.ui.section.SectionListScreen
@@ -99,6 +108,9 @@ sealed interface Route {
     /** Holds the generated password; leaving the slip drops it. */
     data class AccountSlip(val created: CreatedAccountDto) : Route
     data object Newspaper : Route
+    data object Media : Route
+    data class MediaDetail(val mediaId: Long) : Route
+    data class MediaEdit(val media: MediaDto, val usage: MediaUsageDto) : Route
 }
 
 /** The deployment's upload limit among the newspaper settings (e.g. `10M`). */
@@ -155,6 +167,10 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
     }
     // the last review-queue response, kept while the editor is open (design D3/D4)
     var queue by remember { mutableStateOf<List<ArticleSummaryDto>?>(null) }
+    // kept while detail and edit views are open, so the grid keeps its pages and thumbnails
+    val newMediaGrid = { MediaGridModel { before -> api.listMedia(MEDIA_PAGE_SIZE, before) } }
+    var mediaGrid by remember { mutableStateOf(newMediaGrid()) }
+    val mediaThumbnails = remember { Thumbnails { api.mediaRendition(it, "thumbnail") } }
     val push = { route: Route -> stack = stack + route }
     val back = { stack = stack.dropLast(1) }
 
@@ -167,12 +183,15 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                 Route.Sections -> NavEntry.SECTIONS
                 Route.Issues -> NavEntry.ISSUES
                 Route.Newspaper -> NavEntry.NEWSPAPER
+                Route.Media -> NavEntry.IMAGES
                 else -> NavEntry.ARTICLES
             },
             onEntry = { entry ->
+                if (entry == NavEntry.IMAGES) mediaGrid = newMediaGrid()
                 stack = listOf(
                     when (entry) {
                         NavEntry.ARTICLES -> Route.ArticleList(ListTab.MINE)
+                        NavEntry.IMAGES -> Route.Media
                         NavEntry.SECTIONS -> Route.Sections
                         NavEntry.ISSUES -> Route.Issues
                         NavEntry.ACCOUNTS -> Route.Accounts
@@ -254,6 +273,29 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                         onDone = { stack = listOf(Route.Accounts) },
                     )
                     Route.Newspaper -> NewspaperScreen(api)
+                    Route.Media -> MediaGridScreen(mediaGrid, mediaThumbnails, onOpen = { push(Route.MediaDetail(it)) })
+                    is Route.MediaDetail -> key(route) {
+                        MediaDetailScreen(
+                            api,
+                            route.mediaId,
+                            onBack = back,
+                            onEdit = { media, usage -> push(Route.MediaEdit(media, usage)) },
+                            onOpenArticle = { push(Route.Editor(it)) },
+                        )
+                    }
+                    is Route.MediaEdit -> key(route) {
+                        MediaEditScreen(
+                            api,
+                            route.media,
+                            route.usage,
+                            onBack = back,
+                            onSaved = { saved ->
+                                mediaThumbnails.invalidate(saved.id)
+                                mediaGrid.replace(saved)
+                                back()
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -280,6 +322,7 @@ private fun Header(screen: Screen.LoggedIn, entry: NavEntry?, onEntry: (NavEntry
         for (navEntry in screen.navEntries) {
             val label = when (navEntry) {
                 NavEntry.ARTICLES -> Res.string.nav_articles
+                NavEntry.IMAGES -> Res.string.nav_images
                 NavEntry.SECTIONS -> Res.string.nav_sections
                 NavEntry.ISSUES -> Res.string.nav_issues
                 NavEntry.ACCOUNTS -> Res.string.nav_accounts

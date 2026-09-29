@@ -22,6 +22,12 @@ public class MediaEntity extends PanacheEntityBase {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     public Long id;
 
+    /**
+     * {@code 0} for a new upload; every edit increments it (reader URLs and ETags carry it).
+     */
+    @Column(nullable = false)
+    public long version;
+
     @Column(name = "object_key", columnDefinition = "text", nullable = false, unique = true)
     public String objectKey;
 

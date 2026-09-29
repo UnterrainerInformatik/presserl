@@ -91,13 +91,15 @@ GET {{baseUrl}}/api/media/{{photoId}}/content
 Authorization: Bearer {{accessToken}}
 
 > {%
-    client.test("200 with the stored JPEG and immutable private caching", () => {
+    client.test("200 with the stored JPEG, revalidated private caching and an ETag", () => {
         client.assert(response.status === 200, "status " + response.status);
         client.assert(response.headers.valueOf("Content-Type") === "image/jpeg", "type " + response.headers.valueOf("Content-Type"));
         client.assert(response.headers.valueOf("Content-Disposition") === "inline", "disposition");
         client.assert(response.headers.valueOf("X-Content-Type-Options") === "nosniff", "nosniff");
-        client.assert(response.headers.valueOf("Cache-Control") === "private, max-age=31536000, immutable",
+        client.assert(response.headers.valueOf("Cache-Control") === "private, no-cache",
             "cache " + response.headers.valueOf("Cache-Control"));
+        client.assert(response.headers.valueOf("ETag") === '"' + client.global.get("photoId") + '-0"',
+            "etag " + response.headers.valueOf("ETag"));
         client.assert(Number(response.headers.valueOf("Content-Length")) > 0, "length");
     });
 %}
@@ -112,8 +114,10 @@ Authorization: Bearer {{accessToken}}
         client.assert(response.headers.valueOf("Content-Type") === "image/jpeg", "type " + response.headers.valueOf("Content-Type"));
         client.assert(response.headers.valueOf("Content-Disposition") === "inline", "disposition");
         client.assert(response.headers.valueOf("X-Content-Type-Options") === "nosniff", "nosniff");
-        client.assert(response.headers.valueOf("Cache-Control") === "private, max-age=31536000, immutable",
+        client.assert(response.headers.valueOf("Cache-Control") === "private, no-cache",
             "cache " + response.headers.valueOf("Cache-Control"));
+        client.assert(response.headers.valueOf("ETag") === '"' + client.global.get("photoId") + '-0"',
+            "etag " + response.headers.valueOf("ETag"));
         client.assert(Number(response.headers.valueOf("Content-Length")) > 0, "length");
     });
 %}
@@ -211,3 +215,146 @@ Authorization: Bearer {{accessToken}}
         client.assert(response.status === 404, "status " + response.status);
     });
 %}
+
+### Revalidate the stored image: unchanged → 304
+GET {{baseUrl}}/api/media/{{photoId}}/content
+Authorization: Bearer {{accessToken}}
+If-None-Match: "{{photoId}}-0"
+
+> {%
+    client.test("304 without a body", () => {
+        client.assert(response.status === 304, "status " + response.status);
+        client.assert(response.headers.valueOf("ETag") === '"' + client.global.get("photoId") + '-0"',
+            "etag " + response.headers.valueOf("ETag"));
+    });
+%}
+
+### List the media, newest first, two per page
+GET {{baseUrl}}/api/media?limit=2
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200 with a page of media and usage counts", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.items.length <= 2, "items " + response.body.items.length);
+        const ids = response.body.items.map(item => item.id);
+        client.assert(ids.every((id, i) => i === 0 || ids[i - 1] > id), "newest first " + ids);
+        client.assert(response.body.items.every(item => typeof item.usageCount === "number" && typeof item.version === "number"),
+            "usageCount and version " + JSON.stringify(response.body.items));
+        client.assert(response.body.next === null || response.body.next === ids[ids.length - 1], "next " + response.body.next);
+    });
+%}
+
+### Invalid list limit
+GET {{baseUrl}}/api/media?limit=500
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("400 naming limit", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "limit", JSON.stringify(response.body));
+    });
+%}
+
+### Usage of an unused image
+GET {{baseUrl}}/api/media/{{photoId}}/usage
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200, the publisher may edit, no articles", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.mayEdit === true, "mayEdit " + response.body.mayEdit);
+        client.assert(Array.isArray(response.body.articles), JSON.stringify(response.body));
+    });
+%}
+
+### Crop outside the image (640 x 480)
+POST {{baseUrl}}/api/media/{{photoId}}/edit
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "version": 0, "crop": { "x": 400, "y": 0, "width": 400, "height": 300 } }
+
+> {%
+    client.test("400 naming crop", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "crop", JSON.stringify(response.body));
+    });
+%}
+
+### Nothing to do
+POST {{baseUrl}}/api/media/{{photoId}}/edit
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "version": 0, "pixelate": [] }
+
+> {%
+    client.test("400 naming crop", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "crop", JSON.stringify(response.body));
+    });
+%}
+
+### Crop and pixelate a face
+POST {{baseUrl}}/api/media/{{photoId}}/edit
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "version": 0,
+  "crop": { "x": 40, "y": 30, "width": 480, "height": 320 },
+  "pixelate": [ { "cx": 300, "cy": 200, "rx": 60, "ry": 80 } ] }
+
+> {%
+    client.test("200 with the edited media under the same id", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.id === client.global.get("photoId") * 1, "id " + response.body.id);
+        client.assert(response.body.version === 1, "version " + response.body.version);
+        client.assert(response.body.width === 480 && response.body.height === 320,
+            "size " + response.body.width + " x " + response.body.height);
+        client.assert(response.body.renditions.thumbnail.width === 480, "thumbnail " + JSON.stringify(response.body.renditions));
+    });
+%}
+
+### The same edit again, based on the old version
+POST {{baseUrl}}/api/media/{{photoId}}/edit
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "version": 0, "pixelate": [ { "cx": 100, "cy": 100, "rx": 20, "ry": 20 } ] }
+
+> {%
+    client.test("409 naming version", () => {
+        client.assert(response.status === 409, "status " + response.status);
+        client.assert(response.body.errors[0].field === "version", JSON.stringify(response.body));
+        client.assert(response.body.errors[0].message === "media " + client.global.get("photoId") + " was changed meanwhile",
+            response.body.errors[0].message);
+    });
+%}
+
+### Revalidate with the old ETag: the edited image comes back
+GET {{baseUrl}}/api/media/{{photoId}}/renditions/web
+Authorization: Bearer {{accessToken}}
+If-None-Match: "{{photoId}}-0"
+
+> {%
+    client.test("200 with the new ETag", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.headers.valueOf("ETag") === '"' + client.global.get("photoId") + '-1"',
+            "etag " + response.headers.valueOf("ETag"));
+    });
+%}
+
+### Readers may not edit
+POST {{baseUrl}}/api/media/{{photoId}}/edit
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{ "version": 1, "pixelate": [ { "cx": 100, "cy": 100, "rx": 20, "ry": 20 } ] }
+
+> {%
+    client.test("403", () => {
+        client.assert(response.status === 403, "status " + response.status);
+    });
+%}
+

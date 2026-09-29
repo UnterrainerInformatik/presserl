@@ -10,7 +10,7 @@ class NavigationTest {
     @Test
     fun publisherSeesEveryEntry() {
         assertEquals(
-            listOf(NavEntry.ARTICLES, NavEntry.SECTIONS, NavEntry.ISSUES, NavEntry.ACCOUNTS, NavEntry.NEWSPAPER),
+            listOf(NavEntry.ARTICLES, NavEntry.IMAGES, NavEntry.SECTIONS, NavEntry.ISSUES, NavEntry.ACCOUNTS, NavEntry.NEWSPAPER),
             navEntries(
                 listOf("WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "MANAGE_ISSUES", "ADMINISTER_ACCOUNTS",
                     "CONFIGURE_NEWSPAPER"),
@@ -21,7 +21,7 @@ class NavigationTest {
     @Test
     fun serverWithoutConfigureNewspaperShowsNoNewspaperEntry() {
         assertEquals(
-            listOf(NavEntry.ARTICLES, NavEntry.SECTIONS, NavEntry.ACCOUNTS),
+            listOf(NavEntry.ARTICLES, NavEntry.IMAGES, NavEntry.SECTIONS, NavEntry.ACCOUNTS),
             navEntries(listOf("WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS")),
         )
     }
@@ -29,7 +29,7 @@ class NavigationTest {
     @Test
     fun serverWithoutManageIssuesShowsNoIssuesEntry() {
         assertEquals(
-            listOf(NavEntry.ARTICLES, NavEntry.SECTIONS, NavEntry.ACCOUNTS, NavEntry.NEWSPAPER),
+            listOf(NavEntry.ARTICLES, NavEntry.IMAGES, NavEntry.SECTIONS, NavEntry.ACCOUNTS, NavEntry.NEWSPAPER),
             navEntries(
                 listOf("WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER"),
             ),
@@ -39,14 +39,19 @@ class NavigationTest {
     @Test
     fun sectionEditorHasNoIssuesEntry() {
         assertEquals(
-            listOf(NavEntry.ARTICLES, NavEntry.SECTIONS, NavEntry.ACCOUNTS),
+            listOf(NavEntry.ARTICLES, NavEntry.IMAGES, NavEntry.SECTIONS, NavEntry.ACCOUNTS),
             navEntries(listOf("WRITE_ARTICLES", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS")),
         )
     }
 
     @Test
-    fun reporterSeesNoEntries() {
-        assertEquals(emptyList(), navEntries(listOf("WRITE_ARTICLES")))
+    fun reporterSeesArticlesAndImages() {
+        assertEquals(listOf(NavEntry.ARTICLES, NavEntry.IMAGES), navEntries(listOf("WRITE_ARTICLES")))
+    }
+
+    @Test
+    fun sectionManagerWithoutWritingSeesNoEntries() {
+        assertEquals(emptyList(), navEntries(listOf("MANAGE_SECTIONS")))
     }
 
     @Test
@@ -56,9 +61,9 @@ class NavigationTest {
 
     @Test
     fun unknownActionsAreIgnored() {
-        assertEquals(emptyList(), navEntries(listOf("WRITE_ARTICLES", "REVIEW")))
+        assertEquals(listOf(NavEntry.ARTICLES, NavEntry.IMAGES), navEntries(listOf("WRITE_ARTICLES", "REVIEW")))
         assertEquals(
-            listOf(NavEntry.ARTICLES, NavEntry.SECTIONS),
+            listOf(NavEntry.ARTICLES, NavEntry.IMAGES, NavEntry.SECTIONS),
             navEntries(listOf("REVIEW", "WRITE_ARTICLES", "MANAGE_SECTIONS")),
         )
     }

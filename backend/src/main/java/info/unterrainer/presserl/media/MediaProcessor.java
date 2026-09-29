@@ -1,5 +1,6 @@
 package info.unterrainer.presserl.media;
 
+import java.awt.AlphaComposite;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.geom.AffineTransform;
@@ -111,6 +112,125 @@ public class MediaProcessor {
         }
         boolean alpha = type == InputType.PNG && decoded.getColorModel().hasAlpha();
         return renditions(toSrgb(decoded, alpha), alpha ? Format.PNG : Format.JPEG);
+    }
+
+    /**
+     * A crop rectangle in pixels of the stored image.
+     */
+    public record Crop(int x, int y, int width, int height) {
+    }
+
+    /**
+     * An ellipse to pixelate, centre and radii in pixels of the stored image.
+     */
+    public record Ellipse(int cx, int cy, int rx, int ry) {
+    }
+
+    /**
+     * Edits a stored image: pixelates the ellipses in order, then crops (both in coordinates of the
+     * stored image), and re-encodes the result like an upload with fresh renditions. The bytes pass
+     * the same sniffing and decoding as an upload.
+     *
+     * @param crop     {@code null} for none; must lie inside the image
+     * @param ellipses may be empty; parts outside the image are ignored
+     * @throws MediaException {@code 415} for unsupported types, {@code 400} for undecodable images
+     */
+    public Processed edit(byte[] stored, Crop crop, List<Ellipse> ellipses) {
+        InputType type = sniff(Arrays.copyOf(stored, Math.min(stored.length, HEAD_LENGTH)));
+        BufferedImage decoded;
+        try (ImageInputStream in = ImageIO.createImageInputStream(new ByteArrayInputStream(stored))) {
+            decoded = decode(in, type);
+        } catch (IOException e) {
+            throw MediaException.invalid("the image cannot be decoded", e);
+        }
+        BufferedImage image = copy(decoded, decoded.getColorModel().hasAlpha());
+        for (Ellipse ellipse : ellipses) {
+            pixelate(image, ellipse);
+        }
+        if (crop != null) {
+            image = copy(image.getSubimage(crop.x(), crop.y(), crop.width(), crop.height()),
+                    image.getColorModel().hasAlpha());
+        }
+        boolean alpha = hasTransparency(image);
+        BufferedImage result = scale(toSrgb(image, alpha), MAX_LONG_SIDE);
+        Format format = alpha ? Format.PNG : Format.JPEG;
+        return new Processed(format.encode(result), format.contentType, format.extension, result.getWidth(),
+                result.getHeight(), renditions(result, format));
+    }
+
+    /**
+     * The side of the square pixelation blocks for an ellipse: the larger of 12 pixels and one eighth
+     * of its smaller diameter.
+     */
+    static int blockSize(Ellipse ellipse) {
+        return Math.max(12, Math.min(2 * ellipse.rx(), 2 * ellipse.ry()) / 8);
+    }
+
+    /**
+     * Pixelates the ellipse in place: blocks tile its bounding box from the top-left corner (clipped
+     * to the image); every pixel whose centre lies inside the ellipse takes the average (alpha
+     * included) of all in-image pixels of its block, so no detail of the covered area survives.
+     */
+    static void pixelate(BufferedImage image, Ellipse ellipse) {
+        int b = blockSize(ellipse);
+        int left = ellipse.cx() - ellipse.rx();
+        int top = ellipse.cy() - ellipse.ry();
+        int right = ellipse.cx() + ellipse.rx();
+        int bottom = ellipse.cy() + ellipse.ry();
+        double rx = ellipse.rx();
+        double ry = ellipse.ry();
+        for (int by = top; by < bottom; by += b) {
+            int y0 = Math.max(0, by);
+            int y1 = Math.min(image.getHeight(), by + b);
+            for (int bx = left; bx < right; bx += b) {
+                int x0 = Math.max(0, bx);
+                int x1 = Math.min(image.getWidth(), bx + b);
+                if (x0 >= x1 || y0 >= y1) {
+                    continue;
+                }
+                int w = x1 - x0;
+                int[] block = image.getRGB(x0, y0, w, y1 - y0, null, 0, w);
+                long a = 0;
+                long r = 0;
+                long g = 0;
+                long bl = 0;
+                for (int argb : block) {
+                    a += argb >>> 24;
+                    r += (argb >> 16) & 0xFF;
+                    g += (argb >> 8) & 0xFF;
+                    bl += argb & 0xFF;
+                }
+                int n = block.length;
+                int average = (int) ((a + n / 2) / n) << 24 | (int) ((r + n / 2) / n) << 16
+                        | (int) ((g + n / 2) / n) << 8 | (int) ((bl + n / 2) / n);
+                for (int y = y0; y < y1; y++) {
+                    double dy = (y + 0.5 - ellipse.cy()) / ry;
+                    for (int x = x0; x < x1; x++) {
+                        double dx = (x + 0.5 - ellipse.cx()) / rx;
+                        if (dx * dx + dy * dy <= 1) {
+                            image.setRGB(x, y, average);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * A fresh sRGB copy, {@code TYPE_INT_ARGB} with alpha or {@code TYPE_INT_RGB} without, that can be
+     * changed without touching {@code image}.
+     */
+    private static BufferedImage copy(BufferedImage image, boolean alpha) {
+        BufferedImage target = new BufferedImage(image.getWidth(), image.getHeight(),
+                alpha ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = target.createGraphics();
+        try {
+            g.setComposite(AlphaComposite.Src);
+            g.drawImage(image, 0, 0, null);
+        } finally {
+            g.dispose();
+        }
+        return target;
     }
 
     /**

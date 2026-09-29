@@ -39,7 +39,7 @@ class ReaderMediaPrivateTest {
         long cat = ReaderMedia.upload(1200, 900);
         long article = fixtures.published("Private headline", Instant.parse("2026-09-20T12:00:00Z"));
         fixtures.leadImage(article, 1, cat, "Our cat Minka");
-        path = "/media/%d/web".formatted(cat);
+        path = "/media/%d/web?v=0".formatted(cat);
     }
 
     @AfterEach

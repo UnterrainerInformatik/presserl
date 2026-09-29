@@ -60,7 +60,8 @@ data class AuthorDto(
 /**
  * `POST /api/media` and `GET /api/media/{id}`: an uploaded image as stored after re-encoding. [contentType] is
  * `image/jpeg` or `image/png`, [size] the stored file's bytes; [uploadedAt] is an ISO-8601 string. [renditions] maps
- * `thumbnail`, `web` and `print` to their sizes; empty while the server has not produced them yet.
+ * `thumbnail`, `web` and `print` to their sizes; empty while the server has not produced them yet. [version] is `0`
+ * after the upload and incremented by every edit (`POST /api/media/{id}/edit`).
  */
 @Serializable
 data class MediaDto(
@@ -72,7 +73,68 @@ data class MediaDto(
     val uploadedBy: AuthorDto,
     val uploadedAt: String,
     val renditions: Map<String, RenditionDto> = emptyMap(),
+    val version: Long = 0,
 )
+
+/** Entry of `GET /api/media`: a [MediaDto]'s fields plus [usageCount], the number of articles using the image. */
+@Serializable
+data class MediaListItemDto(
+    val id: Long,
+    val version: Long = 0,
+    val contentType: String,
+    val width: Int,
+    val height: Int,
+    val size: Long,
+    val uploadedBy: AuthorDto,
+    val uploadedAt: String,
+    val renditions: Map<String, RenditionDto> = emptyMap(),
+    val usageCount: Long = 0,
+)
+
+/** One page of `GET /api/media`, newest first; [next] is the `before` value of the next page, `null` on the last. */
+@Serializable
+data class MediaPage(val items: List<MediaListItemDto>, val next: Long? = null)
+
+/**
+ * `GET /api/media/{id}/usage`: whether the user may edit the image and the articles using it, most recently
+ * changed first.
+ */
+@Serializable
+data class MediaUsageDto(val mayEdit: Boolean, val articles: List<MediaUseDto> = emptyList())
+
+/**
+ * An article using a media as lead image; [headline] is that of its latest revision. [live]: the live revision uses
+ * the image; [latest]: the latest (working) revision uses it; [older]: only older revisions use it.
+ */
+@Serializable
+data class MediaUseDto(
+    val id: Long,
+    val headline: String,
+    val section: SectionRefDto? = null,
+    val author: AuthorDto,
+    val status: String,
+    val pendingLevel: String? = null,
+    val publishedAt: String? = null,
+    val updatedAt: String,
+    val live: Boolean = false,
+    val latest: Boolean = false,
+    val older: Boolean = false,
+)
+
+/** A crop rectangle in pixels of the stored image. */
+@Serializable
+data class CropRequest(val x: Int, val y: Int, val width: Int, val height: Int)
+
+/** An ellipse to pixelate, centre and radii in pixels of the stored image. */
+@Serializable
+data class EllipseRequest(val cx: Int, val cy: Int, val rx: Int, val ry: Int)
+
+/**
+ * Body of `POST /api/media/{id}/edit`: the [version] the edit is based on (`409` if stale), an optional [crop] and the
+ * ellipses to [pixelate]; at least one of both.
+ */
+@Serializable
+data class EditMediaRequest(val version: Long, val crop: CropRequest? = null, val pixelate: List<EllipseRequest> = emptyList())
 
 /** Size of one rendition of a [MediaDto]. */
 @Serializable

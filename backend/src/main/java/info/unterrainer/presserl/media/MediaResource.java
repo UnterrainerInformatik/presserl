@@ -8,6 +8,8 @@ import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.RestResponse;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import info.unterrainer.presserl.auth.CurrentUser;
 import info.unterrainer.presserl.section.Newsroom;
 import info.unterrainer.presserl.section.NewsroomService;
@@ -16,15 +18,19 @@ import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 
 /**
- * Media endpoints for writers ({@link Newsroom#isWriter()}, {@code WRITE_ARTICLES}): upload an image
- * and read it back with its renditions. Everyone else gets {@code 403}. Uploads are re-encoded by
+ * Media endpoints for writers ({@link Newsroom#isWriter()}, {@code WRITE_ARTICLES}): upload an image,
+ * list the media with their usage, read them back with their renditions and edit them (under the rules
+ * of {@link MediaService#mayEdit}). Everyone else gets {@code 403}. Uploads are re-encoded by
  * {@link MediaProcessor}.
  */
 @Path("/api/media")
@@ -32,6 +38,7 @@ import jakarta.ws.rs.core.MediaType;
 public class MediaResource {
 
     static final String FILE_PART = "file";
+    static final String CACHE_CONTROL = "private, no-cache";
 
     @Inject
     JsonWebToken token;
@@ -61,6 +68,16 @@ public class MediaResource {
         });
     }
 
+    /**
+     * The newspaper's media, newest first; {@code limit} (1–200, default 60) per page, {@code before}
+     * the {@code next} value of the previous page.
+     */
+    @GET
+    @Produces(MediaType.APPLICATION_JSON)
+    public Uni<MediaPageDto> list(@QueryParam("limit") String limit, @QueryParam("before") String before) {
+        return newsroom().flatMap(newsroom -> service.list(newsroom, limit, before));
+    }
+
     @GET
     @Path("/{id}")
     @Produces(MediaType.APPLICATION_JSON)
@@ -69,14 +86,37 @@ public class MediaResource {
     }
 
     /**
-     * The stored bytes; they never change, so browsers may keep them for a year (privately, as they
-     * need a token). No {@code @Produces}: with image types declared, Quarkus REST picks a writer
+     * The articles using the media and whether the caller may edit it.
+     */
+    @GET
+    @Path("/{id}/usage")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Uni<MediaUsageDto> usage(@PathParam("id") long id) {
+        return newsroom().flatMap(newsroom -> service.usage(newsroom, id));
+    }
+
+    /**
+     * Crops and/or pixelates the image, replacing it and its renditions under the same id.
+     */
+    @POST
+    @Path("/{id}/edit")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Uni<MediaDto> edit(@PathParam("id") long id, JsonNode json) {
+        return newsroom().flatMap(newsroom -> service.edit(newsroom, id, json)).map(MediaDto::of);
+    }
+
+    /**
+     * The stored bytes. An edit replaces them, so browsers revalidate every time (privately, as they
+     * need a token) with the {@code ETag} {@code "{id}-{version}"}; a matching {@code If-None-Match}
+     * answers {@code 304}. No {@code @Produces}: with image types declared, Quarkus REST picks a writer
      * that serializes {@code byte[]} via {@code toString()}; the type is set on the response instead.
      */
     @GET
     @Path("/{id}/content")
-    public Uni<RestResponse<byte[]>> content(@PathParam("id") long id) {
-        return newsroom().flatMap(newsroom -> service.content(newsroom, id)).map(MediaResource::bytes);
+    public Uni<RestResponse<byte[]>> content(@PathParam("id") long id,
+            @HeaderParam(HttpHeaders.IF_NONE_MATCH) String ifNoneMatch) {
+        return newsroom().flatMap(newsroom -> service.content(newsroom, id, ifNoneMatch)).map(MediaResource::bytes);
     }
 
     /**
@@ -84,16 +124,25 @@ public class MediaResource {
      */
     @GET
     @Path("/{id}/renditions/{kind}")
-    public Uni<RestResponse<byte[]>> rendition(@PathParam("id") long id, @PathParam("kind") String kind) {
-        return newsroom().flatMap(newsroom -> service.rendition(newsroom, id, kind)).map(MediaResource::bytes);
+    public Uni<RestResponse<byte[]>> rendition(@PathParam("id") long id, @PathParam("kind") String kind,
+            @HeaderParam(HttpHeaders.IF_NONE_MATCH) String ifNoneMatch) {
+        return newsroom().flatMap(newsroom -> service.rendition(newsroom, id, kind, ifNoneMatch))
+                .map(MediaResource::bytes);
     }
 
     private static RestResponse<byte[]> bytes(MediaService.Content content) {
+        if (content.bytes() == null) {
+            return RestResponse.ResponseBuilder.<byte[]>create(RestResponse.Status.NOT_MODIFIED)
+                    .header(HttpHeaders.ETAG, content.etag())
+                    .header(HttpHeaders.CACHE_CONTROL, CACHE_CONTROL)
+                    .build();
+        }
         return RestResponse.ResponseBuilder.ok(content.bytes())
                 .type(content.contentType())
                 .header("Content-Disposition", "inline")
                 .header("X-Content-Type-Options", "nosniff")
-                .header("Cache-Control", "private, max-age=31536000, immutable")
+                .header(HttpHeaders.CACHE_CONTROL, CACHE_CONTROL)
+                .header(HttpHeaders.ETAG, content.etag())
                 .build();
     }
 

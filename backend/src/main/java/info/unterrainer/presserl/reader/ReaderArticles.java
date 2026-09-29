@@ -23,14 +23,16 @@ public class ReaderArticles {
 
     /**
      * Live revisions of published articles with their section and the {@code web}, {@code thumbnail}
-     * and {@code print} renditions of their lead image (all {@code null} without one).
+     * and {@code print} renditions of their lead image and its media version (all {@code null} without
+     * one).
      */
-    static final String LIVE_PUBLISHED = "select a, r, s, w, t, p from ArticleEntity a "
+    static final String LIVE_PUBLISHED = "select a, r, s, w, t, p, m.version from ArticleEntity a "
             + "join ArticleRevisionEntity r on r.articleId = a.id and r.number = a.liveRevision "
             + "join SectionEntity s on s.id = a.sectionId "
             + "left join MediaRenditionEntity w on w.mediaId = r.leadImageMediaId and w.kind = 'web' "
             + "left join MediaRenditionEntity t on t.mediaId = r.leadImageMediaId and t.kind = 'thumbnail' "
             + "left join MediaRenditionEntity p on p.mediaId = r.leadImageMediaId and p.kind = 'print' "
+            + "left join MediaEntity m on m.id = r.leadImageMediaId "
             + "where a.status = :status";
 
     /**
@@ -98,7 +100,8 @@ public class ReaderArticles {
     static ReaderArticle toArticle(Object[] row) {
         ArticleRevisionEntity live = (ArticleRevisionEntity) row[1];
         ReaderImage leadImage = ReaderImage.of(live.leadImageMediaId, live.leadImageCaption,
-                (MediaRenditionEntity) row[3], (MediaRenditionEntity) row[4], (MediaRenditionEntity) row[5]);
+                (Long) row[6], (MediaRenditionEntity) row[3], (MediaRenditionEntity) row[4],
+                (MediaRenditionEntity) row[5]);
         return ReaderArticle.of((ArticleEntity) row[0], live, (SectionEntity) row[2], leadImage);
     }
 }

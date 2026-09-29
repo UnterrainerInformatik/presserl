@@ -6,13 +6,14 @@ import kotlinx.coroutines.CancellationException
 
 /**
  * The `thumbnail` renditions of media, loaded with [load] (it needs the token, so there is no plain image URL) and
- * decoded once per media id. Snapshot state, so previews update when a thumbnail arrives.
+ * decoded once per media id until [invalidate]d. Snapshot state, so previews update when a thumbnail arrives.
  */
 class Thumbnails(
     private val decode: (ByteArray) -> ImageBitmap? = ::decodeImage,
     private val load: suspend (mediaId: Long) -> ByteArray,
 ) {
     private val images = mutableStateMapOf<Long, Result>()
+    private val versions = mutableMapOf<Long, Long?>()
 
     /** A loaded thumbnail, or [Result.Missing] when it could not be loaded or decoded. */
     sealed interface Result {
@@ -23,9 +24,22 @@ class Thumbnails(
     /** The thumbnail if it has been fetched; `null` while it has not. */
     operator fun get(mediaId: Long): Result? = images[mediaId]
 
-    /** Fetches the thumbnail unless it was fetched before. */
-    suspend fun fetch(mediaId: Long) {
-        if (images.containsKey(mediaId)) return
+    /**
+     * Forgets the thumbnail of an edited media, so the next [fetch] loads it again (the server revalidates with the
+     * media version and answers the edited image).
+     */
+    fun invalidate(mediaId: Long) {
+        images.remove(mediaId)
+        versions.remove(mediaId)
+    }
+
+    /**
+     * Fetches the thumbnail unless it was fetched before; with a [version] (`MediaDto.version`) also when the one fetched
+     * belonged to another version, so an image edited meanwhile shows edited.
+     */
+    suspend fun fetch(mediaId: Long, version: Long? = null) {
+        if (images.containsKey(mediaId) && (version == null || versions[mediaId] == version)) return
+        versions[mediaId] = version
         images[mediaId] = try {
             decode(load(mediaId))?.let { Result.Loaded(it) } ?: Result.Missing
         } catch (e: CancellationException) {

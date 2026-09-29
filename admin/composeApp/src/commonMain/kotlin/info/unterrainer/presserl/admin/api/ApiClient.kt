@@ -296,6 +296,30 @@ class ApiClient(
             },
         ) { bearerAuth(accessToken()) }.body()
 
+    /** The newspaper's media, newest first, [limit] per page; [before] is [MediaPage.next] of the previous page. */
+    suspend fun listMedia(limit: Int? = null, before: Long? = null): MediaPage =
+        http.get("$baseUrl/api/media") {
+            bearerAuth(accessToken())
+            limit?.let { parameter("limit", it) }
+            before?.let { parameter("before", it) }
+        }.body()
+
+    /** The articles using the image and whether the user may edit it. */
+    suspend fun mediaUsage(id: Long): MediaUsageDto =
+        http.get("$baseUrl/api/media/$id/usage") { bearerAuth(accessToken()) }.body()
+
+    /**
+     * Crops and/or pixelates the image permanently, replacing it under the same id; answers the edited media. `400`
+     * for an invalid area, `403` when the user may not edit it, `409` when it changed since [EditMediaRequest.version],
+     * `503` when the object store is unreachable (see [info.unterrainer.presserl.admin.ui.media.mediaEditErrorOf]).
+     */
+    suspend fun editMedia(id: Long, request: EditMediaRequest): MediaDto =
+        http.post("$baseUrl/api/media/$id/edit") {
+            bearerAuth(accessToken())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
     suspend fun media(id: Long): MediaDto = http.get("$baseUrl/api/media/$id") { bearerAuth(accessToken()) }.body()
 
     /** The stored image bytes (`image/jpeg` or `image/png`, see [MediaDto.contentType]). */

@@ -116,7 +116,7 @@ One newspaper per server; a second newspaper is a second deployment.
 - **ArticleRevision** — numbered per article (`1, 2, …`), holds the content: kicker, headline, subheadline, lead (plain text), an optional lead image (media reference plus caption, plain text ≤ 300 characters; a caption needs an image, a referenced media cannot be deleted) and body (**body format v1**: structured JSON of blocks — paragraph, subhead, quote, bullet list — with inline runs whose only mark is bold; validated server-side against an allowlist, never raw HTML). The latest revision is the **working revision**: saves overwrite it until it is published; after that the next save with changed content starts a new revision. Publishing makes the latest revision the article's live revision, which stays unchanged until the next publication, so a new or changed lead image reaches readers only with it. Taking offline keeps the live revision reference.
 - **ArticleReview** — one approval or rejection: decision, the level the article waited for, the reviewed revision, reviewer (token `sub` plus username/display-name snapshot), note (rejections only, feedback to the author), time; deleted with the article
 - **Issue** — number (assigned as highest + 1, unique, never changed), optional publication date (a calendar date, display only), published switch plus time of the latest switch; groups articles in an order (the first is the lead story). Membership lives on the article (`issue_id` + `issue_position`, both set or both `NULL`), so an article belongs to at most one issue. The first publication of an article without issue appends it to the issue with the highest number, live or not (blog mode: one live issue that grows; planned issues: the highest one is not live yet and collects). Only unpublished issues can be deleted; their articles then belong to no issue. The migration creates issue 1 (not live) with every article published before. Issues only hide themselves while not live — article visibility stays governed by the article status
-- **Media** — one uploaded image after re-encoding: object key in the media store (`media/<uuid>.<jpg|png>`, random, written once), content type (`image/jpeg` | `image/png`), width, height, stored size, uploader (token `sub` plus username/display-name snapshot), upload time. The bytes live only in the object store; the rows are written after the objects, so no row points to a missing object.
+- **Media** — one uploaded image after re-encoding: object key in the media store (`media/<uuid>.<jpg|png>`, random, written once), content type (`image/jpeg` | `image/png`), width, height, stored size, uploader (token `sub` plus username/display-name snapshot), upload time, version (`0` after the upload). The bytes live only in the object store; the rows are written after the objects, so no row points to a missing object. An **edit** (crop, pixelation of ellipses; `POST /api/media/{id}/edit`) is processed on the server from the stored image, written under new keys with fresh renditions and swapped in under the same id in one transaction (row locked, permission and version re-checked, `version + 1`); the previous keys go to `media_object_trash` and are deleted after commit, retried at start and every 10 minutes until the object is gone. Articles and revisions are untouched; every use shows the edited image. Who may edit: see [roles-and-workflow.md](roles-and-workflow.md#images).
 - **MediaRendition** — media × kind (`thumbnail` ≤ 480 px, `web` ≤ 1600 px, `print` ≤ 3000 px on the longer side, never enlarged): own object key, content type (that of the media), width, height, size. Produced during the upload from the decoded pixels (media and rendition rows in one transaction); media from before renditions get theirs from a startup backfill in the background. Storage per image grows by roughly half of the stored image
 
 ## Routes
@@ -141,8 +141,9 @@ POST   /text-size                         reader's text-size choice (form: size,
 GET    /reader/reader.css, /reader/fonts/* default theme and its self-hosted fonts (OFL)
 GET    /theme/*                           fork theme directory (presserl.theme.dir, from deploy/theme/): allow-listed
                                           static types, no path escapes, Cache-Control: no-cache
-GET    /media/{id}/{kind}                 rendition (thumbnail | web | print) of a lead image of a live revision of a
-                                          PUBLISHED article; empty 404 otherwise; Cache-Control public/private max-age=3600
+GET    /media/{id}/{kind}?v={version}     rendition (thumbnail | web | print) of a lead image of a live revision of a
+                                          PUBLISHED article; empty 404 otherwise; Cache-Control public/private max-age=3600;
+                                          v is ignored (pages link the media version so an edit changes the URL)
 ```
 
 **Lead images.** The article page shows the live revision's lead image after the headline block as
@@ -152,8 +153,12 @@ text); the front page's lead story uses `web`, the cards `thumbnail` (lazy). `/m
 answers only for media that are the lead image of at least one live revision of a `PUBLISHED`
 article, with the same visibility decision as the pages (private newspaper: entitled readers only,
 otherwise `404`, never a login redirect since only `<img>` loads it). The stored image is never
-served to readers. The route caches for an hour, not immutably: the bytes never change, but whether
-they may be served does (taking offline, emergency brake, private switch).
+served to readers. The route caches for an hour, not immutably: whether an image may be served
+changes (taking offline, emergency brake, private switch), and an edit replaces its bytes. Pages
+therefore link every rendition as `/media/{id}/{kind}?v={version}`, so after an edit browsers and
+proxies fetch the new image; a copy cached under the old URL may be shown for up to an hour to a
+visitor who already had it. The admin endpoints answer `Cache-Control: private, no-cache` with an
+`ETag` of id and version and `304` on a match.
 
 **Theme and text size.** The default theme `reader.css` is built on public design tokens
 (`--presserl-*`), follows `prefers-color-scheme` for dark mode and uses only self-hosted fonts, so

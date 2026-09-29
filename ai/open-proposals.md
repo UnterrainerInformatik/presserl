@@ -11,20 +11,10 @@ Android/iOS targets of the admin app; the app reads the account slip's QR code
 pass-phrase) and logs in without typing; store publishing (Google Play Families policy, Apple
 developer account). The slip's QR code itself is done (qr-slip-login); no token exchange.
 
-## Media view with crop and blur
-A media view in the admin app for reviewing uploaded images (list/grid of the newspaper's media
-with uploader, upload time, size and the articles using each image; open one full size). Two
-editing tools on the opened image:
-- **Crop** — drag a rectangle (free or fixed aspect ratios such as the lead-image ratio).
-- **Round pixelation** — draw circles/ellipses (by dragging) over faces, name tags, number
-  plates or similar; each covered area is pixelated irreversibly. Several areas per image,
-  movable and removable before saving.
-Afterwards the edited image is saved *over* the original, so every article using it shows the
-edited version; the pixelation must be baked into the stored bytes and all renditions (never a
-reversible overlay).
-Open points: media objects are written once today (random key, rows written after objects) and
-published revisions reference them — "save over" means either a new object behind the same media
-id (renditions regenerated, caches busted) or a new media row swapped into all references;
-who may edit (uploader, reviewers of the article, publishers); whether editing must happen
-server-side (re-encode path, EXIF stripping) or client-side with a fresh upload; undo before
-saving only, no history after.
+## Photo-reporter role
+A new newspaper-wide role for someone who takes pictures but has no section (or whose sections are
+irrelevant): may upload images, use the media view ("Images") and edit their own uploads under the
+same rule as other uploaders (only while no live revision and no pending submission uses them); does
+not write articles. Assigned from editor-in-chief upward. Needs a Keycloak group, delegation and
+password-reset rules, the account form, the realm template, and decoupling the media endpoints and
+the "Images" header entry from `WRITE_ARTICLES` (own action). Builds on media-view-crop-blur.

@@ -1102,10 +1102,18 @@ Images live in an S3-compatible object store that browsers never reach. Readers 
 renditions of published lead images through the reader route `GET /media/{id}/{kind}` (below),
 never the stored image.
 
+A media can be **edited** (cropped, areas pixelated, `POST /api/media/{id}/edit`): the edit replaces
+the stored image and all renditions under the **same id** and increments its `version`; every
+article using it shows the edited image at once, the previous bytes are deleted. Because the bytes
+of an id can change, the byte endpoints are revalidated (`ETag` `"{id}-{version}"`) instead of
+cached as immutable, and reader pages link renditions with `?v={version}`.
+
 All media endpoints require a bearer token (missing/invalid → `401`, empty body) and
 `WRITE_ARTICLES` in `allowedActions` (publisher, editor-in-chief or any section role); everyone
 else gets `403`. Refusals carry the error body (`{"errors": [{"field": …, "message": …}]}`) with
 field `file` for problems of the uploaded file and `null` otherwise.
+
+Editing follows its own rule (see `POST /api/media/{id}/edit`).
 
 **Body limits:** the HTTP layer accepts request bodies up to 64M for `POST /api/media` only; every
 other path keeps the former 10M limit (`413`, error body with field `null`, message
@@ -1115,7 +1123,7 @@ other path keeps the former 10M limit (`413`, error body with field `null`, mess
 ## `MediaDto`
 
 ```json
-{ "id": 17, "contentType": "image/jpeg", "width": 4096, "height": 2731, "size": 1834211,
+{ "id": 17, "version": 0, "contentType": "image/jpeg", "width": 4096, "height": 2731, "size": 1834211,
   "uploadedBy": { "username": "papa", "displayName": "Papa" },
   "uploadedAt": "2026-09-27T14:03:11.402Z",
   "renditions": {
@@ -1123,8 +1131,8 @@ other path keeps the former 10M limit (`413`, error body with field `null`, mess
     "web":       { "width": 1600, "height": 1067, "size": 298114 },
     "print":     { "width": 3000, "height": 2000, "size": 861022 } } }
 ```
-`contentType`: `image/jpeg` | `image/png` — the type of the stored (re-encoded) image, not of the
-upload; the renditions have the same type. `width`, `height`: pixels of the stored image. `size`:
+`version`: `0` after the upload, incremented by every edit. `contentType`: `image/jpeg` |
+`image/png` — the type of the stored (re-encoded) image, not of the upload; the renditions have the same type. `width`, `height`: pixels of the stored image. `size`:
 bytes of the stored image. `uploadedBy`: username and display name at upload time (like article
 bylines). `renditions`: per kind width, height and bytes; always all three once produced, `{}`
 while the backfill has not reached an older media yet.
@@ -1153,6 +1161,28 @@ Uploads one image.
   on any failure the objects already written are deleted (best effort). Nothing is stored for a
   refused upload.
 
+## `GET /api/media`
+
+The newspaper's media, newest upload first, paged by id.
+
+- **Auth:** `WRITE_ARTICLES`
+- **Query:** `limit` (1–200, default 60), `before` (a media id; only media with a smaller id are
+  listed — pass `next` of the previous page).
+- **Response `200`:**
+  ```json
+  { "items": [ { "id": 122, "version": 0, "contentType": "image/jpeg", "width": 4096, "height": 2731,
+                 "size": 1834211, "uploadedBy": { "username": "anna", "displayName": "Anna" },
+                 "uploadedAt": "2026-09-27T14:03:11.402Z", "renditions": { "thumbnail": { … }, … },
+                 "usageCount": 2 } ],
+    "next": 63 }
+  ```
+  Each item is a `MediaDto` plus `usageCount`: the number of distinct articles any of whose
+  revisions uses the media as lead image. `next`: the `before` value of the following page, `null`
+  on the last page.
+- **Errors:** `400` invalid `limit` (field `limit`) or `before` (not a positive integer, field
+  `before`); `403`.
+- **Side effects:** none.
+
 ## `GET /api/media/{id}`
 
 - **Auth:** `WRITE_ARTICLES`
@@ -1160,27 +1190,98 @@ Uploads one image.
 - **Errors:** `403`, `404` unknown id (field `null`).
 - **Side effects:** none.
 
+## `GET /api/media/{id}/usage`
+
+Where the media is used, and whether the caller may edit it.
+
+- **Auth:** `WRITE_ARTICLES`
+- **Response `200`:**
+  ```json
+  { "mayEdit": false,
+    "articles": [ { "id": 5, "headline": "Our cat Minka",
+                    "section": { "id": 2, "name": "Tiere", "slug": "tiere", "color": "orange" },
+                    "author": { "username": "anna", "displayName": "Anna" },
+                    "status": "PUBLISHED", "pendingLevel": null,
+                    "publishedAt": "2026-09-27T15:00:00Z", "updatedAt": "2026-09-28T08:12:00Z",
+                    "live": true, "latest": false, "older": false } ] }
+  ```
+  `mayEdit`: the editing rule of `POST /api/media/{id}/edit` for the caller. `articles`: every
+  article any of whose revisions uses the media as lead image, most recently changed first
+  (`updatedAt` desc), also articles the caller cannot see in the article list. `headline` is that
+  of the latest revision; `section` is a `SectionRefDto` (colour is a palette key); `publishedAt`
+  is the first publication (`null` if never). `live`: the live revision uses the media; `latest`:
+  the latest revision uses it; `older`: only other revisions use it. `articles` is `[]` for an
+  unused media.
+- **Errors:** `403`, `404` unknown id.
+- **Side effects:** none.
+
+## `POST /api/media/{id}/edit`
+
+Crops and/or pixelates the stored image. Irreversible.
+
+- **Auth:** publishers and editors-in-chief for every media; the uploader (same token `sub`) for
+  their own media only while **no article's live revision** uses it and **no article waiting for
+  approval** (`pendingLevel` set) uses it in its latest revision. Everyone else `403`
+  (`WRITE_ARTICLES` is checked first).
+- **Body:**
+  ```json
+  { "version": 0,
+    "crop": { "x": 100, "y": 50, "width": 1200, "height": 800 },
+    "pixelate": [ { "cx": 600, "cy": 400, "rx": 80, "ry": 110 } ] }
+  ```
+  All integers in pixels of the stored image (from the top-left corner). `version` (required): the
+  media version the edit is based on. `crop` optional; `pixelate` optional list of ellipses; at
+  least one of `crop` and a non-empty `pixelate`. Unknown fields are refused.
+- **Processing:** pixelation first, then the crop, both in coordinates of the image before the
+  edit. Each ellipse is pixelated with square blocks of side `max(12, floor(min(2·rx, 2·ry) / 8))`,
+  tiled from the ellipse's bounding box's top-left corner and clipped to the image; every pixel
+  whose centre lies inside the ellipse gets the average colour (alpha included) of all in-image
+  pixels of its block. Ellipses are applied in order; parts outside the image are ignored. The
+  result is re-encoded like an upload (JPEG, or PNG with transparency, no metadata) and gets fresh
+  renditions.
+- **Response `200`:** the updated `MediaDto` (same `id`, uploader and upload time; new `version`,
+  `contentType`, `width`, `height`, `size`, `renditions`).
+- **Errors:**
+
+  | Status | When |
+  |---|---|
+  | `400` | `version` missing or not a non-negative integer (field `version`); neither a crop nor an ellipse, crop malformed, not fully inside the image or smaller than 16 px on a side (field `crop`); more than 50 ellipses or `pixelate` not a list (field `pixelate`); an ellipse malformed, with a radius below 4 or its centre outside the image (field `pixelate[i]`); unknown field (field = its name) |
+  | `403` | not allowed under the rule above; nothing changes |
+  | `404` | unknown id |
+  | `409` | `version` is not the current version (field `version`, message `media 17 was changed meanwhile`); nothing changes |
+  | `503` | object store unreachable (field `null`); the media keeps its version, image and renditions, new objects are removed |
+
+- **Side effects:** the new image and renditions are written under new keys; then, with the media
+  row locked, permission and version are checked again, the row and rendition rows are updated
+  (`version + 1`) and the previous keys recorded for deletion, in one transaction. After commit the
+  previous objects are deleted; a failed deletion is retried at start and every 10 minutes. From the
+  response on no route serves the previous bytes. The articles and their revisions are unchanged.
+
 ## `GET /api/media/{id}/content`
 
 The stored image bytes.
 
 - **Auth:** `WRITE_ARTICLES`
+- **Request header:** optional `If-None-Match` (entity tags, weak ones and `*` accepted).
 - **Response `200`:** body = the stored image; headers `Content-Type` (`image/jpeg` |
   `image/png`), `Content-Length`, `Content-Disposition: inline`,
-  `X-Content-Type-Options: nosniff`, `Cache-Control: private, max-age=31536000, immutable` (a
-  stored image never changes).
+  `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-cache`, `ETag: "{id}-{version}"`
+  (an edit changes the bytes, so browsers revalidate).
+- **Response `304`:** no body, headers `ETag` and `Cache-Control`, when `If-None-Match` matches the
+  current `ETag`; only the database is read, not the object store.
 - **Errors:** `403`, `404` unknown id (JSON error body), `503` object store unreachable.
 - **Side effects:** none.
 
 ## `GET /api/media/{id}/renditions/{kind}`
 
 The bytes of one rendition; `kind` is `thumbnail`, `web` or `print` (lower case). Used by the
-editor's preview.
+editor's preview and the media view.
 
 - **Auth:** `WRITE_ARTICLES`
-- **Response `200`:** body = the rendition; headers as `/content` (`Content-Type`,
-  `Content-Length`, `Content-Disposition: inline`, `X-Content-Type-Options: nosniff`,
-  `Cache-Control: private, max-age=31536000, immutable`).
+- **Response `200`/`304`:** as `/content` (`Content-Type`, `Content-Length`,
+  `Content-Disposition: inline`, `X-Content-Type-Options: nosniff`,
+  `Cache-Control: private, no-cache`, `ETag: "{id}-{version}"` of the media; `304` for a matching
+  `If-None-Match`).
 - **Errors:** `403`, `404` unknown id, unknown kind or a rendition not produced yet (JSON error
   body, field `null`), `503` object store unreachable.
 - **Side effects:** none.
@@ -1209,7 +1310,10 @@ The reader's text-size switch (a plain HTML form, no JavaScript).
 ## `GET /media/{id}/{kind}`
 
 A rendition (`kind` `thumbnail` | `web` | `print`) of a lead image for readers; the reader pages
-link `web` (article page, lead story, with `thumbnail` in `srcset`) and `thumbnail` (cards).
+link `web` (article page, lead story, with `thumbnail` in `srcset`), `thumbnail` (cards) and
+`print` (print views), always as `/media/{id}/{kind}?v={version}` with the media's current
+version, so an edited image gets a new URL. The query string is ignored: every URL serves the
+current rendition under the rules below, also for a missing or outdated `v`.
 
 - **Auth:** none for a public newspaper. For a private one (effective `visibility` `private`) the
   reader session (`q_session_reader`) of an entitled reader (`READER`, `EDITOR_IN_CHIEF`,

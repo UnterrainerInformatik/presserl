@@ -6,6 +6,9 @@ import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.ArticleContent
 import info.unterrainer.presserl.admin.api.AuthorDto
 import info.unterrainer.presserl.admin.api.CreateAccountRequest
+import info.unterrainer.presserl.admin.api.CropRequest
+import info.unterrainer.presserl.admin.api.EditMediaRequest
+import info.unterrainer.presserl.admin.api.EllipseRequest
 import info.unterrainer.presserl.admin.api.EditRolesRequest
 import info.unterrainer.presserl.admin.api.LeadImageDto
 import info.unterrainer.presserl.admin.api.LeadImageRequest
@@ -13,6 +16,8 @@ import info.unterrainer.presserl.admin.api.MediaDto
 import info.unterrainer.presserl.admin.api.RenditionDto
 import info.unterrainer.presserl.admin.api.SectionRequest
 import info.unterrainer.presserl.admin.api.SectionRoleDto
+import info.unterrainer.presserl.admin.ui.media.MediaEditError
+import info.unterrainer.presserl.admin.ui.media.mediaEditErrorOf
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.mock.MockEngine
@@ -629,6 +634,84 @@ class ApiClientTest {
 
         assertEquals(HttpStatusCode.UnsupportedMediaType, refused.response.status)
         assertEquals("file", refused.response.body<ApiErrorDto>().errors.single().field)
+    }
+
+    @Test
+    fun listMediaPagesWithLimitAndBefore() = runTest {
+        val sent = mutableListOf<Sent>()
+        val page = """{ "items": [{ "id": 122, "version": 2, "contentType": "image/jpeg", "width": 4096, "height": 2731,
+            "size": 1834211, "uploadedBy": { "username": "anna", "displayName": "Anna" }, "uploadedAt": "2026-09-27T14:03:11.402Z",
+            "renditions": { "thumbnail": { "width": 480, "height": 320, "size": 31877 } }, "usageCount": 2 }], "next": 63 }"""
+
+        val result = mediaApi(sent, body = page.encodeToByteArray()).listMedia(60, 123)
+
+        assertEquals("https://news.example.org/api/media?limit=60&before=123", sent.single().url)
+        assertEquals("Bearer token-123", sent.single().authorization)
+        assertEquals(63, result.next)
+        assertEquals(2, result.items.single().version)
+        assertEquals(2, result.items.single().usageCount)
+        mediaApi(sent, body = """{ "items": [], "next": null }""".encodeToByteArray()).listMedia()
+        assertEquals("https://news.example.org/api/media", sent.last().url)
+    }
+
+    @Test
+    fun mediaUsageReadsFlags() = runTest {
+        val sent = mutableListOf<Sent>()
+        val usage = """{ "mayEdit": false, "articles": [{ "id": 5, "headline": "Our cat Minka",
+            "section": { "id": 2, "name": "Tiere", "slug": "tiere", "color": "orange" },
+            "author": { "username": "anna", "displayName": "Anna" }, "status": "PUBLISHED", "pendingLevel": null,
+            "publishedAt": "2026-09-27T15:00:00Z", "updatedAt": "2026-09-28T08:12:00Z",
+            "live": true, "latest": false, "older": false }] }"""
+
+        val result = mediaApi(sent, body = usage.encodeToByteArray()).mediaUsage(17)
+
+        assertEquals("https://news.example.org/api/media/17/usage", sent.single().url)
+        assertEquals(false, result.mayEdit)
+        val use = result.articles.single()
+        assertEquals("orange", use.section?.color)
+        assertTrue(use.live)
+        assertEquals("2026-09-27T15:00:00Z", use.publishedAt)
+    }
+
+    @Test
+    fun editMediaSendsVersionCropAndEllipses() = runTest {
+        val sent = mutableListOf<Sent>()
+
+        val media = mediaApi(sent, body = MEDIA.replace("\"id\": 17", "\"id\": 17, \"version\": 1").encodeToByteArray())
+            .editMedia(17, EditMediaRequest(0, CropRequest(100, 50, 1200, 800), listOf(EllipseRequest(600, 400, 80, 110))))
+
+        assertEquals(1, media.version)
+        val request = sent.single()
+        assertEquals(HttpMethod.Post, request.method)
+        assertEquals("https://news.example.org/api/media/17/edit", request.url)
+        assertEquals("Bearer token-123", request.authorization)
+        assertEquals(
+            Json.parseToJsonElement("""{ "version": 0, "crop": { "x": 100, "y": 50, "width": 1200, "height": 800 },
+                "pixelate": [{ "cx": 600, "cy": 400, "rx": 80, "ry": 110 }] }"""),
+            Json.parseToJsonElement(request.body.decodeToString()),
+        )
+        mediaApi(sent).editMedia(17, EditMediaRequest(3, pixelate = listOf(EllipseRequest(1, 2, 5, 6))))
+        assertEquals(
+            Json.parseToJsonElement("""{ "version": 3, "pixelate": [{ "cx": 1, "cy": 2, "rx": 5, "ry": 6 }] }"""),
+            Json.parseToJsonElement(sent.last().body.decodeToString()),
+        )
+    }
+
+    @Test
+    fun editMediaErrorsAreMapped() = runTest {
+        val error = """{ "errors": [{ "field": "version", "message": "media 17 was changed meanwhile" }] }""".encodeToByteArray()
+        val cases = mapOf(
+            HttpStatusCode.Conflict to MediaEditError.Conflict,
+            HttpStatusCode.Forbidden to MediaEditError.Forbidden,
+            HttpStatusCode.BadRequest to MediaEditError.Invalid,
+            HttpStatusCode.ServiceUnavailable to MediaEditError.Unreachable,
+            HttpStatusCode.NotFound to MediaEditError.Other("404 Not Found"),
+        )
+        for ((status, expected) in cases) {
+            val failure = runCatching { mediaApi(mutableListOf(), status, error).editMedia(17, EditMediaRequest(0)) }.exceptionOrNull()!!
+            assertEquals(expected, mediaEditErrorOf(failure), status.toString())
+        }
+        assertEquals(MediaEditError.Unreachable, mediaEditErrorOf(IllegalStateException("fetch failed")))
     }
 
     @Test

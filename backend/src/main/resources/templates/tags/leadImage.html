@@ -1,16 +1,17 @@
 {! A lead image (ReaderImage). kind="web" links the web rendition with the thumbnail in srcset for the
    given sizes; kind="thumbnail" links the thumbnail alone and loads it lazily; kind="print" links the
    print rendition alone, for the printer. The figcaption is the image's text, so alt is empty and the
-   caption is not read twice. !}
+   caption is not read twice. Every URL carries ?v={version}: an edit changes it, so no cached copy of the
+   previous image is shown. !}
 <figure class="lead-image">
   {#if kind == 'print'}
-  <img src="/media/{image.mediaId}/{image.printKind}" width="{image.printWidth}" height="{image.printHeight}" alt="">
+  <img src="/media/{image.mediaId}/{image.printKind}?v={image.version}" width="{image.printWidth}" height="{image.printHeight}" alt="">
   {#else if kind == 'thumbnail'}
-  <img src="/media/{image.mediaId}/thumbnail" width="{image.thumbWidth}" height="{image.thumbHeight}" alt="" loading="lazy">
+  <img src="/media/{image.mediaId}/thumbnail?v={image.version}" width="{image.thumbWidth}" height="{image.thumbHeight}" alt="" loading="lazy">
   {#else if image.webWidth > image.thumbWidth}
-  <img src="/media/{image.mediaId}/web" srcset="/media/{image.mediaId}/thumbnail {image.thumbWidth}w, /media/{image.mediaId}/web {image.webWidth}w" sizes="{sizes}" width="{image.webWidth}" height="{image.webHeight}" alt="">
+  <img src="/media/{image.mediaId}/web?v={image.version}" srcset="/media/{image.mediaId}/thumbnail?v={image.version} {image.thumbWidth}w, /media/{image.mediaId}/web?v={image.version} {image.webWidth}w" sizes="{sizes}" width="{image.webWidth}" height="{image.webHeight}" alt="">
   {#else}
-  <img src="/media/{image.mediaId}/web" width="{image.webWidth}" height="{image.webHeight}" alt="">
+  <img src="/media/{image.mediaId}/web?v={image.version}" width="{image.webWidth}" height="{image.webHeight}" alt="">
   {/if}
   {#if image.caption}
   <figcaption class="lead-image__caption">{image.caption}</figcaption>

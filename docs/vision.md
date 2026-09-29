@@ -17,7 +17,7 @@ Presserl is a self-hosted, multi-user newspaper platform that looks like a real 
    - No self-registration; accounts are created by people inside the newspaper; no e-mail addresses are collected.
    - No comments from strangers, no tracking, no third-party resources (fonts, CDNs).
    - **No advertising** — not even ad slots in the layout.
-   - Uploaded images are re-encoded and stripped of EXIF/GPS data.
+   - Uploaded images are re-encoded and stripped of EXIF/GPS data. Publishers can pixelate faces, name tags and number plates (and crop badly framed photos) in every image afterwards — also in articles already live; the change replaces the image everywhere and cannot be undone.
    - Newspapers are **public by default** — a newspaper wants to be read; private (readers need an account) by explicit choice.
 4. **Made for 6–16.** Reading view and editor follow age-appropriate typography and interaction guidelines (see [design-guidelines.md](design-guidelines.md)).
 5. **Forkable.** UnterrainerInformatik maintains upstream. A family, class or club creates a deployment repository like `presserl-deployment` from the templates in `deploy/` and customises only name, `.env` and theme — without touching code.
@@ -37,7 +37,7 @@ Presserl is a self-hosted, multi-user newspaper platform that looks like a real 
 | M2 | Accounts & sections | account creation with pass-phrase and printable slip, Keycloak service account, groups, sections, section roles, delegation |
 | M3 | Approval chain | chain, trust switches, review queue and notes, emergency-brake lock, `allowedActions` |
 | M4 | Look | reader theme tokens, fonts, `custom.css`, text size, dark mode |
-| M5 | Images | upload, re-encoding, EXIF/GPS stripping, renditions, lead images |
+| M5 | Images | upload, re-encoding, EXIF/GPS stripping, renditions, lead images, media view with crop and pixelation |
 | M6 | Print | issues, print views |
 | M7 | First fork | *Alex-Presse* live at `alexpresse.net` (`../alexpresse`, a fork of the staging repository `presserl-deployment`) with its own theme; installation guide verified end to end |
 | M8 | Mobile & QR | QR code on the slip (address + credentials, implemented), Android/iOS targets reading it, store publishing (Google Play Families policy, Apple developer account) |

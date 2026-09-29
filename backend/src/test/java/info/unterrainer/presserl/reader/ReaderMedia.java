@@ -38,4 +38,14 @@ final class ReaderMedia {
         return given().auth().oauth2(TestSupport.token("publisher", "publisher"))
                 .get("/api/media/%d/content".formatted(mediaId)).then().statusCode(200).extract().asByteArray();
     }
+
+    /**
+     * Pixelates an ellipse in the middle of the image as the publisher.
+     */
+    static void pixelate(long mediaId, long version) {
+        given().auth().oauth2(TestSupport.token("publisher", "publisher")).contentType("application/json")
+                .body("{\"version\": %d, \"pixelate\": [{\"cx\": 1600, \"cy\": 1200, \"rx\": 400, \"ry\": 300}]}"
+                        .formatted(version))
+                .post("/api/media/%d/edit".formatted(mediaId)).then().statusCode(200);
+    }
 }

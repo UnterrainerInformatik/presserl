@@ -171,6 +171,7 @@ class MediaResourceTest {
         as(publisher).get("/api/media/" + id).then()
                 .statusCode(200)
                 .body("id", equalTo((int) id))
+                .body("version", equalTo(0))
                 .body("contentType", equalTo("image/jpeg"))
                 .body("width", equalTo(1200))
                 .body("height", equalTo(800))
@@ -183,7 +184,8 @@ class MediaResourceTest {
                 .header("Content-Type", equalTo("image/jpeg"))
                 .header("Content-Disposition", equalTo("inline"))
                 .header("X-Content-Type-Options", equalTo("nosniff"))
-                .header("Cache-Control", equalTo("private, max-age=31536000, immutable"));
+                .header("Cache-Control", equalTo("private, no-cache"))
+                .header("ETag", equalTo("\"%d-0\"".formatted(id)));
         byte[] stored = s3.getObjectAsBytes(b -> b.bucket(store.bucket()).key(masterKey())).asByteArray();
         assertThat(downloaded).isEqualTo(stored);
         assertThat(content.header("Content-Length")).isEqualTo(String.valueOf(stored.length));
@@ -346,7 +348,8 @@ class MediaResourceTest {
                     .header("Content-Type", equalTo("image/jpeg"))
                     .header("Content-Disposition", equalTo("inline"))
                     .header("X-Content-Type-Options", equalTo("nosniff"))
-                    .header("Cache-Control", equalTo("private, max-age=31536000, immutable"));
+                    .header("Cache-Control", equalTo("private, no-cache"))
+                    .header("ETag", equalTo("\"%d-0\"".formatted(id)));
             byte[] bytes = response.asByteArray();
             assertThat(response.header("Content-Length")).isEqualTo(String.valueOf(bytes.length));
             assertThat(bytes.length).isEqualTo(created.jsonPath().getInt("renditions." + kind + ".size"));

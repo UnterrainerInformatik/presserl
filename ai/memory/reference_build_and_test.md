@@ -52,7 +52,13 @@ Verified 2026-09-26 on Gerald's machine (JDK 21, Docker running) unless marked o
   which the legacy builder rejects ("failed to parse platform"). Verified 2026-09-29 with buildx 0.37.1.
 - **.http files:** `cd http && docker run --rm --network host -v "$PWD":/workdir
   jetbrains/intellij-http-client --env-file http-client.env.json --env dev *.http`
-  against a running `quarkus:dev`.
+  against a running `quarkus:dev`; `-V baseUrl=http://localhost:8090` overrides the env file.
+- **When :8080 is taken (verified 2026-09-29, Gerald's long-running Vue dev server):**
+  `./mvnw quarkus:dev -Dquarkus.http.port=8090`; serve the admin production bundle
+  (`./gradlew wasmJsBrowserDistribution`, `composeApp/build/dist/wasmJs/productionExecutable`) with
+  `python3 -m http.server 8081 --bind 127.0.0.1` (dev realm redirects allow :8081) and in Playwright
+  `context.route('http://localhost:8080/**', r => r.fulfill({response: await r.fetch({url: <8090>})}))`
+  — the app on :8081 hardcodes the API at :8080. Never stop the foreign :8080 process.
 - **Local e2e of image + compose:** import `deploy/keycloak/presserl-realm.json` into the dev
   Keycloak under another realm name (hostname replaced), run `deploy/compose.yaml` with a
   `network_mode: host` override so the container reaches `localhost:8180`, drive the login with

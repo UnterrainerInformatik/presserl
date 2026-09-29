@@ -14,6 +14,8 @@ import info.unterrainer.presserl.admin.api.IssueDto
 import info.unterrainer.presserl.admin.api.IssueListDto
 import info.unterrainer.presserl.admin.api.IssueRefDto
 import info.unterrainer.presserl.admin.api.MeDto
+import info.unterrainer.presserl.admin.api.MediaDto
+import info.unterrainer.presserl.admin.api.MediaPage
 import info.unterrainer.presserl.admin.api.MemberDto
 import info.unterrainer.presserl.admin.api.MemberListDto
 import info.unterrainer.presserl.admin.api.MySectionRoleDto
@@ -444,5 +446,19 @@ class DtoTest {
         val dto = json.decodeFromString<ApiErrorDto>("""{ "errors": [{ "field": "roles", "message": "you may not assign [PUBLISHER]" }] }""")
 
         assertEquals(FieldErrorDto("roles", "you may not assign [PUBLISHER]"), dto.errors.single())
+    }
+
+    @Test
+    fun mediaCarriesItsVersion() {
+        val media = json.decodeFromString<MediaDto>("""{ "id": 17, "version": 2, "contentType": "image/png", "width": 800,
+            "height": 600, "size": 5000, "uploadedBy": { "username": "anna", "displayName": "Anna" },
+            "uploadedAt": "2026-09-27T14:03:11.402Z", "renditions": {} }""")
+        val page = json.decodeFromString<MediaPage>("""{ "items": [{ "id": 17, "version": 2, "contentType": "image/png",
+            "width": 800, "height": 600, "size": 5000, "uploadedBy": { "username": "anna", "displayName": "Anna" },
+            "uploadedAt": "2026-09-27T14:03:11.402Z", "renditions": {}, "usageCount": 0 }], "next": null }""")
+
+        assertEquals(2, media.version)
+        assertEquals(2, page.items.single().version)
+        assertNull(page.next)
     }
 }

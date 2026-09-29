@@ -45,6 +45,7 @@ class ReaderMediaTest {
     @AfterEach
     void cleanUp() {
         fixtures.deleteAllArticlesAndMedia();
+        TestSupport.resetIssues(dataSource);
     }
 
     private static Response get(String path) {
@@ -65,7 +66,7 @@ class ReaderMediaTest {
         fixtures.leadImage(article, 1, cat, "Our cat Minka");
 
         for (String kind : List.of("thumbnail", "web", "print")) {
-            Response response = get("/media/%d/%s".formatted(cat, kind));
+            Response response = get("/media/%d/%s?v=0".formatted(cat, kind));
             assertThat(response.statusCode()).as(kind).isEqualTo(200);
             assertThat(response.header("Content-Type")).isEqualTo("image/jpeg");
             assertThat(response.header("X-Content-Type-Options")).isEqualTo("nosniff");
@@ -98,6 +99,7 @@ class ReaderMediaTest {
         fixtures.leadImage(draft, 1, cat, "");
 
         assertEmptyNotFound("/media/%d/web".formatted(cat));
+        assertEmptyNotFound("/media/%d/web?v=0".formatted(cat));
     }
 
     @Test
@@ -113,11 +115,12 @@ class ReaderMediaTest {
     void imageOfAnArticleTakenOfflineIsNotFound() {
         long article = fixtures.published("Minka", MONDAY);
         fixtures.leadImage(article, 1, cat, "");
-        assertThat(get("/media/%d/web".formatted(cat)).statusCode()).isEqualTo(200);
+        assertThat(get("/media/%d/web?v=0".formatted(cat)).statusCode()).isEqualTo(200);
 
         fixtures.status(article, "OFFLINE");
 
         assertEmptyNotFound("/media/%d/web".formatted(cat));
+        assertEmptyNotFound("/media/%d/web?v=0".formatted(cat));
     }
 
     @Test
@@ -139,8 +142,8 @@ class ReaderMediaTest {
         String html = get("/articles/" + article).asString();
 
         assertThat(html).contains("<figure class=\"lead-image\">",
-                "src=\"/media/%d/web\"".formatted(cat),
-                "srcset=\"/media/%d/thumbnail 480w, /media/%d/web 1600w\"".formatted(cat, cat),
+                "src=\"/media/%d/web?v=0\"".formatted(cat),
+                "srcset=\"/media/%d/thumbnail?v=0 480w, /media/%d/web?v=0 1600w\"".formatted(cat, cat),
                 "sizes=\"(min-width: 60rem) 60rem, 100vw\"",
                 "width=\"1600\" height=\"1200\" alt=\"\"",
                 "<figcaption class=\"lead-image__caption\">Our cat &lt;b&gt;Minka&lt;/b&gt;</figcaption>")
@@ -194,12 +197,46 @@ class ReaderMediaTest {
         String html = get("/").asString();
 
         String lead = html.substring(html.indexOf("class=\"lead-article\""), html.indexOf("class=\"article-card\""));
-        assertThat(lead).contains("src=\"/media/%d/web\"".formatted(cat), "width=\"1600\" height=\"1200\"")
+        assertThat(lead).contains("src=\"/media/%d/web?v=0\"".formatted(cat), "width=\"1600\" height=\"1200\"")
                 .doesNotContain("loading=\"lazy\"");
         String cards = html.substring(html.indexOf("class=\"article-card\""));
-        assertThat(cards).contains("src=\"/media/%d/thumbnail\" width=\"480\" height=\"360\" alt=\"\" loading=\"lazy\""
+        assertThat(cards).contains("src=\"/media/%d/thumbnail?v=0\" width=\"480\" height=\"360\" alt=\"\" loading=\"lazy\""
                 .formatted(dog), "<figcaption class=\"lead-image__caption\">A dog</figcaption>")
                 .doesNotContain("/media/%d/web".formatted(dog));
         assertThat(html.split("<figure", -1)).hasSize(3);
+    }
+
+    // --- version in the URLs
+
+    @Test
+    void everyPageLinksTheMediaVersionAndAnEditChangesIt() {
+        long article = fixtures.published("Minka", MONDAY);
+        fixtures.leadImage(article, 1, cat, "Minka");
+        fixtures.published("Newer", TUESDAY);
+        fixtures.deleteAllIssues();
+        long issue = fixtures.issue(2, true, null);
+        fixtures.inIssue(issue, article);
+        List<String> pages = List.of("/articles/" + article, "/", "/issues/" + issue, "/print/article/" + article,
+                "/print/issue/" + issue);
+        for (String page : pages) {
+            assertThat(get(page).asString()).as(page).contains("/media/%d/".formatted(cat))
+                    .containsPattern("/media/%d/(web|thumbnail|print)\\?v=0\"".formatted(cat))
+                    .doesNotContainPattern("/media/%d/(web|thumbnail|print)[\" ]".formatted(cat));
+        }
+        byte[] before = get("/media/%d/web?v=0".formatted(cat)).asByteArray();
+
+        ReaderMedia.pixelate(cat, 0);
+
+        for (String page : pages) {
+            assertThat(get(page).asString()).as(page)
+                    .containsPattern("/media/%d/(web|thumbnail|print)\\?v=1\"".formatted(cat))
+                    .doesNotContain("?v=0");
+        }
+        byte[] edited = ReaderMedia.rendition(cat, "web");
+        assertThat(edited).isNotEqualTo(before);
+        assertThat(get("/media/%d/web?v=1".formatted(cat)).asByteArray()).isEqualTo(edited);
+        // an old URL serves the current rendition, never the previous one
+        assertThat(get("/media/%d/web?v=0".formatted(cat)).asByteArray()).isEqualTo(edited);
+        assertThat(get("/media/%d/web".formatted(cat)).asByteArray()).isEqualTo(edited);
     }
 }

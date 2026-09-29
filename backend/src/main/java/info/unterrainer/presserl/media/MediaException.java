@@ -16,9 +16,13 @@ public class MediaException extends RuntimeException {
     private final List<FieldError> errors;
 
     private MediaException(Status status, String field, String message, Throwable cause) {
-        super(status.getStatusCode() + " " + message, cause);
+        this(status, List.of(new FieldError(field, message)), cause);
+    }
+
+    private MediaException(Status status, List<FieldError> errors, Throwable cause) {
+        super(status.getStatusCode() + " " + errors.getFirst().message(), cause);
         this.status = status;
-        this.errors = List.of(new FieldError(field, message));
+        this.errors = List.copyOf(errors);
     }
 
     public static MediaException invalid(String message) {
@@ -27,6 +31,17 @@ public class MediaException extends RuntimeException {
 
     public static MediaException invalid(String message, Throwable cause) {
         return new MediaException(Status.BAD_REQUEST, FILE, message, cause);
+    }
+
+    /**
+     * {@code 400} listing every violation of a request body (not empty).
+     */
+    public static MediaException invalid(List<FieldError> errors) {
+        return new MediaException(Status.BAD_REQUEST, errors, null);
+    }
+
+    public static MediaException conflict(String field, String message) {
+        return new MediaException(Status.CONFLICT, field, message, null);
     }
 
     public static MediaException unsupported(String message) {

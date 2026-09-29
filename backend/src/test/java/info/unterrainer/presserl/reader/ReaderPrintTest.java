@@ -90,7 +90,7 @@ class ReaderPrintTest {
                 "<p class=\"print-section-header\" data-section-color=\"red\">Sport</p>",
                 "Kicker Match", "<h1 class=\"headline\">Match</h1>", "Sub Match", "Lead Match",
                 "Body text of the story.", "Von Anna", "21. September 2026",
-                "<img src=\"/media/%d/print\" width=\"3000\" height=\"2250\" alt=\"\">".formatted(cat),
+                "<img src=\"/media/%d/print?v=0\" width=\"3000\" height=\"2250\" alt=\"\">".formatted(cat),
                 "The winner",
                 "<button type=\"button\" data-print hidden>Drucken</button>",
                 "<a href=\"/articles/%d\">Zurück zum Artikel</a>".formatted(article),
