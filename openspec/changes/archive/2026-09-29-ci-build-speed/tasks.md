@@ -15,11 +15,12 @@
 
 ## 3. Rollout and measurement
 
-- [ ] 3.1 Commit and, after asking Gerald, push presserl `master`. Watch the pipeline (`gh run watch`): the `docker-build` job runs on a `babylon5-runner*`, creates `buildx_buildkit_presserl0` on babylon5 and leaves it (plus its state volume) after the job. Record the cold build time. Verify with `gh run view --log` (runner name, step times) and `ssh babylon5 docker ps`.
-- [ ] 3.2 Trigger a second run without admin changes (`gh workflow run PIPELINE` or the next backend-only commit), ideally picked up by a different babylon5 runner than 3.1. Verify in the log that the admin Gradle and Brotli steps are `CACHED`, the job attaches to the existing builder instead of creating a second node container, and record the warm build time.
-- [ ] 3.3 Check the cache size on babylon5 (`docker buildx du --builder presserl`, `docker system df`) and confirm it stays below the cap. Adjust the cap in 1.3 if the first builds show a clearly different need (requires `docker buildx rm presserl` once).
-- [ ] 3.4 Confirm staging redeployed the new image (the `dispatch-staging` job ran and `presserl-deployment`'s DEPLOY run succeeded). Verify with `gh run list -R UnterrainerInformatik/presserl-deployment -L 1`.
+- [x] 3.1 Commit and, after asking Gerald, push presserl `master`. Watch the pipeline (`gh run watch`): the `docker-build` job runs on a `babylon5-runner*`, creates `buildx_buildkit_presserl0` on babylon5 and leaves it (plus its state volume) after the job. Record the cold build time. Verify with `gh run view --log` (runner name, step times) and `ssh babylon5 docker ps`.
+- [x] 3.2 Trigger a second run without admin changes (`gh workflow run PIPELINE` or the next backend-only commit), ideally picked up by a different babylon5 runner than 3.1. Verify in the log that the admin Gradle and Brotli steps are `CACHED`, the job attaches to the existing builder instead of creating a second node container, and record the warm build time.
+  - Result: run 36579185164 (dispatch, no code change) on babylon5-runner3 again: every stage `CACHED`, no new node container, build step ≈ 18 s, job 35 s. Attach from a different runner not yet observed (direct test on runner1 was not permitted); recorded in memory, shows on the next run landing on runner1/2.
+- [x] 3.3 Check the cache size on babylon5 (`docker buildx du --builder presserl`, `docker system df`) and confirm it stays below the cap. Adjust the cap in 1.3 if the first builds show a clearly different need (requires `docker buildx rm presserl` once).
+- [x] 3.4 Confirm staging redeployed the new image (the `dispatch-staging` job ran and `presserl-deployment`'s DEPLOY run succeeded). Verify with `gh run list -R UnterrainerInformatik/presserl-deployment -L 1`.
 
 ## 4. Memory
 
-- [ ] 4.1 Update `ai/memory/reference_ci_runners.md` with the outcome: presserl pinned to `babylon5`, builder name, state volume, cap, reset command, and cold/warm build times from 3.1/3.2. Also update the leaked-builder note if the new setup changes it. Verify by reading the file.
+- [x] 4.1 Update `ai/memory/reference_ci_runners.md` with the outcome: presserl pinned to `babylon5`, builder name, state volume, cap, reset command, and cold/warm build times from 3.1/3.2. Also update the leaked-builder note if the new setup changes it. Verify by reading the file.
