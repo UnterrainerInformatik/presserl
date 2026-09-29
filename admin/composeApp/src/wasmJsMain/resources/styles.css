@@ -6,6 +6,38 @@ html, body {
     overflow: hidden;
 }
 
+/* Start-up notice (startup.js): shown instead of a blank page when the app cannot start.
+   body keeps overflow: hidden for Compose, so the panel scrolls by itself. */
+#presserl-startup-notice {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    overflow: auto;
+    box-sizing: border-box;
+    padding: 48px 24px;
+    background: #fff;
+    color: #1c1b1f;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+}
+
+#presserl-startup-notice > * {
+    max-width: 640px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+#presserl-startup-notice h1 {
+    font-size: 1.5em;
+    margin-top: 0;
+    margin-bottom: 0.75em;
+}
+
+#presserl-startup-notice li {
+    margin-bottom: 0.5em;
+}
+
 /* Account slip (BrowserSlipPrinter): only in print, and then alone on one A4 page */
 #presserl-slip {
     display: none;

@@ -18,7 +18,7 @@ import io.restassured.response.Response;
 
 /**
  * Delivery of the admin bundle; the test classpath carries stubs of {@code META-INF/resources/admin/index.html},
- * {@code composeApp.js} and a content-hashed {@code .wasm} module.
+ * {@code startup.js}, {@code composeApp.js} and a content-hashed {@code .wasm} module.
  */
 @QuarkusTest
 class AdminDeliveryTest {
@@ -53,7 +53,7 @@ class AdminDeliveryTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = { "/admin/", "/admin/composeApp.js" })
+    @ValueSource(strings = { "/admin/", "/admin/startup.js", "/admin/composeApp.js" })
     void entryFilesAreRevalidated(String path) {
         given().get(path).then()
                 .statusCode(200)

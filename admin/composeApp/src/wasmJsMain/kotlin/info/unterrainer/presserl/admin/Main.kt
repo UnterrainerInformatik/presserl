@@ -1,5 +1,7 @@
 package info.unterrainer.presserl.admin
 
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.window.ComposeViewport
 import info.unterrainer.presserl.admin.api.ApiClient
@@ -27,6 +29,11 @@ fun main() {
     val api = ApiClient(http, baseUrl) { auth.accessToken() }
     auth = BrowserAuthClient(http) { api.clientConfig().oidc }
     ComposeViewport(document.body!!) {
+        // startup.js treats errors before this signal as start-up failures
+        LaunchedEffect(Unit) {
+            withFrameNanos {}
+            document.documentElement?.setAttribute("data-presserl-started", "true")
+        }
         App(auth, api, siteUrl = baseUrl, slipPrinter = BrowserSlipPrinter())
     }
     installFocusGuard(document.body!!)

@@ -47,7 +47,9 @@ Verified 2026-09-26 on Gerald's machine (JDK 21, Docker running) unless marked o
   global into a `const` before a later `client.global.set` overwrites it.
 - **Admin tests:** `cd admin && ./gradlew check` (Karma, headless Chrome with SwiftShader via
   `composeApp/karma.config.d/`; Node cannot run the Compose runtime).
-- **Image:** `docker build -t presserl:local .` from the repo root (~3 min cold).
+- **Image:** `docker build -t presserl:local .` from the repo root (~3 min cold). Needs the
+  buildx plugin (`docker-buildx` package): the Dockerfile uses `$BUILDPLATFORM` and `RUN --mount`,
+  which the legacy builder rejects ("failed to parse platform"). Verified 2026-09-29 with buildx 0.37.1.
 - **.http files:** `cd http && docker run --rm --network host -v "$PWD":/workdir
   jetbrains/intellij-http-client --env-file http-client.env.json --env dev *.http`
   against a running `quarkus:dev`.
@@ -57,5 +59,13 @@ Verified 2026-09-26 on Gerald's machine (JDK 21, Docker running) unless marked o
   the `mcr.microsoft.com/playwright` image (Compose draws on a canvas: read texts via the
   accessibility snapshot, click by bounding box). Headless browsers need an explicit `locale`,
   otherwise Compose throws `RangeError: Incorrect locale information provided`.
+- **Standalone e2e without quarkus:dev (verified 2026-09-29):** copy the realm with
+  `https://presserl.example.org` replaced by `http://localhost:8090` and fixed `secret` fields on
+  `presserl-backend`/`presserl-reader`; run `quay.io/keycloak/keycloak:26.5.7 start-dev
+  --import-realm` on `-p 8180:8080`; compose override: presserl `network_mode: host`,
+  `ports: !reset []`, `QUARKUS_HTTP_PORT=8090` (8080 is often taken), `PRESSERL_DB_HOST=localhost`,
+  `PRESSERL_DB_PORT=55432`, `PRESSERL_MEDIA_S3_ENDPOINT=http://localhost:59000`; postgres/rustfs
+  publish those ports on 127.0.0.1. Normal headless Chromium needs `--use-angle=swiftshader
+  --enable-unsafe-swiftshader` for WebGL. Tear down with `docker compose -p <name> down -v`.
 
 See [[reference_machine_jdk]].
