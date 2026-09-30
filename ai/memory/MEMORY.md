@@ -13,7 +13,7 @@
 - [Evidence over speculation](feedback_evidence_over_speculation.md) — When the cause is not in the logs, add targeted diagnostic logging and wait for a reproduction instead of theorising
 - [Never edit applied DB migrations](feedback_immutable_migrations.md) — Applied Flyway/Liquibase migrations are immutable; add a correction migration
 - [Product vision in docs/](project_vision.md) — Principles, roles, approval chain, config layers, design guidelines; proposals must fit them
-- [Deployment repos](project_deployment_repo.md) — ../presserl-deployment = staging (auto-deployed); ../alexpresse = first public fork alexpresse.net (merge upstream + push); ask before every push
+- [Deployment repos](project_deployment_repo.md) — ../presserl-deployment = staging (auto-deployed); ../alexpresse = first public fork alexpresse.net (merge upstream + push); pushed in the archive step of the change that touched them
 - [Deployment via docker compose](project_deployment_docker_compose.md) — Compose ships presserl + postgres + rustfs (media); proxy (Traefik/Caddy) and Keycloak are external
 - [Machine JDK setup](reference_machine_jdk.md) — Default JDK is 21 (Lombok-safe); backend targets release 21; JDK 26 installed but not default
 - [Machine Android SDK](reference_machine_android_sdk.md) — Android Studio's SDK at /home/psilo/Android/Sdk; add components there, never a second SDK
@@ -22,4 +22,5 @@
 - [Click through UI checks myself](feedback_ui_tests_myself.md) — Manual-check tasks: drive the apps headless (Playwright) myself, don't hand click steps to Gerald
 - [Stop own servers](feedback_stop_own_servers.md) — Stop every server/daemon/container I started and verify with ps/ss/docker
 - [CI runners](reference_ci_runners.md) — babylon5 (fast, label `babylon5`) vs dev1 (3–4× slower); presserl pinned to babylon5 + persistent builder `presserl` (reset cmds, cap)
+- [Push all touched repos on archive](feedback_push_shared_ci_without_asking.md) — End of /opsx:archive: commit + push every repo the change touched, no question; ask only when something is off
 - [Prefer the A54 over the emulator](feedback_prefer_a54_over_emulator.md) — Gerald's Samsung A54 via adb is always fine for Android checks; faster, less RAM

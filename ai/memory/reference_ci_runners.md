@@ -39,6 +39,16 @@ pushes keep Gradle and Brotli cached. Not yet observed: a second babylon5 runner
 existing node container (both measured runs ran on runner3). babylon5 busy/down ⇒ presserl builds
 queue; drop the label in `pipeline.yml` as fallback.
 
+**Current-builder pointer pitfall** (seen 2026-09-30, run 36754878179: `Multi-platform build is
+not supported for the docker driver`). Each runner container has its own `~/.docker/buildx/`
+(`instances/`, `current`), shared by every repo's jobs on that runner. Other callers create an
+ephemeral `builder-<uuid>` with `--use` and remove it, leaving `current` dangling → buildx falls
+back to `default` (docker driver). `setup-buildx-action` only `use`s a builder it creates; for an
+existing one it logs `already exists, skipping creation` and leaves `current` alone. Fix
+(ci-persistent-builder-explicit, docker-build-workflow `f490069`): the `Build and push` step passes
+`builder: ${{ inputs.builder-name }}` (empty for other callers = current builder, as before).
+Never rely on `current` for the persistent builder.
+
 **Runner too old ⇒ jobs stay `queued` forever while GitHub shows the runners online/idle.** Seen
 2026-09-29: image runner 2.333.1, GitHub pushed 2.337.0; the runner downloads the update, exits,
 the container restarts from the old image and the loop repeats every ~2 min (log: `Downloading
