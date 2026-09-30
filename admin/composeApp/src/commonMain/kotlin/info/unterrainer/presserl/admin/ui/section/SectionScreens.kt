@@ -73,6 +73,8 @@ import info.unterrainer.presserl.admin.resources.section_members
 import info.unterrainer.presserl.admin.resources.section_not_empty
 import info.unterrainer.presserl.admin.ui.BackButton
 import info.unterrainer.presserl.admin.ui.Banner
+import info.unterrainer.presserl.admin.ui.IconLabel
+import info.unterrainer.presserl.admin.ui.Icons
 import info.unterrainer.presserl.admin.ui.LoadFailed
 import info.unterrainer.presserl.admin.ui.attempt
 import info.unterrainer.presserl.admin.ui.colorText
@@ -213,8 +215,8 @@ private fun SectionRow(
             Text(section.name, style = MaterialTheme.typography.titleMedium)
         }
         if (canManage) {
-            TextButton(onClick = { onMove(-1) }, enabled = enabled && !first) { Text("↑ " + stringResource(Res.string.move_up)) }
-            TextButton(onClick = { onMove(1) }, enabled = enabled && !last) { Text("↓ " + stringResource(Res.string.move_down)) }
+            TextButton(onClick = { onMove(-1) }, enabled = enabled && !first) { IconLabel(Icons.Up, stringResource(Res.string.move_up)) }
+            TextButton(onClick = { onMove(1) }, enabled = enabled && !last) { IconLabel(Icons.Down, stringResource(Res.string.move_down)) }
             OutlinedButton(onClick = onEdit) { Text(stringResource(Res.string.edit)) }
             OutlinedButton(onClick = onDelete, enabled = enabled) { Text(stringResource(Res.string.delete)) }
         }
@@ -357,7 +359,7 @@ private fun MemberRow(member: MemberDto, roles: List<String>, enabled: Boolean, 
         if (roles.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 RoleChoice(roles, member.role, enabled, onRole)
-                TextButton(onClick = onRemove, enabled = enabled) { Text("✕ " + stringResource(Res.string.remove)) }
+                TextButton(onClick = onRemove, enabled = enabled) { IconLabel(Icons.Close, stringResource(Res.string.remove)) }
             }
         }
     }

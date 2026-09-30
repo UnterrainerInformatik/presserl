@@ -69,8 +69,10 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.help_image_rights
+import info.unterrainer.presserl.admin.ui.Icons
 import info.unterrainer.presserl.admin.ui.media.PictureIcon
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
+import info.unterrainer.presserl.admin.ui.SymbolIcon
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.stringResource
 import kotlin.time.TimeSource
@@ -361,7 +363,7 @@ private fun SamplePart(part: HelpPart, highlight: HelpPart, content: @Composable
                 .padding(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("▶", Modifier.padding(end = 6.dp), color = colors.primary, style = MaterialTheme.typography.labelMedium)
+            SymbolIcon(Icons.PlayArrow, Modifier.padding(end = 6.dp), size = 14.dp, tint = colors.primary)
             Box(Modifier.weight(1f)) {
                 CompositionLocalProvider(LocalContentColor provides colors.onPrimaryContainer) { content() }
             }

@@ -135,6 +135,8 @@ import info.unterrainer.presserl.admin.ui.ArticleView
 import info.unterrainer.presserl.admin.ui.approvalLevelText
 import info.unterrainer.presserl.admin.ui.BackButton
 import info.unterrainer.presserl.admin.ui.Banner
+import info.unterrainer.presserl.admin.ui.IconLabel
+import info.unterrainer.presserl.admin.ui.Icons
 import info.unterrainer.presserl.admin.ui.LoadFailed
 import info.unterrainer.presserl.admin.ui.attempt
 import info.unterrainer.presserl.admin.ui.decisionText
@@ -155,6 +157,7 @@ import info.unterrainer.presserl.admin.ui.spell.findingAt
 import info.unterrainer.presserl.admin.ui.spell.spellChecker
 import info.unterrainer.presserl.admin.ui.spell.spellMarksOverlay
 import info.unterrainer.presserl.admin.ui.statusText
+import info.unterrainer.presserl.admin.ui.SymbolIcon
 import info.unterrainer.presserl.admin.ui.waitingText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -322,7 +325,7 @@ private fun Editor(
             TextButton(onClick = { leave(onRevisions) }) { Text(stringResource(Res.string.revisions)) }
             if (article.status == "PUBLISHED") {
                 val uriHandler = LocalUriHandler.current
-                TextButton(onClick = { uriHandler.openUri(readerUrl(article.id)) }) { Text(stringResource(Res.string.view_in_reader) + " ↗") }
+                TextButton(onClick = { uriHandler.openUri(readerUrl(article.id)) }) { IconLabel(Icons.OpenInNew, stringResource(Res.string.view_in_reader), iconAfter = true) }
             }
         }
         if (saveState == SaveState.Conflict) {
@@ -462,8 +465,8 @@ private fun BottomBar(
 ) {
     val history = @Composable {
         if (actions.editable) {
-            OutlinedButton(onClick = { model.dispatch(EditorIntent.Undo) }, enabled = model.canUndo) { Text("↶ " + stringResource(Res.string.undo)) }
-            OutlinedButton(onClick = { model.dispatch(EditorIntent.Redo) }, enabled = model.canRedo) { Text("↷ " + stringResource(Res.string.redo)) }
+            OutlinedButton(onClick = { model.dispatch(EditorIntent.Undo) }, enabled = model.canUndo) { IconLabel(Icons.Undo, stringResource(Res.string.undo)) }
+            OutlinedButton(onClick = { model.dispatch(EditorIntent.Redo) }, enabled = model.canRedo) { IconLabel(Icons.Redo, stringResource(Res.string.redo)) }
             Text(saveStateText(saveState), style = MaterialTheme.typography.bodyMedium)
         }
     }
@@ -702,7 +705,7 @@ private fun LeadImageField(model: EditorModel, slot: LeadImageSlot, error: Strin
             }
             if (image != null) {
                 OutlinedButton(onClick = { model.dispatch(EditorIntent.RemoveLeadImage) }, enabled = enabled && !model.uploading) {
-                    Text("✕ " + stringResource(Res.string.lead_image_remove))
+                    IconLabel(Icons.Close, stringResource(Res.string.lead_image_remove))
                 }
             }
             if (model.uploading) {
@@ -785,13 +788,13 @@ private fun BlockCard(
                     else OutlinedButton(onClick = toggle, enabled = enabled && target != null, modifier = keepFocus) { label() }
                 }
                 TextButton(onClick = { model.dispatch(EditorIntent.MoveBlock(block.id, -1)) }, enabled = enabled && !first) {
-                    Text("↑ " + stringResource(Res.string.move_up))
+                    IconLabel(Icons.Up, stringResource(Res.string.move_up))
                 }
                 TextButton(onClick = { model.dispatch(EditorIntent.MoveBlock(block.id, 1)) }, enabled = enabled && !last) {
-                    Text("↓ " + stringResource(Res.string.move_down))
+                    IconLabel(Icons.Down, stringResource(Res.string.move_down))
                 }
                 TextButton(onClick = { model.dispatch(EditorIntent.RemoveBlock(block.id)) }, enabled = enabled) {
-                    Text("✕ " + stringResource(Res.string.remove_block))
+                    IconLabel(Icons.Close, stringResource(Res.string.remove_block))
                 }
             }
             when (block) {
@@ -826,7 +829,7 @@ private fun BlockCard(
                                     modifier = Modifier.weight(1f),
                                 )
                                 TextButton(onClick = { model.dispatch(EditorIntent.RemoveListItem(block.id, item.id)) }, enabled = enabled) {
-                                    Text("✕", modifier = Modifier.padding(horizontal = 4.dp))
+                                    SymbolIcon(Icons.Close, Modifier.padding(horizontal = 4.dp), contentDescription = stringResource(Res.string.remove_item))
                                 }
                             }
                         }

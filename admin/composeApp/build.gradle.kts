@@ -55,3 +55,37 @@ kotlin {
 compose.resources {
     packageOfResClass = "info.unterrainer.presserl.admin.resources"
 }
+
+// The Wasm runtime fetches a fallback font from fonts.gstatic.com for every character its loaded
+// fonts lack, which the admin CSP blocks. UI symbols are drawn instead (ui/Icons.kt); this keeps
+// such characters out of UI string literals and string resources.
+val checkUiGlyphs by tasks.registering {
+    group = "verification"
+    description = "Rejects characters in UI texts that the Wasm runtime cannot render without downloading a font."
+    val sources = fileTree("src/commonMain") { include("kotlin/**/*.kt", "composeResources/values*/strings.xml") }
+    val root = projectDir
+    inputs.files(sources)
+    doLast {
+        // Basic Latin, Latin-1 Supplement and Latin Extended-A, plus the punctuation verified to render
+        // with the loaded fonts: – “ ” „ • …
+        val allowed = setOf(0x2013, 0x201C, 0x201D, 0x201E, 0x2022, 0x2026)
+        val comment = listOf("//", "/*", "*", "<!--")
+        val violations = sources.files.sorted().flatMap { file ->
+            file.readLines().withIndex()
+                .filterNot { (_, line) -> comment.any { line.trimStart().startsWith(it) } }
+                .flatMap { (index, line) ->
+                    line.codePoints().toArray().filter { it > 0x17F && it !in allowed }.distinct().map {
+                        "${file.relativeTo(root)}:${index + 1}: U+%04X '%s'".format(it, String(Character.toChars(it)))
+                    }
+                }
+        }
+        if (violations.isNotEmpty()) {
+            throw GradleException(
+                "Characters outside the UI glyph allowlist (draw symbols with ui/Icons.kt instead):\n" +
+                    violations.joinToString("\n"),
+            )
+        }
+    }
+}
+
+tasks.named("check") { dependsOn(checkUiGlyphs) }

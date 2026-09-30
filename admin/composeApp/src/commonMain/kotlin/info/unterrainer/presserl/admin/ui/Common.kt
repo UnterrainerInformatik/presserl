@@ -37,7 +37,7 @@ import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun BackButton(onBack: () -> Unit) {
-    TextButton(onClick = onBack) { Text("← " + stringResource(Res.string.back)) }
+    TextButton(onClick = onBack) { IconLabel(Icons.Back, stringResource(Res.string.back)) }
 }
 
 /** A message across the content width, e.g. a conflict or a server message. */

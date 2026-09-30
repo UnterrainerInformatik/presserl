@@ -75,6 +75,8 @@ import info.unterrainer.presserl.admin.resources.remove
 import info.unterrainer.presserl.admin.resources.save_date
 import info.unterrainer.presserl.admin.ui.BackButton
 import info.unterrainer.presserl.admin.ui.Banner
+import info.unterrainer.presserl.admin.ui.IconLabel
+import info.unterrainer.presserl.admin.ui.Icons
 import info.unterrainer.presserl.admin.ui.LoadFailed
 import info.unterrainer.presserl.admin.ui.formatDate
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
@@ -288,10 +290,10 @@ private fun IssueSettings(issue: IssueDetailDto, state: IssueDetailState, model:
         if (issue.published) {
             val uriHandler = LocalUriHandler.current
             TextButton(onClick = { uriHandler.openUri("$siteUrl/issues/${issue.id}") }) {
-                Text(stringResource(Res.string.open_issue_in_reader) + " ↗")
+                IconLabel(Icons.OpenInNew, stringResource(Res.string.open_issue_in_reader), iconAfter = true)
             }
             TextButton(onClick = { uriHandler.openUri("$siteUrl/print/issue/${issue.id}") }) {
-                Text(stringResource(Res.string.open_issue_print) + " ↗")
+                IconLabel(Icons.OpenInNew, stringResource(Res.string.open_issue_print), iconAfter = true)
             }
         }
         if (state.canDelete) {
@@ -326,9 +328,9 @@ private fun IssueArticleRow(
             )
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onUp, enabled = enabled && !first) { Text("↑ " + stringResource(Res.string.move_up)) }
-            TextButton(onClick = onDown, enabled = enabled && !last) { Text("↓ " + stringResource(Res.string.move_down)) }
-            TextButton(onClick = onRemove, enabled = enabled) { Text("✕ " + stringResource(Res.string.remove)) }
+            TextButton(onClick = onUp, enabled = enabled && !first) { IconLabel(Icons.Up, stringResource(Res.string.move_up)) }
+            TextButton(onClick = onDown, enabled = enabled && !last) { IconLabel(Icons.Down, stringResource(Res.string.move_down)) }
+            TextButton(onClick = onRemove, enabled = enabled) { IconLabel(Icons.Close, stringResource(Res.string.remove)) }
         }
     }
 }
