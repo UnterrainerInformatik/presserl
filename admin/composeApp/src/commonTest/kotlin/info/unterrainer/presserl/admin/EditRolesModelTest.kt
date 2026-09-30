@@ -42,7 +42,8 @@ class EditRolesModelTest {
         account: AccountDto = READER,
         assignable: List<String> = PUBLISHER_ASSIGNABLE,
         sections: List<SectionDto> = listOf(SPORT, KULTUR),
-    ) = EditRolesModel(backgroundScope, account, assignable, sections) { id, request ->
+        mayAssignSectionlessReporter: Boolean = false,
+    ) = EditRolesModel(backgroundScope, account, assignable, sections, mayAssignSectionlessReporter) { id, request ->
         sent += id to request
         save(id, request)
     }
@@ -225,6 +226,67 @@ class EditRolesModelTest {
         ),
         "https://news.example.org",
     ) { "token" }
+
+    @Test
+    fun lastSectionRemovedByAnEditorInChiefSelectsTheMarker() = runTest {
+        val model = model(REPORTER_IN_SPORT, assignable = listOf("EDITOR_IN_CHIEF", "READER"), mayAssignSectionlessReporter = true)
+
+        model.sectionRole(SPORT.id, null)
+
+        assertTrue(model.state.value.sectionlessReporter)
+        model.submit {}
+        runCurrent()
+        assertEquals(EditRolesRequest(listOf("READER"), emptyList(), sectionlessReporter = true), sent.single().second)
+    }
+
+    @Test
+    fun theAutomaticMarkerCanBeClearedAgain() = runTest {
+        val model = model(REPORTER_IN_SPORT, mayAssignSectionlessReporter = true)
+        model.sectionRole(SPORT.id, null)
+
+        model.sectionlessReporter(false)
+
+        assertFalse(model.state.value.sectionlessReporter)
+        assertTrue(model.state.value.canSave)
+        model.submit {}
+        runCurrent()
+        assertEquals(EditRolesRequest(listOf("READER"), emptyList(), sectionlessReporter = false), sent.single().second)
+    }
+
+    @Test
+    fun noMarkerWhileEditorInChiefIsSelected() = runTest {
+        val model = model(REPORTER_IN_SPORT, mayAssignSectionlessReporter = true)
+        model.role("EDITOR_IN_CHIEF", true)
+
+        model.sectionRole(SPORT.id, null)
+
+        assertFalse(model.state.value.sectionlessReporter)
+    }
+
+    @Test
+    fun sectionEditorSeesTheMarkerReadOnlyAndDoesNotSendIt() = runTest {
+        val model = model(REPORTER_IN_SPORT, assignable = emptyList(), sections = listOf(SPORT, KULTUR_READ_ONLY))
+        model.sectionlessReporter(true)
+        assertFalse(model.state.value.sectionlessReporter)
+
+        model.sectionRole(SPORT.id, null)
+        assertFalse(model.state.value.sectionlessReporter)
+        assertTrue(model.state.value.canSave)
+        model.submit {}
+        runCurrent()
+
+        assertNull(sent.single().second.sectionlessReporter)
+    }
+
+    @Test
+    fun markerAloneAllowsSaving() = runTest {
+        val model = model(READER.copy(roles = emptyList(), sectionlessReporter = false), mayAssignSectionlessReporter = true)
+        assertFalse(model.state.value.canSave)
+
+        model.sectionlessReporter(true)
+
+        assertTrue(model.state.value.canSave)
+    }
 
     private companion object {
         val PUBLISHER_ASSIGNABLE = listOf("PUBLISHER", "EDITOR_IN_CHIEF", "READER")

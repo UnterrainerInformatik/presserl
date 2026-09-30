@@ -55,36 +55,48 @@ class ApprovalChainTest {
     }
 
     private static Optional<ApprovalLevel> next(Optional<ApprovalLevel> above, long section, Staffing staffing) {
-        return ApprovalChain.next(above, section, AUTHOR, staffing, false);
+        return ApprovalChain.next(above, section, Set.of(AUTHOR), staffing, false);
     }
 
     private static Optional<ApprovalLevel> nextLocked(Optional<ApprovalLevel> above, long section, Staffing staffing) {
-        return ApprovalChain.next(above, section, AUTHOR, staffing, true);
+        return ApprovalChain.next(above, section, Set.of(AUTHOR), staffing, true);
     }
 
     @Test
     void reporterHasNoLevel() {
-        assertThat(ApprovalChain.authorLevel(member(Map.of(SPORT, SectionRole.REPORTER)), SPORT)).isEmpty();
+        assertThat(ApprovalChain.approverLevel(member(Map.of(SPORT, SectionRole.REPORTER)), SPORT)).isEmpty();
     }
 
     @Test
     void sectionEditorInOwnSection() {
-        assertThat(ApprovalChain.authorLevel(member(Map.of(SPORT, SectionRole.SECTION_EDITOR)), SPORT))
+        assertThat(ApprovalChain.approverLevel(member(Map.of(SPORT, SectionRole.SECTION_EDITOR)), SPORT))
                 .contains(SECTION_EDITOR);
     }
 
     @Test
     void sectionEditorInForeignSectionIsReporter() {
         Newsroom user = member(Map.of(SPORT, SectionRole.SECTION_EDITOR, KULTUR, SectionRole.REPORTER));
-        assertThat(ApprovalChain.authorLevel(user, KULTUR)).isEmpty();
+        assertThat(ApprovalChain.approverLevel(user, KULTUR)).isEmpty();
     }
 
     @Test
     void newspaperWideLevels() {
-        assertThat(ApprovalChain.authorLevel(user(NewspaperRole.EDITOR_IN_CHIEF), SPORT)).contains(EDITOR_IN_CHIEF);
-        assertThat(ApprovalChain.authorLevel(user(NewspaperRole.PUBLISHER), SPORT)).contains(PUBLISHER);
-        assertThat(ApprovalChain.authorLevel(user(NewspaperRole.EDITOR_IN_CHIEF, NewspaperRole.PUBLISHER), SPORT))
+        assertThat(ApprovalChain.approverLevel(user(NewspaperRole.EDITOR_IN_CHIEF), SPORT)).contains(EDITOR_IN_CHIEF);
+        assertThat(ApprovalChain.approverLevel(user(NewspaperRole.PUBLISHER), SPORT)).contains(PUBLISHER);
+        assertThat(ApprovalChain.approverLevel(user(NewspaperRole.EDITOR_IN_CHIEF, NewspaperRole.PUBLISHER), SPORT))
                 .contains(PUBLISHER);
+    }
+
+    @Test
+    void levelOfFollowsTheHolderSets() {
+        Staffing staffing = new Staffing(Map.of(SPORT, Set.of("sed", "both")), Set.of("chief", "both"),
+                Set.of("pub", "both"));
+        assertThat(staffing.levelOf("pub", SPORT)).contains(PUBLISHER);
+        assertThat(staffing.levelOf("both", SPORT)).contains(PUBLISHER);
+        assertThat(staffing.levelOf("chief", SPORT)).contains(EDITOR_IN_CHIEF);
+        assertThat(staffing.levelOf("sed", SPORT)).contains(SECTION_EDITOR);
+        assertThat(staffing.levelOf("sed", KULTUR)).isEmpty();
+        assertThat(staffing.levelOf("reporter", SPORT)).isEmpty();
     }
 
     @Test
@@ -116,8 +128,9 @@ class ApprovalChainTest {
     void authorAsSoleHolderDoesNotStaffALevel() {
         Staffing authorHoldsAll = new Staffing(Map.of(SPORT, Set.of(AUTHOR)), Set.of(AUTHOR), Set.of("pub"));
         assertThat(next(Optional.empty(), SPORT, authorHoldsAll)).contains(PUBLISHER);
+        // holding a level's role puts the author at that level, so their chain starts above it
         Staffing authorAndOther = new Staffing(Map.of(SPORT, Set.of(AUTHOR, "sed")), Set.of(), Set.of("pub"));
-        assertThat(next(Optional.empty(), SPORT, authorAndOther)).contains(SECTION_EDITOR);
+        assertThat(next(Optional.empty(), SPORT, authorAndOther)).contains(PUBLISHER);
     }
 
     @Test
@@ -153,8 +166,9 @@ class ApprovalChainTest {
 
     @Test
     void lockKeepsAnUnstaffedPublisherLevel() {
-        Staffing authorIsTheOnlyPublisher = new Staffing(Map.of(), Set.of(), Set.of(AUTHOR));
-        assertThat(nextLocked(Optional.of(EDITOR_IN_CHIEF), SPORT, authorIsTheOnlyPublisher)).contains(PUBLISHER);
+        // the author is editor-in-chief and nobody holds PUBLISHER
+        Staffing noPublisher = new Staffing(Map.of(), Set.of(AUTHOR), Set.of());
+        assertThat(nextLocked(Optional.of(EDITOR_IN_CHIEF), SPORT, noPublisher)).contains(PUBLISHER);
         assertThat(nextLocked(Optional.empty(), SPORT, new Staffing(Map.of(), Set.of(), Set.of()))).contains(PUBLISHER);
     }
 
@@ -215,5 +229,61 @@ class ApprovalChainTest {
     void notNeededRefusesTrustQuestions() {
         assertThatThrownBy(() -> Staffing.NOT_NEEDED.trusts(PUBLISHER, SPORT, AUTHOR))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    // --- several contributors
+
+    private static final String CORRECTOR = "sed";
+
+    private static Optional<ApprovalLevel> nextOf(Optional<ApprovalLevel> above, Staffing staffing, boolean locked,
+            String... contributors) {
+        return ApprovalChain.next(above, SPORT, Set.of(contributors), staffing, locked);
+    }
+
+    @Test
+    void trustInTheAuthorDoesNotSkipTheCorrectorsLevels() {
+        // the author is trusted at the newspaper-wide levels, the section editor corrected
+        Staffing staffing = trusting(trust(EDITOR_IN_CHIEF), trust(PUBLISHER));
+        assertThat(nextOf(Optional.empty(), staffing, false, AUTHOR)).contains(SECTION_EDITOR);
+        assertThat(nextOf(Optional.of(SECTION_EDITOR), staffing, false, AUTHOR)).isEmpty();
+        assertThat(nextOf(Optional.empty(), staffing, false, AUTHOR, CORRECTOR)).contains(SECTION_EDITOR);
+        assertThat(nextOf(Optional.of(SECTION_EDITOR), staffing, false, AUTHOR, CORRECTOR)).contains(EDITOR_IN_CHIEF);
+        assertThat(nextOf(Optional.of(EDITOR_IN_CHIEF), staffing, false, AUTHOR, CORRECTOR)).contains(PUBLISHER);
+    }
+
+    @Test
+    void theCorrectorsOwnLevelIsNotInTheirChain() {
+        // only the section editor contributed: their chain starts above SECTION_EDITOR
+        assertThat(nextOf(Optional.empty(), FULL, false, CORRECTOR)).contains(EDITOR_IN_CHIEF);
+    }
+
+    @Test
+    void trustedCorrectorAddsNothing() {
+        Staffing staffing = new Staffing(FULL.sectionEditors(), FULL.editorsInChief(), FULL.publishers(),
+                Map.of(AUTHOR, Set.of(trust(EDITOR_IN_CHIEF), trust(PUBLISHER)),
+                        CORRECTOR, Set.of(trust(EDITOR_IN_CHIEF), trust(PUBLISHER))));
+        assertThat(nextOf(Optional.of(SECTION_EDITOR), staffing, false, AUTHOR, CORRECTOR)).isEmpty();
+    }
+
+    @Test
+    void lockWithACorrector() {
+        Staffing staffing = trusting(sectionTrust(SPORT), trust(EDITOR_IN_CHIEF), trust(PUBLISHER));
+        assertThat(nextOf(Optional.empty(), staffing, true, AUTHOR, CORRECTOR)).contains(EDITOR_IN_CHIEF);
+        assertThat(nextOf(Optional.of(EDITOR_IN_CHIEF), staffing, true, AUTHOR, CORRECTOR)).contains(PUBLISHER);
+        // a locked article only the publisher contributed to goes live directly
+        assertThat(nextOf(Optional.empty(), FULL, true, "pub")).isEmpty();
+    }
+
+    @Test
+    void publisherOnlyContributorGivesAnEmptyChain() {
+        assertThat(nextOf(Optional.empty(), FULL, false, "pub")).isEmpty();
+    }
+
+    @Test
+    void theEditorInChiefCorrectingBringsInThePublisher() {
+        // the author is fully trusted; the editor-in-chief's correction needs the publisher
+        Staffing staffing = trusting(sectionTrust(SPORT), trust(EDITOR_IN_CHIEF), trust(PUBLISHER));
+        assertThat(nextOf(Optional.empty(), staffing, false, AUTHOR)).isEmpty();
+        assertThat(nextOf(Optional.empty(), staffing, false, AUTHOR, "chief")).contains(PUBLISHER);
     }
 }

@@ -38,7 +38,8 @@ Effective newspaper settings (code default → environment → database override
       "editor.level": "standard",
       "reader.text-size": "m",
       "media.max-size": "10M",
-      "spell-check.help": "suggestions"
+      "spell-check.help": "suggestions",
+      "article.corrections": true
     },
     "overrides": {}
   }
@@ -50,7 +51,9 @@ Effective newspaper settings (code default → environment → database override
     `media.max-size`: largest accepted image upload (deployment-only, `PRESSERL_MEDIA_MAX_SIZE`);
     `spell-check.help`: how much help `POST /api/spell-check` gives — `suggestions` (message and
     replacements) | `messages` (message, no replacements) | `marks` (neither), deployment value
-    `PRESSERL_SPELL_CHECK_HELP`.
+    `PRESSERL_SPELL_CHECK_HELP`; `article.corrections`: JSON boolean, whether higher levels may
+    correct the articles of those below them (see Articles, corrections), deployment value
+    `PRESSERL_ARTICLE_CORRECTIONS` (`true` | `false`, anything else fails startup).
   - `overrides`: the entries of `settings` whose value currently comes from a valid newspaper
     override (database), keyed like `settings`; `{}` when none. A key missing here uses the
     deployment value or the code default. Clients treat a missing `overrides` (older servers) as
@@ -60,15 +63,17 @@ Effective newspaper settings (code default → environment → database override
 
 ## `PUT /api/newspaper/settings`
 
-Sets or clears newspaper overrides. Writable in this version: `reader.text-size` and
-`spell-check.help`.
+Sets or clears newspaper overrides. Writable in this version: `reader.text-size`,
+`spell-check.help` and `article.corrections`.
 
 - **Auth:** bearer token; `PUBLISHER` or `EDITOR_IN_CHIEF` (`allowedActions` contains
   `CONFIGURE_NEWSPAPER`). `spell-check.help` is writable by `PUBLISHER` only (`allowedActions`
-  contains `CONFIGURE_SPELL_CHECK`).
+  contains `CONFIGURE_SPELL_CHECK`), `article.corrections` by `PUBLISHER` only (`allowedActions`
+  contains `CONFIGURE_CORRECTIONS`).
 - **Body:** JSON object of setting name → value. A value stores the override; `null` removes it,
-  so the deployment value (`PRESSERL_READER_TEXT_SIZE`, `PRESSERL_SPELL_CHECK_HELP`) or the code
-  default applies again. Keys not in the body stay unchanged; `{}` changes nothing. All or
+  so the deployment value (`PRESSERL_READER_TEXT_SIZE`, `PRESSERL_SPELL_CHECK_HELP`,
+  `PRESSERL_ARTICLE_CORRECTIONS`) or the code default applies again. Enumerated settings take a
+  JSON string, `article.corrections` a JSON boolean. Keys not in the body stay unchanged; `{}` changes nothing. All or
   nothing: nothing is written when any key is refused.
   ```json
   { "reader.text-size": "l" }
@@ -79,25 +84,29 @@ Sets or clears newspaper overrides. Writable in this version: `reader.text-size`
   ```json
   { "spell-check.help": "marks" }
   ```
+  ```json
+  { "article.corrections": false }
+  ```
 - **Response `200`:** the same body as `GET /api/newspaper` after the change, e.g.
   ```json
   { "name": "My Newspaper", "subtitle": "", "visibility": "public",
     "settings": { "retract.author-can-retract": true, "section.default": "General",
                   "editor.level": "standard", "reader.text-size": "l", "media.max-size": "10M",
-                  "spell-check.help": "suggestions" },
+                  "spell-check.help": "suggestions", "article.corrections": true },
     "overrides": { "reader.text-size": "l" } }
   ```
 - **Errors:**
   - `400` `{"errors": [...]}` naming every offending key as `field`: a value outside the allowed
-    set or not a string (`"must be one of s, m, l, xl"`, `"must be one of suggestions, messages,
-    marks"`), an unknown or non-writable key (`"is not a writable setting"`); `field` `null` when
+    set or of the wrong JSON type (`"must be one of s, m, l, xl"`, `"must be one of suggestions,
+    messages, marks"`, `"must be one of true, false"`), an unknown or non-writable key (`"is not a writable setting"`); `field` `null` when
     the body is not a JSON object. Checked before the key-level `403`.
   - `401` (empty body) without a valid token; `403` (empty body) without `PUBLISHER` or
     `EDITOR_IN_CHIEF`, and `403` (empty body, nothing stored) when a user without `PUBLISHER`
-    sends `spell-check.help` — also together with keys they may write.
+    sends `spell-check.help` or `article.corrections` — also together with keys they may write.
 - **Side effects:** updates `newspaper.settings`; the reader uses the new `reader.text-size` for
   visitors without their own choice from the next page load; the new `spell-check.help` applies
-  from the next `POST /api/spell-check`.
+  from the next `POST /api/spell-check`; `article.corrections` applies to the next request's
+  `allowedActions` and saves.
 
 ## `GET /api/client-config`
 
@@ -133,13 +142,21 @@ The logged-in user as seen by the backend.
   ```json
   { "username": "nogroups", "displayName": "No Groups", "roles": [],
     "sectionRoles": [ { "sectionId": 1, "sectionName": "Sport", "role": "SECTION_EDITOR" } ],
-    "allowedActions": ["WRITE_ARTICLES", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS"] }
+    "sectionlessReporter": false,
+    "allowedActions": ["WRITE_ARTICLES", "USE_MEDIA", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS"] }
   ```
   The bootstrapped publisher:
   ```json
   { "username": "publisher", "displayName": "publisher", "roles": ["PUBLISHER"], "sectionRoles": [],
-    "allowedActions": ["WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "MANAGE_ISSUES",
-                       "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER", "CONFIGURE_SPELL_CHECK"] }
+    "sectionlessReporter": false,
+    "allowedActions": ["WRITE_ARTICLES", "USE_MEDIA", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "MANAGE_ISSUES",
+                       "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER", "CONFIGURE_SPELL_CHECK",
+                       "CONFIGURE_CORRECTIONS"] }
+  ```
+  A sectionless reporter (marker only):
+  ```json
+  { "username": "pia", "displayName": "Pia", "roles": [], "sectionRoles": [], "sectionlessReporter": true,
+    "allowedActions": ["USE_MEDIA"] }
   ```
   - `username`: `preferred_username` claim, falling back to `sub`.
   - `displayName`: `name` claim, falling back to `username`.
@@ -147,6 +164,8 @@ The logged-in user as seen by the backend.
     `EDITOR_IN_CHIEF`, `READER`; empty array for a user without newspaper groups.
   - `sectionRoles`: the user's section roles, ordered by section position; `[]` for none. Read
     per call, so a changed section role shows at the next call; `roles` follow the token.
+  - `sectionlessReporter`: whether the user carries the marker "reporter without a section" (see
+    Accounts); read per call like `sectionRoles`.
   - `allowedActions`: the newspaper-wide actions the user may perform now, always present (`[]`
     for none), in this order. Computed from the same rules that guard the endpoints; clients
     render from it instead of re-deriving it from `roles`/`sectionRoles`, and ignore values they
@@ -156,12 +175,14 @@ The logged-in user as seen by the backend.
     | Action | Listed when the user holds | Stands for |
     |---|---|---|
     | `WRITE_ARTICLES` | `PUBLISHER`, `EDITOR_IN_CHIEF`, or a section role in any section | the article endpoints |
+    | `USE_MEDIA` | anything that lists `WRITE_ARTICLES`, or the `sectionlessReporter` marker | the media endpoints (`/api/media…`) |
     | `MANAGE_SECTIONS` | `PUBLISHER` or `EDITOR_IN_CHIEF` | creating, changing, reordering and deleting sections |
     | `ASSIGN_SECTION_ROLES` | `PUBLISHER`, `EDITOR_IN_CHIEF`, or `SECTION_EDITOR` in any section | section members of at least one section |
     | `MANAGE_ISSUES` | `PUBLISHER` or `EDITOR_IN_CHIEF` | the issue endpoints (`/api/issues…`) |
     | `ADMINISTER_ACCOUNTS` | `PUBLISHER`, `EDITOR_IN_CHIEF`, or `SECTION_EDITOR` in any section | listing and creating accounts |
     | `CONFIGURE_NEWSPAPER` | `PUBLISHER` or `EDITOR_IN_CHIEF` | changing the newspaper settings (`PUT /api/newspaper/settings`) |
     | `CONFIGURE_SPELL_CHECK` | `PUBLISHER` | changing the newspaper's spell-check help (`spell-check.help` in `PUT /api/newspaper/settings`) |
+    | `CONFIGURE_CORRECTIONS` | `PUBLISHER` | switching corrections by higher levels (`article.corrections` in `PUT /api/newspaper/settings`) |
 - **Errors:** `401` (empty body) without a valid token.
 - **Side effects:** none.
 
@@ -198,41 +219,64 @@ position the user may write in; when no section exists at all, the default secti
 …) for validation errors and `null` for `403`/`404`/`409`, except a `403` for a section the user may
 not write in, which names `sectionId`. A `400` lists **every** violation found.
 
-**Revisions.** Revisions are numbered from `1`. `PUT` overwrites the latest revision while it has
-never been published (working revision — autosave does not create revisions); once the latest
-revision has been published, the next `PUT` creates revision `latest + 1` — unless the sent content
-(`kicker`, `headline`, `subheadline`, `lead`, `body`) equals the latest revision's content: then no
-revision is created or changed (`updatedAt` and `version` still change). Publishing makes the
+**Revisions.** Revisions are numbered from `1`; every revision records its **author** (token
+subject, username and display name at the time of writing; revisions older than this rule belong to
+the article's author). `PUT` overwrites the latest revision while it has never been published **and
+was written by the saving user** (working revision — autosave does not create revisions); in every
+other case (the latest revision was published, or someone else wrote it, e.g. a correction) the
+next `PUT` creates revision `latest + 1` written by the saving user — unless the sent content
+(`kicker`, `headline`, `subheadline`, `lead`, `body`, lead image) equals the latest revision's
+content: then no revision is created or changed (`updatedAt` and `version` still change). Publishing makes the
 latest revision the **live revision** (`liveRevision`); later saves do not touch it until the
 next publish. `hasUnpublishedChanges` = `liveRevision != null && revision != liveRevision`.
 
 **Versions.** `version` is the optimistic-lock counter. Every successful save, publish,
-take-offline, unlock, submit, approve, reject and withdraw increases it. The chain actions carry no
-version: of two concurrent decisions on the same article the second gets `409`. `PUT` must send the version last received; a different stored version
-→ `409` and nothing changes (reload, then save again).
+take-offline, unlock, submit, approve, reject and withdraw increases it. `PUT` must send the version
+last received; approve and reject **may** send it (`{"version": 7}`) and the admin app always does,
+after saving its own pending changes. A different stored version → `409` and nothing changes
+(reload, then act again). Without a version, of two concurrent decisions on the same article the
+second gets `409`.
 
 **Approval chain.** Levels, bottom to top: `SECTION_EDITOR` (of the article's section),
 `EDITOR_IN_CHIEF`, `PUBLISHER`. A user's **level** for an article is the highest of these they
 hold (`PUBLISHER` role, `EDITOR_IN_CHIEF` role, `SECTION_EDITOR` of that section); none = reporter.
-The author's **chain** = the levels above the author's level that are **staffed**, i.e. held by at
-least one account other than the author (locked accounts count), and do **not trust** the author;
-unstaffed and trusting levels are skipped. A level trusts the author when a trust entry exists for
-the author at that level (see Accounts, trust): `SECTION_EDITOR` for the article's section,
-`EDITOR_IN_CHIEF` and `PUBLISHER` newspaper-wide — whoever set it and whether they still hold the
-role. While the article is **locked** by the emergency brake (`locked: true`), `PUBLISHER` belongs
-to the chain of every author below `PUBLISHER`, staffed or trusting or not — only a publisher brings
-it back online.
-An author whose chain is empty publishes directly (`PUBLISH`); everyone else submits (`SUBMIT`) and
-the article waits for the lowest level of the chain (`pendingLevel`). Any user other than the
+The **contributors** of an article are the distinct authors of its revisions above the live
+revision (of all revisions while it was never published); when there are none (an offline article
+without unpublished changes) the article's author is the only contributor. A contributor's level is
+taken from their current roles. The **chain** of an article is the union of the chains of its
+contributors. The chain of one contributor = the levels above that contributor's level that are
+**staffed**, i.e. held by at least one account other than the contributor (locked accounts count),
+and do **not trust** the contributor; unstaffed and trusting levels are skipped for that
+contributor. So trust in the author does not skip a level a corrector's chain contains. A level
+trusts a contributor when a trust entry exists for them at that level (see Accounts, trust):
+`SECTION_EDITOR` for the article's section, `EDITOR_IN_CHIEF` and `PUBLISHER` newspaper-wide —
+whoever set it and whether they still hold the role. While the article is **locked** by the
+emergency brake (`locked: true`), `PUBLISHER` belongs to the chain whenever a contributor is below
+`PUBLISHER`, staffed or trusting or not — only a publisher brings it back online.
+An article whose chain is empty is published directly (`PUBLISH`); otherwise it is submitted
+(`SUBMIT`) and waits for the lowest level of the chain (`pendingLevel`). Any user other than the
 author whose level is at least the pending level may approve or reject; an approval settles every
-level up to the approver's level, the article then waits for the next staffed, non-trusting level
-above it or, when none remains, goes live. While a submission is pending, content and section are frozen
-(`EDIT` not offered, `PUT` → `409`). The chain is computed per request from the current roles and
+level up to the approver's level, the article then waits for the next level of the chain above it
+or, when none remains, goes live. While a submission is pending, the author's content and every
+section change are frozen (`EDIT` not offered to the author, author's `PUT` → `409`); a corrector
+may still correct (see below), which keeps `pendingLevel`. The chain is computed per request from the current roles and
 trust, so role and trust changes act at once — but a pending submission is **not moved**: its
 `pendingLevel` changes only on submit and approve, so an article already waiting for a level that
-starts to trust its author keeps waiting (approve, reject or withdraw as before). Requests that need it (an author without `PUBLISHER` among the returned
-articles, every approve) read the role holders from Keycloak; when Keycloak is unavailable they
-answer `503` with the error body.
+starts to trust its author keeps waiting (approve, reject or withdraw as before). Every request
+that returns or acts on at least one article (get, list, save, publish, submit, approve, reject,
+the article lists of issues …) reads the role holders from Keycloak to decide levels and chains;
+when Keycloak is unavailable it answers `503` with the error body. An empty list needs no Keycloak.
+
+**Corrections by higher levels.** A user other than the author may **correct** (save) an article
+when the newspaper setting `article.corrections` is `true`, their level for the article is above the
+author's level (from the author's current roles), the article is not `DRAFT`, and — while a
+submission is pending — their level is at least `pendingLevel`. A correction follows the save rules
+(validation, `version`, new-revision rule) and keeps the article's section (`sectionId` of another
+section → `403` naming `sectionId`); it does not change author (byline), status, `pendingLevel` or
+live revision. A correction is not an approval: the corrector approves explicitly afterwards. A
+corrector who is a contributor of a `PUBLISHED`/`OFFLINE` article may submit or publish their own
+correction (by the contributor chain). Correctors never delete or withdraw. `lastEditor` in
+`ArticleDto` names the author of the latest revision.
 
 **`allowedActions`.** Every article representation lists what the requesting user may do now, in
 the order `EDIT`, `SUBMIT`, `PUBLISH`, `WITHDRAW`, `APPROVE`, `REJECT`, `TAKE_OFFLINE`, `UNLOCK`, `DELETE`.
@@ -242,9 +286,9 @@ are never listed together. Rules ("pending" = `pendingLevel != null`):
 
 | Action | Allowed when |
 |---|---|
-| `EDIT` | user is the author and may write in the article's section; nothing pending |
-| `SUBMIT` | user is the author, may write in the article's section, their chain is not empty; nothing pending; status ≠ `PUBLISHED` or unpublished changes exist |
-| `PUBLISH` | as `SUBMIT`, but the author's chain is empty (the author holds `PUBLISHER`, or every level above is unstaffed or trusts the author) |
+| `EDIT` | user is the author and may write in the article's section, nothing pending; or user may correct it (see above) |
+| `SUBMIT` | user is the author and may write in the article's section, or a contributor who may correct a non-`DRAFT` article; the chain is not empty; nothing pending; status ≠ `PUBLISHED` or unpublished changes exist |
+| `PUBLISH` | as `SUBMIT`, but the chain is empty (every contributor holds `PUBLISHER`, or every level above them is unstaffed or trusts them) |
 | `WITHDRAW` | user is the author; pending |
 | `APPROVE`, `REJECT` | user is not the author and their level ≥ `pendingLevel`; pending |
 | `TAKE_OFFLINE` | status = `PUBLISHED` and user is the author, an `EDITOR_IN_CHIEF`, a `PUBLISHER` or `SECTION_EDITOR` of the article's section |
@@ -339,6 +383,7 @@ Content fields are those of the latest revision (`revision`).
   "id": 42,
   "status": "PUBLISHED",
   "author": { "username": "papa", "displayName": "Papa" },
+  "lastEditor": { "username": "chief", "displayName": "Lena" },
   "section": { "id": 4, "name": "Kultur", "slug": "kultur", "color": "blue" },
   "issue": { "id": 2, "number": 2 },
   "revision": 2,
@@ -359,7 +404,10 @@ Content fields are those of the latest revision (`revision`).
   "allowedActions": ["EDIT", "PUBLISH", "TAKE_OFFLINE"]
 }
 ```
-- `author`: username and display name as `GET /api/me` returned them when the article was created.
+- `author`: username and display name as `GET /api/me` returned them when the article was created
+  (the byline; a correction never changes it).
+- `lastEditor`: the author of the latest revision (`revision`), same shape; equals `author` unless
+  someone corrected the article.
 - `section`: the article's section with its current name and palette colour.
 - `issue`: the issue the article belongs to (`IssueRefDto`: `id`, `number`), `null` for none. Also
   part of `ArticleSummaryDto`.
@@ -372,8 +420,7 @@ Content fields are those of the latest revision (`revision`).
 
 ## `GET /api/articles`
 
-Summaries of the articles visible to the requesting user, newest change (`updatedAt`) first. No
-pagination yet.
+Summaries of the articles visible to the requesting user, in the order `sort`. No pagination yet.
 
 - **Auth:** writer
 - **Query:** `status` (optional, `DRAFT` | `SUBMITTED` | `PUBLISHED` | `OFFLINE`), `mine`
@@ -381,16 +428,19 @@ pagination yet.
   only articles with a pending submission), `awaitingMe` (optional, `true` → only articles whose
   `allowedActions` for the requesting user contain `APPROVE`, i.e. the review queue: never the
   user's own articles, empty for reporters and a solo newspaper); filters combine
-  (`mine=true&awaitingMe=true` is always empty)
+  (`mine=true&awaitingMe=true` is always empty); `sort` (optional): `changed` (default, newest
+  change first), `newest` (newest creation first) or `section` (section position, then newest
+  change first); ties by descending id
 - **Response `200`:** array of `ArticleSummaryDto`
   ```json
   [ { "id": 42, "status": "DRAFT", "author": { "username": "papa", "displayName": "Papa" },
       "section": { "id": 1, "name": "Sport", "slug": "sport", "color": "green" }, "issue": null,
       "headline": "Hello", "kicker": "", "revision": 1, "liveRevision": null,
-      "hasUnpublishedChanges": false, "pendingLevel": null, "locked": false, "updatedAt": "2026-09-26T10:05:00Z", "publishedAt": null,
+      "hasUnpublishedChanges": false, "pendingLevel": null, "locked": false, "createdAt": "2026-09-26T10:00:00Z",
+      "updatedAt": "2026-09-26T10:05:00Z", "publishedAt": null,
       "allowedActions": ["EDIT", "PUBLISH", "DELETE"] } ]
   ```
-- **Errors:** `400` unknown `status` (field `status`).
+- **Errors:** `400` unknown `status` (field `status`) or `sort` (field `sort`).
 - **Side effects:** none.
 
 ## `POST /api/articles`
@@ -417,17 +467,18 @@ user becomes the author.
 Saves the content (full replacement) following the working-revision rule and moves the article
 to `sectionId` if given.
 
-- **Auth:** writer; `EDIT` (the author, while they may write in the article's section); the target
-  section must be writable too
+- **Auth:** writer; `EDIT` (the author, while they may write in the article's section; or a
+  corrector, see above); for the author the target section must be writable too
 - **Body:** `ArticleContent` plus `"version": 5` (required)
-- **Response `200`:** `ArticleDto` (new `version`, `revision` possibly incremented)
+- **Response `200`:** `ArticleDto` (new `version`, `revision` possibly incremented, `lastEditor`)
 - **Errors:** `400` validation (missing `version` names `version`; bad or unknown `sectionId`
-  names `sectionId`), `403` not the author or no write access to the article's section, `403`
-  target section not writable (field `sectionId`), `404`, `409` stale `version` or a submission is
-  pending.
-- **Side effects:** latest revision overwritten, or new revision if the latest was published,
-  or none if the content is unchanged; section changed if `sectionId` is given; `updatedAt` and
-  `version` change.
+  names `sectionId`), `403` neither the author nor a corrector, no write access to the article's
+  section, a corrector below the pending level, `403` target section not writable or a corrector
+  naming another section (field `sectionId`), `404`, `409` stale `version`, a submission is pending
+  on the author's save, or a correction of a `DRAFT`.
+- **Side effects:** latest revision overwritten (never published and written by the saving user),
+  otherwise a new revision written by the saving user, or none if the content is unchanged;
+  section changed if the author gives `sectionId`; `updatedAt` and `version` change.
 
 ## `DELETE /api/articles/{id}`
 
@@ -442,12 +493,12 @@ to `sectionId` if given.
 
 Makes the latest revision live without approval. No request body.
 
-- **Auth:** writer; `PUBLISH` (the author, while they may write in the section and their chain is
-  empty)
+- **Auth:** writer; `PUBLISH` (the author, while they may write in the section, or a correcting
+  contributor; the chain is empty)
 - **Response `200`:** `ArticleDto` with `status` `PUBLISHED`, `liveRevision` = `revision`
-- **Errors:** `400` empty headline (field `headline`), `403` not the author, no write access, or a
-  level applies (submit instead), `404`, `409` already `PUBLISHED` without unpublished changes, or
-  a submission is pending.
+- **Errors:** `400` empty headline (field `headline`), `403` neither the author nor a correcting
+  contributor, no write access, or a level applies (submit instead), `404`, `409` already
+  `PUBLISHED` without unpublished changes, or a submission is pending.
 - **Side effects:** latest revision marked published (if not yet), `liveRevision` set, status
   `PUBLISHED`, `publishedAt` set on first publication; `updatedAt` and `version` change. Works
   from `DRAFT` and `OFFLINE` (an `OFFLINE` article whose latest revision is already live goes
@@ -482,28 +533,34 @@ Lifts the emergency-brake lock; the ordinary chain applies again. No request bod
 
 Starts a submission. No request body.
 
-- **Auth:** writer; `SUBMIT` (the author, while they may write in the section and their chain is
-  not empty)
-- **Response `200`:** `ArticleDto` with `pendingLevel` = lowest level of the chain; `status`
+- **Auth:** writer; `SUBMIT` (the author, while they may write in the section, or a contributor who
+  may correct the article; the chain is not empty)
+- **Response `200`:** `ArticleDto` with `pendingLevel` = lowest level of the chain (over all
+  contributors); `status`
   `SUBMITTED` for a never-published article, otherwise unchanged (`PUBLISHED`/`OFFLINE`, live
   revision kept)
-- **Errors:** `400` empty headline (field `headline`), `403` not the author, no write access, or
-  the chain is empty (publish instead), `404`, `409` already pending, or `PUBLISHED` without
-  unpublished changes.
+- **Errors:** `400` empty headline (field `headline`), `403` neither the author nor a correcting
+  contributor (a corrector who changed nothing is none), no write access, or the chain is empty
+  (publish instead), `404`, `409` already pending, or `PUBLISHED` without unpublished changes.
 - **Side effects:** `pendingLevel` set, status possibly `SUBMITTED`; `updatedAt` and `version`
   change. The latest revision is the one under review; it cannot change while pending.
 
 ## `POST /api/articles/{id}/approve`
 
-Approves the pending submission up to the approver's level. No request body.
+Approves the pending submission up to the approver's level.
 
 - **Auth:** writer; `APPROVE` (not the author; level ≥ `pendingLevel`)
-- **Response `200`:** `ArticleDto` waiting for the next staffed level above the approver's level
-  that does not trust the author (`pendingLevel`; `PUBLISHER` is always next for a locked
-  article), or, when none remains,
+- **Body:** optional; `{ "version": 7 }`, the article version the approver saw (a request without
+  body or content type is accepted as before). Only `version` (a non-negative integer) is allowed;
+  validated before anything else.
+- **Response `200`:** `ArticleDto` waiting for the next level of the chain (over all contributors)
+  above the approver's level (`pendingLevel`; `PUBLISHER` is always next for a locked article
+  with a contributor below it), or, when none remains,
   `PUBLISHED` with `pendingLevel` `null`, `locked` `false` and the latest revision live
-- **Errors:** `403` the author or level too low, `404`, `409` nothing pending or a concurrent
-  decision.
+- **Errors:** `400` invalid body (field `version`, unknown fields named), `403` the author or level
+  too low, `404`, `409` nothing pending, a concurrent decision, or a `version` other than the
+  stored one (`"article was changed in the meantime (version 8, sent 7); reload it"`, nothing
+  changes).
 - **Side effects:** review `APPROVED` recorded with the level the article waited for; when
   published: as for publish (latest revision marked published, `liveRevision`, status, first
   `publishedAt`, appended to the newest issue on the first publication). `updatedAt` and
@@ -514,13 +571,15 @@ Approves the pending submission up to the approver's level. No request body.
 Ends the pending submission with a note.
 
 - **Auth:** writer; `REJECT` (same users as approve)
-- **Body:** `{ "note": "Please add who scored." }` — exactly this field; stored trimmed, 1–1000
-  code points, `\n` allowed, no other control characters. Validated before anything else, so a
-  malformed body is `400` for everyone.
+- **Body:** `{ "note": "Please add who scored.", "version": 7 }` — `note` required: stored trimmed,
+  1–1000 code points, `\n` allowed, no other control characters; `version` optional, the article
+  version the reviewer saw (non-negative integer). No other fields. Validated before anything else,
+  so a malformed body is `400` for everyone.
 - **Response `200`:** `ArticleDto` with `pendingLevel` `null`; `SUBMITTED` → `DRAFT`, a
   `PUBLISHED`/`OFFLINE` article keeps its status and live revision
 - **Errors:** `400` note missing, not a string, blank, too long or with control characters (field
-  `note`), unknown fields (named), `403`, `404`, `409` nothing pending.
+  `note`), invalid `version` (field `version`), unknown fields (named), `403`, `404`, `409` nothing
+  pending or a stale `version` (nothing changes).
 - **Side effects:** review `REJECTED` recorded with the note; revisions unchanged; `updatedAt` and
   `version` change.
 
@@ -555,19 +614,21 @@ The author ends their pending submission. No request body.
 - **Auth:** writer; article visible
 - **Response `200`:** array of `RevisionSummaryDto`, newest first
   ```json
-  [ { "number": 2, "headline": "Second", "createdAt": "…", "updatedAt": "…",
-      "publishedAt": "2026-09-26T10:07:00Z", "live": true },
-    { "number": 1, "headline": "First", "createdAt": "…", "updatedAt": "…",
-      "publishedAt": "2026-09-26T10:01:00Z", "live": false } ]
+  [ { "number": 2, "headline": "Second", "author": { "username": "chief", "displayName": "Lena" },
+      "createdAt": "…", "updatedAt": "…", "publishedAt": "2026-09-26T10:07:00Z", "live": true },
+    { "number": 1, "headline": "First", "author": { "username": "papa", "displayName": "Papa" },
+      "createdAt": "…", "updatedAt": "…", "publishedAt": "2026-09-26T10:01:00Z", "live": false } ]
   ```
-  `publishedAt`: when that revision became live, `null` for a working revision.
+  `publishedAt`: when that revision became live, `null` for a working revision; `author`: who wrote
+  the revision (shape of `ArticleDto.author`).
 - **Errors:** `404` unknown or invisible article.
 
 ## `GET /api/articles/{id}/revisions/{number}`
 
 - **Auth:** writer; article visible
-- **Response `200`:** `RevisionDto` = `RevisionSummaryDto` fields plus `kicker`, `subheadline`,
-  `lead`, `body`, `leadImage` (that revision's lead image, shaped as in `ArticleDto`, or `null`)
+- **Response `200`:** `RevisionDto` = `RevisionSummaryDto` fields (including `author`) plus
+  `kicker`, `subheadline`, `lead`, `body`, `leadImage` (that revision's lead image, shaped as in
+  `ArticleDto`, or `null`). The admin app compares a revision with its predecessor client-side.
 - **Errors:** `404` unknown or invisible article, unknown revision number.
 
 ---
@@ -593,6 +654,17 @@ body; missing/invalid token → `401`. Every other refusal carries the error bod
 | `SECTION_EDITOR` only | — |
 
 Section roles given on creation follow the section-role delegation (see Sections).
+
+**Reporter without a section** (`sectionlessReporter`). A newspaper-wide marker stored in the
+Presserl database (not in Keycloak, effective at once). It lets the account use the media endpoints
+(`USE_MEDIA`) without writing articles, is independent of section roles and counts as a role
+wherever at least one role is required. Only `PUBLISHER` and `EDITOR_IN_CHIEF` add or remove it
+(`mayAssignSectionlessReporter`); a request by anyone else that would change it → `403` naming
+`sectionlessReporter`. **Automatic marker:** an account that loses its last section role (member
+removal, section deletion, or a role edit without the field) and holds neither `PUBLISHER` nor
+`EDITOR_IN_CHIEF` gets the marker in the same transaction — no permission needed, logged at INFO. A
+role edit that sends `"sectionlessReporter": false` is honoured under the assignment rule. Deleting
+the Keycloak user outside Presserl leaves a stale marker without effect.
 
 **Account actions** (`allowedActions`; the server decides, clients render buttons from it). Nobody
 acts on their own account or on an account holding `PUBLISHER`:
@@ -632,7 +704,7 @@ account endpoint answers `503` with
 ```json
 { "id": "5f0c…", "username": "chief", "firstName": "Chief", "lastName": "Editor",
   "roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [ { "sectionId": 1, "role": "REPORTER" } ],
-  "enabled": true,
+  "sectionlessReporter": false, "enabled": true,
   "trusts": [ { "level": "PUBLISHER", "sectionId": null } ],
   "trustScopes": [ { "level": "PUBLISHER", "sectionId": null } ],
   "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK"] }
@@ -640,7 +712,8 @@ account endpoint answers `503` with
 `id` is the Keycloak user id. `firstName`/`lastName` are `""` when unset. `roles` are the newspaper
 roles from the account's groups in the order `PUBLISHER`, `EDITOR_IN_CHIEF`, `READER` (`[]` for
 none). `sectionRoles` are the account's section roles ordered by section position (`[]` for none).
-`enabled` is `false` for a locked account. `trusts` are the account's trust entries (`level`
+`sectionlessReporter` is the marker "reporter without a section". `enabled` is `false` for a locked
+account. `trusts` are the account's trust entries (`level`
 `SECTION_EDITOR` | `EDITOR_IN_CHIEF` | `PUBLISHER`, `sectionId` for `SECTION_EDITOR`, else `null`),
 ordered `PUBLISHER`, `EDITOR_IN_CHIEF`, then `SECTION_EDITOR` by section position; `trustScopes`
 are the entries the requesting user may set or clear on it (same shape and order, see the trust
@@ -657,14 +730,15 @@ Every account of the realm except service accounts, sorted by `username`. At mos
 - **Auth:** `PUBLISHER`, `EDITOR_IN_CHIEF` or `SECTION_EDITOR` in any section
 - **Response `200`:**
   ```json
-  { "assignableRoles": ["PUBLISHER", "EDITOR_IN_CHIEF", "READER"],
+  { "assignableRoles": ["PUBLISHER", "EDITOR_IN_CHIEF", "READER"], "mayAssignSectionlessReporter": true,
     "accounts": [ { "id": "5f0c…", "username": "chief", "firstName": "Chief", "lastName": "Editor",
-                    "roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [], "enabled": true,
+                    "roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [], "sectionlessReporter": false, "enabled": true,
                     "trusts": [], "trustScopes": [ { "level": "PUBLISHER", "sectionId": null } ],
                     "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK"] } ] }
   ```
   `assignableRoles` are the newspaper roles only (`[]` for a section editor); the section roles a
-  user may assign are reported per section by `GET /api/sections`.
+  user may assign are reported per section by `GET /api/sections`. `mayAssignSectionlessReporter`:
+  whether the user may add or remove the marker (`PUBLISHER`, `EDITOR_IN_CHIEF`).
 - **Errors:** `503` Keycloak unavailable.
 - **Side effects:** none.
 
@@ -694,18 +768,25 @@ stores its section roles.
   { "firstName": "Lena", "lastName": "", "username": "lena", "roles": ["EDITOR_IN_CHIEF"],
     "sectionRoles": [ { "sectionId": 1, "role": "REPORTER" } ] }
   ```
+  A photographer (marker only):
+  ```json
+  { "firstName": "Pia", "username": "pia", "roles": [], "sectionlessReporter": true }
+  ```
   `firstName` required, not blank, ≤ 100 characters; `lastName` optional, ≤ 100; names must not
   contain control characters and are stored trimmed. `username` must match
   `^[a-z0-9]+(-[a-z0-9]+)*$`, 3–32 characters, not start with `service-account-`. `roles`
   (required): any of `PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`, may be `[]`; duplicates are
   collapsed. `sectionRoles` (optional): a list of `{sectionId, role}` with `role`
-  `SECTION_EDITOR` | `REPORTER`, each section at most once, every section must exist. At least one
-  role of either kind is required (field `roles`). Unknown fields are rejected.
+  `SECTION_EDITOR` | `REPORTER`, each section at most once, every section must exist.
+  `sectionlessReporter` (optional, default `false`): a boolean (field `sectionlessReporter`
+  otherwise). At least one role of either kind, or `"sectionlessReporter": true`, is required
+  (field `roles`). Unknown fields are rejected.
 - **Response `201`:** header `Location: /api/accounts/{id}`
   ```json
   { "account": { "id": "9a1e…", "username": "lena", "firstName": "Lena", "lastName": "",
                  "roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [ { "sectionId": 1, "role": "REPORTER" } ],
-                 "enabled": true, "trusts": [], "trustScopes": [ { "level": "PUBLISHER", "sectionId": null } ],
+                 "sectionlessReporter": false, "enabled": true, "trusts": [],
+                 "trustScopes": [ { "level": "PUBLISHER", "sectionId": null } ],
                  "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK"] },
     "password": "tiger-wolke-apfel-leiter" }
   ```
@@ -714,11 +795,13 @@ stores its section roles.
   response** — the server neither stores nor logs it. Show it on the account slip.
 - **Errors:** `400` validation (every violation; also names Keycloak rejects, e.g. forbidden
   characters, at `firstName`/`lastName`/`username`; unknown section at `sectionRoles`), `403` a
-  role that may not be assigned (field `roles`) or a section role outside the own scope (field
-  `sectionRoles`) — nothing created, `409` username taken, ignoring case (field `username`), `503`.
+  role that may not be assigned (field `roles`), a section role outside the own scope (field
+  `sectionRoles`) or the marker without `PUBLISHER`/`EDITOR_IN_CHIEF` (field
+  `sectionlessReporter`) — nothing created, `409` username taken, ignoring case (field
+  `username`), `503`.
 - **Side effects:** Keycloak user created with the password credential and group memberships,
-  section roles stored; all or nothing (a failure after the creation deletes the user again).
-  Logged at INFO with username, creator, roles and section roles.
+  section roles and marker stored in one transaction; all or nothing (a failure after the creation
+  deletes the user again). Logged at INFO with username, creator, roles, section roles and marker.
 
 ## `PUT /api/accounts/{id}/roles`
 
@@ -730,15 +813,22 @@ all or nothing. Only the difference to the current roles is checked and written.
   (delegation table), every section whose role is added, changed or removed must follow the
   section-role delegation for both the old and the new role (see Sections). Roles left unchanged
   need no permission — a section editor may promote their reporter who also holds `READER`.
-- **Body:** the complete roles; both fields are required
+- **Body:** the complete roles; `roles` and `sectionRoles` are required, `sectionlessReporter` is
+  optional
   ```json
   { "roles": ["EDITOR_IN_CHIEF", "READER"],
     "sectionRoles": [ { "sectionId": 2, "role": "REPORTER" } ] }
   ```
+  ```json
+  { "roles": [], "sectionRoles": [], "sectionlessReporter": true }
+  ```
   Same rules as `POST /api/accounts`: known roles (duplicates collapsed), `sectionRoles` a list of
-  `{sectionId, role}` naming existing sections at most once each, at least one role of either kind
-  (field `roles`), unknown fields rejected. `sectionRoles` is required so that a client forgetting
-  it cannot remove every section role.
+  `{sectionId, role}` naming existing sections at most once each, `sectionlessReporter` a boolean,
+  unknown fields rejected. At least one role of either kind or the marker must remain (field
+  `roles`); without the field the account's current marker (or the automatic one) counts. Without
+  `sectionlessReporter` the marker stays, except that losing the last section role without keeping
+  `PUBLISHER`/`EDITOR_IN_CHIEF` sets it. `sectionRoles` is required so that a client forgetting it
+  cannot remove every section role.
 - **Response `200`:** the `AccountDto` with its new roles (trust entries unchanged),
   `trustScopes` and `allowedActions` computed for the
   requesting user (may be `[]` afterwards, e.g. after an editor-in-chief made someone
@@ -746,24 +836,27 @@ all or nothing. Only the difference to the current roles is checked and written.
   ```json
   { "id": "5f0c…", "username": "reader", "firstName": "Reader", "lastName": "",
     "roles": ["EDITOR_IN_CHIEF", "READER"], "sectionRoles": [ { "sectionId": 2, "role": "REPORTER" } ],
-    "enabled": true, "trusts": [], "trustScopes": [ { "level": "PUBLISHER", "sectionId": null } ],
+    "sectionlessReporter": false, "enabled": true, "trusts": [],
+    "trustScopes": [ { "level": "PUBLISHER", "sectionId": null } ],
     "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK"] }
   ```
   A request that changes nothing answers `200` without writing.
 - **Errors:** `400` validation (every violation; unknown section at `sectionRoles`), `403` empty
   body (no account access), `403` error body when the rule refuses (field `null`, e.g.
   `you may not edit the roles of account 'chief'`), `403` an added/removed newspaper role that may
-  not be assigned (field `roles`) or a changed section role outside the own scope (field
-  `sectionRoles`), `404` error body for an unknown id or a service account, `503` Keycloak
+  not be assigned (field `roles`), a changed section role outside the own scope (field
+  `sectionRoles`) or a marker change without `PUBLISHER`/`EDITOR_IN_CHIEF` (field
+  `sectionlessReporter`), `404` error body for an unknown id or a service account, `503` Keycloak
   unavailable or a failure after the change was reverted. On every error the account keeps its
-  previous roles of both kinds.
-- **Side effects:** Keycloak group memberships changed first, then the section roles (rows of
-  changed sections get new `assignedBy`/`assignedAt`, unchanged rows stay); when storing the
-  section roles fails, the group change is reverted. **No session is ended:** section-role changes
+  previous roles of both kinds and its marker.
+- **Side effects:** Keycloak group memberships changed first, then the section roles and the marker
+  in one transaction (rows of changed sections get new `assignedBy`/`assignedAt`, unchanged rows
+  stay); when that fails, the group change is reverted. **No session is ended:** section-role changes
   apply at once, newspaper-role changes with the person's next token refresh (access token
   lifespan, Keycloak default a few minutes) — a removed newspaper role lingers that long, as with a
   lock. Logged at INFO only when something changed:
-  `Roles of account '<username>' changed by '<user>': roles [...] -> [...], section roles [...] -> [...]`.
+  `Roles of account '<username>' changed by '<user>': roles [...] -> [...], section roles [...] -> [...], sectionless reporter false -> true`
+  (with ` (lost the last section role)` for the automatic marker).
   Concurrent edits: the last save wins.
 
 ## `POST /api/accounts/{id}/password-reset`
@@ -776,7 +869,8 @@ temporary) and ends every Keycloak session of the account. A locked account stay
 - **Response `200`:** the creation shape, `CreatedAccountDto`
   ```json
   { "account": { "id": "…", "username": "reader", "firstName": "Reader", "lastName": "",
-                 "roles": ["READER"], "sectionRoles": [], "enabled": true, "trusts": [], "trustScopes": [],
+                 "roles": ["READER"], "sectionRoles": [], "sectionlessReporter": false, "enabled": true,
+                 "trusts": [], "trustScopes": [],
                  "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK"] },
     "password": "tiger-wolke-apfel-leiter" }
   ```
@@ -878,12 +972,18 @@ Colours are keys, not colour values; the reader theme maps them to `--presserl-s
 
 ```json
 { "id": 1, "name": "Sport", "slug": "sport", "color": "green", "position": 0,
-  "assignableRoles": ["SECTION_EDITOR", "REPORTER"], "canWrite": true }
+  "assignableRoles": ["SECTION_EDITOR", "REPORTER"], "canWrite": true,
+  "articleCounts": { "live": 2, "total": 4,
+                     "issues": [ { "issueId": 12, "number": 2, "count": 2 }, { "issueId": 11, "number": 1, "count": 1 } ] } }
 ```
 `assignableRoles`: the section roles the requesting user may assign in this section, in the order
 `SECTION_EDITOR`, `REPORTER` (`[]` for none). `canWrite`: whether the requesting user may write
 articles in this section (`PUBLISHER`/`EDITOR_IN_CHIEF` everywhere, section-role holders in their
-sections).
+sections). `articleCounts`: for users with `WRITE_ARTICLES`, the articles now in the section —
+`live` (status `PUBLISHED`), `total` (any status) and per issue holding at least one of them
+(`issues`, highest number first; any status); `{"live": 0, "total": 0, "issues": []}` for an empty
+section, `null` for everyone else. Sections have no history: a moved article counts in its current
+section only. One grouped query per request.
 
 ## `GET /api/sections`
 
@@ -894,7 +994,8 @@ All sections ordered by `position` (ties by `id`).
   ```json
   { "canManage": true,
     "sections": [ { "id": 1, "name": "Sport", "slug": "sport", "color": "green", "position": 0,
-                    "assignableRoles": ["SECTION_EDITOR", "REPORTER"], "canWrite": true } ] }
+                    "assignableRoles": ["SECTION_EDITOR", "REPORTER"], "canWrite": true,
+                    "articleCounts": { "live": 0, "total": 0, "issues": [] } } ] }
   ```
   `canManage`: whether the user may create, change, reorder and delete sections (`PUBLISHER`,
   `EDITOR_IN_CHIEF`).
@@ -910,7 +1011,8 @@ Creates a section at the last position.
   characters, no control characters, unique ignoring case; `color` optional, a palette key.
   Without `color` the server picks the palette colour at index (number of sections mod 8).
   Unknown fields are rejected.
-- **Response `201`:** header `Location: /api/sections/{id}`, body a `SectionDto`. The `slug` is
+- **Response `201`:** header `Location: /api/sections/{id}`, body a `SectionDto` (`articleCounts`
+  zero for writers). The `slug` is
   derived from the name like a username suggestion (umlauts spelled out, runs outside `a-z0-9` →
   `-`, at most 40 characters, `section` when empty; `-2`, `-3`, … when taken) and never changes.
   `"Sport & Spiel"` → `sport-spiel`.
@@ -949,8 +1051,10 @@ Deletes an empty section together with every section role and trust entry held i
   to the section — field `null`, e.g. `"section still contains 3 article(s); move them to another
   section first"`; nothing is changed. Move the articles first (`PUT /api/articles/{id}` with
   `sectionId`).
-- **Side effects:** section, its section roles and its `SECTION_EDITOR` trust entries deleted; the
-  remaining sections' positions set
+- **Side effects:** section, its section roles and its `SECTION_EDITOR` trust entries deleted;
+  members left without any section role become sectionless reporters unless they hold `PUBLISHER`
+  or `EDITOR_IN_CHIEF` (see Accounts; reads the role holders from Keycloak, `503` when
+  unavailable); the remaining sections' positions set
   to `0, 1, 2, …` in their previous order; logged at INFO with the section and the acting user.
   Deleting the only section is allowed; the next `POST /api/articles` (or restart) recreates the
   default section.
@@ -994,8 +1098,9 @@ Removes the account's role in the section.
 - **Response `204`**, empty body.
 - **Errors:** `403`, `404` unknown section, account without a role in the section or unknown
   account, `503`.
-- **Side effects:** section role deleted; logged at INFO with section, account, role and the
-  acting user.
+- **Side effects:** section role deleted; an account left without any section role becomes a
+  sectionless reporter in the same transaction unless it holds `PUBLISHER` or `EDITOR_IN_CHIEF`
+  (see Accounts); logged at INFO with section, account, role and the acting user.
 
 ---
 
@@ -1139,8 +1244,8 @@ of an id can change, the byte endpoints are revalidated (`ETag` `"{id}-{version}
 cached as immutable, and reader pages link renditions with `?v={version}`.
 
 All media endpoints require a bearer token (missing/invalid → `401`, empty body) and
-`WRITE_ARTICLES` in `allowedActions` (publisher, editor-in-chief or any section role); everyone
-else gets `403`. Refusals carry the error body (`{"errors": [{"field": …, "message": …}]}`) with
+`USE_MEDIA` in `allowedActions` (publisher, editor-in-chief, any section role, or the
+`sectionlessReporter` marker); everyone else gets `403`. Refusals carry the error body (`{"errors": [{"field": …, "message": …}]}`) with
 field `file` for problems of the uploaded file and `null` otherwise.
 
 Editing follows its own rule (see `POST /api/media/{id}/edit`).
@@ -1171,7 +1276,7 @@ while the backfill has not reached an older media yet.
 
 Uploads one image.
 
-- **Auth:** `WRITE_ARTICLES`
+- **Auth:** `USE_MEDIA`
 - **Body:** `multipart/form-data` with exactly one file part named `file` (the part needs a
   `filename`). The declared part content type and the file name are ignored; the type is detected
   from the bytes: JPEG, PNG and WebP (lossy, lossless, with or without transparency, not animated).
@@ -1181,7 +1286,7 @@ Uploads one image.
   | Status | When |
   |---|---|
   | `400` | no `file` part, more than one file, empty file (field `file`); image larger than 50 megapixels or a side longer than 20000 px (checked before decoding); damaged or undecodable image, e.g. truncated (field `file`) |
-  | `403` | no `WRITE_ARTICLES` (checked before the body) |
+  | `403` | no `USE_MEDIA` (checked before the body) |
   | `413` | file larger than the effective setting `media.max-size` (default `10M`, at most `60M`; field `file`); above 64M Quarkus answers `413` with an empty body |
   | `415` | not JPEG, PNG or still WebP — e.g. GIF, HEIC, SVG, PDF, animated WebP, HTML named `.jpg` (field `file`) |
   | `503` | object store unreachable, also while writing a rendition (field `null`); no media record and no object is left behind |
@@ -1195,7 +1300,7 @@ Uploads one image.
 
 The newspaper's media, newest upload first, paged by id.
 
-- **Auth:** `WRITE_ARTICLES`
+- **Auth:** `USE_MEDIA`
 - **Query:** `limit` (1–200, default 60), `before` (a media id; only media with a smaller id are
   listed — pass `next` of the previous page).
 - **Response `200`:**
@@ -1216,7 +1321,7 @@ The newspaper's media, newest upload first, paged by id.
 
 ## `GET /api/media/{id}`
 
-- **Auth:** `WRITE_ARTICLES`
+- **Auth:** `USE_MEDIA`
 - **Response `200`:** a `MediaDto`.
 - **Errors:** `403`, `404` unknown id (field `null`).
 - **Side effects:** none.
@@ -1225,7 +1330,7 @@ The newspaper's media, newest upload first, paged by id.
 
 Where the media is used, and whether the caller may edit it.
 
-- **Auth:** `WRITE_ARTICLES`
+- **Auth:** `USE_MEDIA`
 - **Response `200`:**
   ```json
   { "mayEdit": false,
@@ -1255,7 +1360,7 @@ Crops and/or pixelates the stored image. Irreversible.
   their own media only while **no article's live revision** uses it and **no article waiting for
   approval** (`pendingLevel` set) uses it in its latest revision — as lead image or in an image
   block of the body. Everyone else `403`
-  (`WRITE_ARTICLES` is checked first).
+  (`USE_MEDIA` is checked first).
 - **Body:**
   ```json
   { "version": 0,
@@ -1294,7 +1399,7 @@ Crops and/or pixelates the stored image. Irreversible.
 
 The stored image bytes.
 
-- **Auth:** `WRITE_ARTICLES`
+- **Auth:** `USE_MEDIA`
 - **Request header:** optional `If-None-Match` (entity tags, weak ones and `*` accepted).
 - **Response `200`:** body = the stored image; headers `Content-Type` (`image/jpeg` |
   `image/png`), `Content-Length`, `Content-Disposition: inline`,
@@ -1310,7 +1415,7 @@ The stored image bytes.
 The bytes of one rendition; `kind` is `thumbnail`, `web` or `print` (lower case). Used by the
 editor's preview and the media view.
 
-- **Auth:** `WRITE_ARTICLES`
+- **Auth:** `USE_MEDIA`
 - **Response `200`/`304`:** as `/content` (`Content-Type`, `Content-Length`,
   `Content-Disposition: inline`, `X-Content-Type-Options: nosniff`,
   `Cache-Control: private, no-cache`, `ETag: "{id}-{version}"` of the media; `304` for a matching

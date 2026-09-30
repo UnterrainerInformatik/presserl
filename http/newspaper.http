@@ -8,6 +8,7 @@ Accept: application/json
         client.assert(typeof response.body.name === "string", "name");
         client.assert(["public", "private"].includes(response.body.visibility), "visibility");
         client.assert(response.body.settings["editor.level"] !== undefined, "settings");
+        client.assert(typeof response.body.settings["article.corrections"] === "boolean", "article.corrections");
         client.assert(typeof response.body.overrides === "object", "overrides");
         client.assert(response.headers.valueOf("Content-Security-Policy").startsWith("default-src 'self'"), "CSP");
     });
@@ -178,6 +179,62 @@ Content-Type: application/json
         client.assert(response.status === 200, "status " + response.status);
         client.assert(response.body.overrides["spell-check.help"] === undefined, "overrides " + JSON.stringify(response.body.overrides));
         client.assert(response.body.settings["spell-check.help"] === "suggestions", "settings " + JSON.stringify(response.body.settings));
+    });
+%}
+
+### Publisher switches corrections by higher levels off (a JSON boolean)
+PUT {{baseUrl}}/api/newspaper/settings
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "article.corrections": false }
+
+> {%
+    client.test("200, off and overridden", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.settings["article.corrections"] === false, "settings " + JSON.stringify(response.body.settings));
+        client.assert(response.body.overrides["article.corrections"] === false, "overrides " + JSON.stringify(response.body.overrides));
+    });
+%}
+
+### Corrections expect a boolean, not a string
+PUT {{baseUrl}}/api/newspaper/settings
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "article.corrections": "no" }
+
+> {%
+    client.test("400 naming article.corrections", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "article.corrections", JSON.stringify(response.body));
+    });
+%}
+
+### The editor-in-chief may not switch corrections
+PUT {{baseUrl}}/api/newspaper/settings
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "article.corrections": true }
+
+> {%
+    client.test("403 with an empty body", () => {
+        client.assert(response.status === 403, "status " + response.status);
+    });
+%}
+
+### Publisher returns corrections to the installation default
+PUT {{baseUrl}}/api/newspaper/settings
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "article.corrections": null }
+
+> {%
+    client.test("override cleared", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.overrides["article.corrections"] === undefined, "overrides " + JSON.stringify(response.body.overrides));
     });
 %}
 

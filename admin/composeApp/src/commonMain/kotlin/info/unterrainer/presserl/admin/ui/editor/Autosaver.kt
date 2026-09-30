@@ -124,6 +124,31 @@ class Autosaver(
         this.version = maxOf(this.version, version)
     }
 
+    /** The article version the editor holds: the last one a save or an action returned. */
+    val currentVersion: Long get() = version
+
+    /** Someone else changed the article (an action was answered with `409`); nothing is saved any more. */
+    fun conflict() {
+        timer?.cancel()
+        _state.value = SaveState.Conflict
+    }
+
+    /**
+     * Saves pending changes, then runs [decision] (approve, reject) with the version the editor holds, so it applies to
+     * exactly the content the user saw. `null` when the changes could not be saved or [decision] was answered with
+     * `409`, which puts the saver into [SaveState.Conflict]; other failures are thrown.
+     */
+    suspend fun decide(decision: suspend (version: Long) -> ArticleDto): ArticleDto? {
+        if (!flush()) return null
+        return try {
+            decision(version).also { versionChanged(it.version) }
+        } catch (e: ResponseException) {
+            if (e.response.status != HttpStatusCode.Conflict) throw e
+            conflict()
+            null
+        }
+    }
+
     /** Saves pending changes now; `true` if everything is saved afterwards. */
     suspend fun flush(): Boolean {
         timer?.cancel()

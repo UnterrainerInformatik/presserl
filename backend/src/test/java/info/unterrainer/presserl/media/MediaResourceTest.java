@@ -4,6 +4,8 @@ import static info.unterrainer.presserl.media.MediaFixtures.bytes;
 import static info.unterrainer.presserl.media.MediaFixtures.directories;
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.emptyString;
 import static org.hamcrest.Matchers.endsWith;
 import static org.hamcrest.Matchers.equalTo;
@@ -218,6 +220,25 @@ class MediaResourceTest {
         as(reader).get("/api/media/%d/renditions/web".formatted(id)).then().statusCode(403);
         assertThat(mediaRows()).isEqualTo(1);
         assertThat(objects()).hasSize(4);
+    }
+
+    @Test
+    void sectionlessReporterUploadsListsAndSeesTheUsage() {
+        String id = keycloak.realm(keycloakRealm.name()).users().searchByUsername("nogroups", true).getFirst().getId();
+        sql("INSERT INTO sectionless_reporter (account_id, assigned_by, assigned_at) VALUES ('%s', 'test', now())"
+                .formatted(id));
+        String photographer = TestSupport.token("nogroups", "nogroups");
+
+        long media = upload(photographer, "photo.jpg", bytes("photo-gps.jpg"), "image/jpeg", 201).jsonPath()
+                .getLong("id");
+
+        as(photographer).get("/api/media").then().statusCode(200).body("items.id", contains((int) media));
+        as(photographer).get("/api/media/%d/usage".formatted(media)).then().statusCode(200)
+                .body("mayEdit", equalTo(true))
+                .body("articles", empty());
+        as(photographer).get("/api/media/%d/renditions/web".formatted(media)).then().statusCode(200);
+        // media only: the article endpoints stay closed
+        as(photographer).get("/api/articles").then().statusCode(403);
     }
 
     @Test

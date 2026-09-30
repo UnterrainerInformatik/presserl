@@ -10,16 +10,25 @@ import info.unterrainer.presserl.auth.NewspaperAction;
 import info.unterrainer.presserl.auth.NewspaperRole;
 
 /**
- * Who the requesting user is in this newspaper: the newspaper roles from the token and the section
- * roles from the database. Access checks that depend on section roles use this instead of
- * {@code @RolesAllowed}, which only sees the token.
+ * Who the requesting user is in this newspaper: the newspaper roles from the token, the section
+ * roles and the sectionless-reporter marker from the database. Access checks that depend on section
+ * roles or the marker use this instead of {@code @RolesAllowed}, which only sees the token.
  *
- * @param sectionRoles the user's role per section id
+ * @param sectionRoles        the user's role per section id
+ * @param sectionlessReporter whether the user carries the marker that lets them use the media
+ *                            endpoints without writing articles
  */
-public record Newsroom(CurrentUser user, Map<Long, SectionRole> sectionRoles) {
+public record Newsroom(CurrentUser user, Map<Long, SectionRole> sectionRoles, boolean sectionlessReporter) {
 
     public Newsroom {
         sectionRoles = Map.copyOf(sectionRoles);
+    }
+
+    /**
+     * A user without the sectionless-reporter marker.
+     */
+    public Newsroom(CurrentUser user, Map<Long, SectionRole> sectionRoles) {
+        this(user, sectionRoles, false);
     }
 
     /**
@@ -83,10 +92,24 @@ public record Newsroom(CurrentUser user, Map<Long, SectionRole> sectionRoles) {
     }
 
     /**
+     * Only publishers switch corrections by higher levels ({@code article.corrections}).
+     */
+    public boolean mayConfigureCorrections() {
+        return user.has(NewspaperRole.PUBLISHER);
+    }
+
+    /**
      * Administrators and every holder of a section role may use the article endpoints.
      */
     public boolean isWriter() {
         return isAdministrator() || !sectionRoles.isEmpty();
+    }
+
+    /**
+     * Writers and sectionless reporters may use the media endpoints.
+     */
+    public boolean mayUseMedia() {
+        return isWriter() || sectionlessReporter;
     }
 
     /**
@@ -113,6 +136,9 @@ public record Newsroom(CurrentUser user, Map<Long, SectionRole> sectionRoles) {
         if (isWriter()) {
             actions.add(NewspaperAction.WRITE_ARTICLES);
         }
+        if (mayUseMedia()) {
+            actions.add(NewspaperAction.USE_MEDIA);
+        }
         if (mayManageSections()) {
             actions.add(NewspaperAction.MANAGE_SECTIONS);
         }
@@ -130,6 +156,9 @@ public record Newsroom(CurrentUser user, Map<Long, SectionRole> sectionRoles) {
         }
         if (mayConfigureSpellCheck()) {
             actions.add(NewspaperAction.CONFIGURE_SPELL_CHECK);
+        }
+        if (mayConfigureCorrections()) {
+            actions.add(NewspaperAction.CONFIGURE_CORRECTIONS);
         }
         return List.copyOf(actions);
     }

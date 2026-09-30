@@ -32,6 +32,6 @@ public class MeResource {
         // one after the other: both queries use the request's reactive session
         return newsrooms.of(user).flatMap(newsroom -> sectionRoles.namedRolesOf(user.sub())
                 .map(roles -> new MeDto(user.username(), user.displayName(), user.roles(), roles,
-                        newsroom.allowedActions())));
+                        newsroom.sectionlessReporter(), newsroom.allowedActions())));
     }
 }

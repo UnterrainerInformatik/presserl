@@ -19,10 +19,11 @@ Accept: application/json
         client.assert(response.body.username === request.environment.get("username"), "username");
         client.assert(response.body.roles.includes("PUBLISHER"), "roles " + JSON.stringify(response.body.roles));
         client.assert(Array.isArray(response.body.sectionRoles), "sectionRoles " + JSON.stringify(response.body.sectionRoles));
+        client.assert(response.body.sectionlessReporter === false, "sectionlessReporter " + response.body.sectionlessReporter);
     });
     client.test("publisher may do everything", () => {
-        const expected = ["WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "MANAGE_ISSUES", "ADMINISTER_ACCOUNTS",
-            "CONFIGURE_NEWSPAPER", "CONFIGURE_SPELL_CHECK"];
+        const expected = ["WRITE_ARTICLES", "USE_MEDIA", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "MANAGE_ISSUES",
+            "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER", "CONFIGURE_SPELL_CHECK", "CONFIGURE_CORRECTIONS"];
         client.assert(JSON.stringify(response.body.allowedActions) === JSON.stringify(expected),
             "allowedActions " + JSON.stringify(response.body.allowedActions));
     });

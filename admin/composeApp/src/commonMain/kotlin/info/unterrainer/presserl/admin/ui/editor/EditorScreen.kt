@@ -64,6 +64,9 @@ import info.unterrainer.presserl.admin.api.SectionRefDto
 import info.unterrainer.presserl.admin.article.Run
 import info.unterrainer.presserl.admin.article.replaceInRuns
 import info.unterrainer.presserl.admin.resources.Res
+import info.unterrainer.presserl.admin.resources.correcting_notice
+import info.unterrainer.presserl.admin.resources.last_changed_by
+import info.unterrainer.presserl.admin.resources.show_changes
 import info.unterrainer.presserl.admin.resources.action_failed
 import info.unterrainer.presserl.admin.resources.add_block
 import info.unterrainer.presserl.admin.resources.add_item
@@ -169,8 +172,9 @@ import kotlin.time.TimeSource
 
 /**
  * The article editor at level `standard`. [readerUrl] gives the reader page of an article;
- * [onBack] and [onRevisions] are called once pending changes are saved. [maxUploadSize] is the
- * newspaper's `media.max-size`, named when an image is too large.
+ * [onBack], [onRevisions] and [onShowChanges] (the comparison of a revision with its predecessor) are called once
+ * pending changes are saved. [maxUploadSize] is the newspaper's `media.max-size`, named when an image is too large.
+ * [username] is the logged-in user's, to tell a correction of someone else's article.
  */
 @Composable
 fun EditorScreen(
@@ -181,6 +185,8 @@ fun EditorScreen(
     onRevisions: () -> Unit,
     maxUploadSize: String? = null,
     spellCheck: Boolean = false,
+    username: String = "",
+    onShowChanges: (revision: Int) -> Unit = {},
 ) {
     // A new load (after a conflict) starts with fresh editor state
     var loads by remember { mutableStateOf(0) }
@@ -195,7 +201,10 @@ fun EditorScreen(
                 LoadFailed(error!!, onReload = { loads++ })
             }
             loaded == null -> Text(stringResource(Res.string.loading))
-            else -> Editor(api, loaded, readerUrl, maxUploadSize, spellCheck, onBack, onRevisions, onReload = { loads++ })
+            else -> Editor(
+                api, loaded, readerUrl, maxUploadSize, spellCheck, username, onBack, onRevisions, onShowChanges,
+                onReload = { loads++ },
+            )
         }
     }
 }
@@ -207,8 +216,10 @@ private fun Editor(
     readerUrl: (Long) -> String,
     maxUploadSize: String?,
     spellCheck: Boolean,
+    username: String,
     onBack: () -> Unit,
     onRevisions: () -> Unit,
+    onShowChanges: (Int) -> Unit,
     onReload: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -231,6 +242,7 @@ private fun Editor(
     // Only the editable fields ask; a read-only article composes none
     val checker = remember { spellChecker(scope, spellCheck, api) }
     val actions = actionsFor(article.allowedActions)
+    val notice = correctionNotice(article, username)
     // Loaded once for the chooser; without them the chooser shows the current section only
     var sections by remember { mutableStateOf<List<SectionDto>?>(null) }
     if (actions.editable) LaunchedEffect(Unit) { sections = attempt({}) { api.sections().sections } }
@@ -280,16 +292,40 @@ private fun Editor(
         }
     }
 
+    /**
+     * Approve and reject: pending changes are saved first and the decision carries the version the editor holds; a
+     * `409` shows the conflict notice.
+     */
+    fun decide(decision: suspend (version: Long) -> ArticleDto) {
+        busy = true
+        actionErrors = FieldErrors()
+        scope.launch {
+            try {
+                autosaver.decide(decision)?.let { updated ->
+                    article = updated
+                    reviewLoads++
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                actionErrors = fieldErrorsOf(e) ?: FieldErrors(general = listOf(describe(e)))
+            } finally {
+                busy = false
+            }
+        }
+    }
+
     /** Rejects with the note; a refused note keeps the dialog open with the server's message. */
     fun reject(note: String) {
         busy = true
         rejectError = null
         scope.launch {
             try {
-                val updated = api.rejectArticle(article.id, note)
-                article = updated
-                autosaver.versionChanged(updated.version)
-                reviewLoads++
+                val updated = autosaver.decide { version -> api.rejectArticle(article.id, note, version) }
+                if (updated != null) {
+                    article = updated
+                    reviewLoads++
+                }
                 rejectNote = null
             } catch (e: CancellationException) {
                 throw e
@@ -336,6 +372,14 @@ private fun Editor(
             }
         }
         errors.general.forEach { Banner(stringResource(Res.string.action_failed, it)) }
+        notice.correcting?.let {
+            Banner(stringResource(Res.string.correcting_notice, it.displayName), color = MaterialTheme.colorScheme.tertiaryContainer)
+        }
+        notice.lastChangedBy?.let { editor ->
+            Banner(stringResource(Res.string.last_changed_by, editor.displayName), color = MaterialTheme.colorScheme.secondaryContainer) {
+                OutlinedButton(onClick = { leave { onShowChanges(article.revision) } }) { Text(stringResource(Res.string.show_changes)) }
+            }
+        }
         if (article.locked) {
             Banner(stringResource(Res.string.locked_notice), color = MaterialTheme.colorScheme.errorContainer)
         }
@@ -358,7 +402,13 @@ private fun Editor(
                 val help = remember { FieldHelpState() }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) {
-                        SectionChooser(model, article.section, sections.orEmpty(), errors.section, enabled = saveState != SaveState.Conflict)
+                        val section = article.section
+                        // A correction keeps the article's section
+                        if (notice.correcting != null && section != null) {
+                            SectionLabel(section.name, section.color)
+                        } else {
+                            SectionChooser(model, section, sections.orEmpty(), errors.section, enabled = saveState != SaveState.Conflict)
+                        }
                     }
                     FieldHelp(HelpPart.SECTION, help)
                 }
@@ -378,7 +428,7 @@ private fun Editor(
         BottomBar(model, actions, saveState, busy,
             onPublish = { act(saveFirst = true) { api.publishArticle(article.id) } },
             onSubmit = { act(saveFirst = true) { api.submitArticle(article.id) } },
-            onApprove = { act(saveFirst = false) { api.approveArticle(article.id) } },
+            onApprove = { decide { version -> api.approveArticle(article.id, version) } },
             onReject = { rejectNote = ""; rejectError = null },
             onWithdraw = { act(saveFirst = false) { api.withdrawArticle(article.id) } },
             onTakeOffline = { act(saveFirst = false) { api.takeArticleOffline(article.id) } },
@@ -873,7 +923,7 @@ private fun BlockCard(
                         Text("+ " + stringResource(Res.string.add_item))
                     }
                 }
-                is EditorBlock.Image -> ImageBlockFields(model, block, images, error != null, help, enabled)
+                is EditorBlock.Image -> ImageBlockFields(model, block, images, error != null, help, checker, enabled)
             }
             if (error != null) Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
@@ -886,14 +936,25 @@ private fun BlockCard(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ImageBlockFields(model: EditorModel, block: EditorBlock.Image, images: ImageSlot, isError: Boolean, help: FieldHelpState, enabled: Boolean) {
+private fun ImageBlockFields(
+    model: EditorModel,
+    block: EditorBlock.Image,
+    images: ImageSlot,
+    isError: Boolean,
+    help: FieldHelpState,
+    checker: SpellChecker,
+    enabled: Boolean,
+) {
     val target = UploadTarget.Block(block.id)
     MediaPreview(block.mediaId, 0, 0, block.caption, images.thumbnails)
-    OutlinedTextField(
+    SpellCheckedTextField(
         value = block.caption,
-        onValueChange = { changed ->
+        onChange = { changed ->
             if (changed.filterNot { it == '\n' || it == '\r' } != block.caption) model.dispatch(EditorIntent.SetImageCaption(block.id, changed))
         },
+        onReplace = { model.dispatch(EditorIntent.SetImageCaption(block.id, it, ownStep = true)) },
+        checker = checker,
+        key = imageCaptionKey(block.id),
         label = { Text(stringResource(Res.string.field_caption)) },
         trailingIcon = { FieldHelp(HelpPart.CAPTION, help) },
         singleLine = true,
@@ -990,3 +1051,6 @@ private fun Draft.runsOf(blockId: Long, itemId: Long?): List<Run> = when (val bl
     is EditorBlock.BulletList -> block.items.firstOrNull { it.id == itemId }?.runs.orEmpty()
     is EditorBlock.Subhead, is EditorBlock.Image, null -> emptyList()
 }
+
+/** The spell-check key of an image block's caption, distinct from the subhead's `block:<id>` and the lead caption's. */
+internal fun imageCaptionKey(blockId: Long): String = "caption:$blockId"

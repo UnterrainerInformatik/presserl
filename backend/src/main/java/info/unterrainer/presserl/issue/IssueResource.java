@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import info.unterrainer.presserl.article.ArticleSummaryDto;
 import info.unterrainer.presserl.article.ArticleView;
+import info.unterrainer.presserl.article.ArticleService;
 import info.unterrainer.presserl.article.StaffingService;
 import info.unterrainer.presserl.auth.CurrentUser;
 import info.unterrainer.presserl.section.Newsroom;
@@ -48,6 +49,9 @@ public class IssueResource {
 
     @Inject
     StaffingService staffing;
+
+    @Inject
+    ArticleService articles;
 
     @GET
     public Uni<IssueListDto> list() {
@@ -110,10 +114,11 @@ public class IssueResource {
      * Maps the issue with the staffing its articles' {@code allowedActions} need.
      */
     private Uni<IssueDetailDto> dto(Newsroom newsroom, Uni<IssueService.Details> details) {
-        return details.flatMap(d -> staffing.forArticles(newsroom, d.articles().stream().map(ArticleView::article).toList())
-                .map(staffed -> IssueDetailDto.of(d.issue(), d.newest(), d.articles().stream()
-                        .map(view -> ArticleSummaryDto.of(view, newsroom, staffed))
-                        .toList())));
+        return details.flatMap(d -> staffing.forArticles(d.articles().stream().map(ArticleView::article).toList())
+                .flatMap(staffed -> articles.rules().map(rules -> IssueDetailDto.of(d.issue(), d.newest(),
+                        d.articles().stream()
+                                .map(view -> ArticleSummaryDto.of(view, newsroom, staffed, rules))
+                                .toList()))));
     }
 
     /**

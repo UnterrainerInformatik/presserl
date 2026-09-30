@@ -21,6 +21,7 @@ enum class AccountField(val wire: String) {
     USERNAME("username"),
     ROLES("roles"),
     SECTION_ROLES("sectionRoles"),
+    SECTIONLESS_REPORTER("sectionlessReporter"),
 }
 
 /** Form state of "New account"; [errors] are the server's messages per field, [general] the rest. */
@@ -32,19 +33,23 @@ data class NewAccountState(
     val roles: Set<String> = emptySet(),
     /** The chosen section role per section id; sections without a choice are absent. */
     val sectionRoles: Map<Long, String> = emptyMap(),
+    /** The choice "Redakteur (ohne Ressort)". */
+    val sectionlessReporter: Boolean = false,
     val errors: Map<AccountField, String> = emptyMap(),
     val general: String? = null,
     val creating: Boolean = false,
 ) {
     val canCreate: Boolean
-        get() = firstName.isNotBlank() && username.isNotBlank() && (roles.isNotEmpty() || sectionRoles.isNotEmpty()) && !creating
+        get() = firstName.isNotBlank() && username.isNotBlank() &&
+            (roles.isNotEmpty() || sectionRoles.isNotEmpty() || sectionlessReporter) && !creating
 }
 
 /**
  * "New account" form (design D9). While the user has not edited the username, it follows the first
  * name: [debounceMillis] after the last change the server is asked for a suggestion, and answers to
  * outdated first names are ignored. Roles are sent in the order of [assignableRoles], section roles
- * in the order of [sections]; only sections with assignable roles are offered. Timing uses
+ * in the order of [sections]; only sections with assignable roles are offered. The choice
+ * "Redakteur (ohne Ressort)" is offered and sent only with [mayAssignSectionlessReporter]. Timing uses
  * [scope]'s dispatcher, so tests control it with virtual time.
  */
 class NewAccountModel(
@@ -54,6 +59,7 @@ class NewAccountModel(
     private val suggest: suspend (firstName: String) -> String,
     private val create: suspend (CreateAccountRequest) -> CreatedAccountDto,
     private val debounceMillis: Long = 300,
+    val mayAssignSectionlessReporter: Boolean = false,
 ) {
     val sections: List<SectionDto> = sections.filter { it.assignableRoles.isNotEmpty() }
 
@@ -85,6 +91,14 @@ class NewAccountModel(
         }
     }
 
+    /** Selects or clears "Redakteur (ohne Ressort)"; ignored when the user may not assign it. */
+    fun sectionlessReporter(selected: Boolean) {
+        if (!mayAssignSectionlessReporter) return
+        _state.update {
+            it.copy(sectionlessReporter = selected, errors = it.errors - AccountField.ROLES - AccountField.SECTIONLESS_REPORTER)
+        }
+    }
+
     /** Chooses [role] in the section, or no role for `null`. */
     fun sectionRole(sectionId: Long, role: String?) {
         val section = sections.firstOrNull { it.id == sectionId } ?: return
@@ -110,6 +124,7 @@ class NewAccountModel(
                 username = current.username,
                 roles = assignableRoles.filter { it in current.roles },
                 sectionRoles = sections.mapNotNull { section -> current.sectionRoles[section.id]?.let { SectionRoleDto(section.id, it) } },
+                sectionlessReporter = if (mayAssignSectionlessReporter) current.sectionlessReporter else null,
             )
             try {
                 val created = create(request)

@@ -25,6 +25,13 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.resources.Res
+import info.unterrainer.presserl.admin.resources.corrections_allowed
+import info.unterrainer.presserl.admin.resources.corrections_default
+import info.unterrainer.presserl.admin.resources.corrections_effective
+import info.unterrainer.presserl.admin.resources.corrections_hint
+import info.unterrainer.presserl.admin.resources.corrections_not_allowed
+import info.unterrainer.presserl.admin.resources.corrections_publisher_only
+import info.unterrainer.presserl.admin.resources.corrections_title
 import info.unterrainer.presserl.admin.resources.loading
 import info.unterrainer.presserl.admin.resources.newspaper_save_failed
 import info.unterrainer.presserl.admin.resources.newspaper_settings_title
@@ -52,12 +59,13 @@ import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * The newspaper settings, saved on selection: the default text size of the reader and, when the installation offers the
- * spell check ([spellCheck]), the spell-check help, which only users with [mayConfigureSpellCheck]
- * (`CONFIGURE_SPELL_CHECK`) change; everyone else sees it read-only.
+ * The newspaper settings, saved on selection: the default text size of the reader, when the installation offers the
+ * spell check ([spellCheck]) the spell-check help, which only users with [mayConfigureSpellCheck]
+ * (`CONFIGURE_SPELL_CHECK`) change, and the corrections by higher levels, which only users with
+ * [mayConfigureCorrections] (`CONFIGURE_CORRECTIONS`) change; everyone else sees these read-only.
  */
 @Composable
-fun NewspaperScreen(api: ApiClient, spellCheck: Boolean, mayConfigureSpellCheck: Boolean) {
+fun NewspaperScreen(api: ApiClient, spellCheck: Boolean, mayConfigureSpellCheck: Boolean, mayConfigureCorrections: Boolean) {
     val scope = rememberCoroutineScope()
     val model = remember { NewspaperSettingsModel(scope, load = api::newspaper, save = api::updateNewspaperSettings) }
     val state by model.state.collectAsState()
@@ -86,6 +94,7 @@ fun NewspaperScreen(api: ApiClient, spellCheck: Boolean, mayConfigureSpellCheck:
                 Text(stringResource(Res.string.newspaper_text_size_effective, name), style = MaterialTheme.typography.bodyMedium)
             }
             if (spellCheck) SpellCheckHelpSection(state, mayConfigureSpellCheck) { model.choose(SPELL_CHECK_HELP, it) }
+            CorrectionsSection(state, mayConfigureCorrections) { model.chooseSwitch(ARTICLE_CORRECTIONS, it) }
             if (state.saving) Text(stringResource(Res.string.save_saving), style = MaterialTheme.typography.bodySmall)
         }
         state.error?.let {
@@ -122,6 +131,29 @@ private fun SpellCheckHelpSection(state: NewspaperSettingsState, editable: Boole
         Text(stringResource(Res.string.spell_help_effective, name), style = MaterialTheme.typography.bodyMedium)
     }
     if (!editable) Text(stringResource(Res.string.spell_help_publisher_only), style = MaterialTheme.typography.bodyMedium)
+}
+
+@Composable
+private fun CorrectionsSection(state: NewspaperSettingsState, editable: Boolean, onChoose: (Boolean?) -> Unit) {
+    val view = state.correctionsView(editable)
+    Text(stringResource(Res.string.corrections_title), style = MaterialTheme.typography.titleMedium)
+    Text(stringResource(Res.string.corrections_hint), style = MaterialTheme.typography.bodyMedium)
+    Column(Modifier.selectableGroup()) {
+        SettingChoice(stringResource(Res.string.corrections_default), null, view.selected == null, view.enabled) {
+            onChoose(null)
+        }
+        SettingChoice(stringResource(Res.string.corrections_allowed), null, view.selected == true, view.enabled) {
+            onChoose(true)
+        }
+        SettingChoice(stringResource(Res.string.corrections_not_allowed), null, view.selected == false, view.enabled) {
+            onChoose(false)
+        }
+    }
+    view.effective?.let { effective ->
+        val name = stringResource(if (effective) Res.string.corrections_allowed else Res.string.corrections_not_allowed)
+        Text(stringResource(Res.string.corrections_effective, name), style = MaterialTheme.typography.bodyMedium)
+    }
+    if (!editable) Text(stringResource(Res.string.corrections_publisher_only), style = MaterialTheme.typography.bodyMedium)
 }
 
 private fun spellCheckHelpTexts(level: String): Pair<StringResource, StringResource> = when (level) {

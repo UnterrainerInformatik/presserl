@@ -3,6 +3,7 @@ package info.unterrainer.presserl.trust;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -39,6 +40,20 @@ public class TrustStore {
     public Uni<Set<TrustScope>> scopesOf(String accountId) {
         return TrustEntity.<TrustEntity>list("accountId", accountId)
                 .map(rows -> rows.stream().map(TrustEntity::scope).collect(Collectors.toUnmodifiableSet()));
+    }
+
+    /**
+     * The trust entries of the accounts by account id, in one query; accounts without entries are
+     * missing.
+     */
+    @WithSession
+    public Uni<Map<String, Set<TrustScope>>> scopesOf(Collection<String> accountIds) {
+        if (accountIds.isEmpty()) {
+            return Uni.createFrom().item(Map.of());
+        }
+        return TrustEntity.<TrustEntity>list("accountId in ?1", accountIds)
+                .map(rows -> rows.stream().collect(Collectors.groupingBy(row -> row.accountId,
+                        Collectors.mapping(TrustEntity::scope, Collectors.toUnmodifiableSet()))));
     }
 
     /**

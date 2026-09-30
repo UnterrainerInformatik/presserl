@@ -52,7 +52,7 @@ public class NewspaperResource {
             if (!newsroom.mayConfigureNewspaper()) {
                 throw new ForbiddenException();
             }
-            Map<String, String> changes = WritableSettings.changes(json);
+            Map<String, Object> changes = WritableSettings.changes(json);
             if (!WritableSettings.mayWrite(changes, newsroom)) {
                 throw new ForbiddenException();
             }

@@ -208,6 +208,14 @@ Own fonts go into `theme/fonts/`, images anywhere in `theme/`; reference them re
 The default text size of the reader (S/M/L/XL) is set by a publisher or editor-in-chief in the
 admin app under **Newspaper**; every reader can still choose their own size on the page.
 
+### Corrections by higher levels
+
+Section editors, editors-in-chief and publishers may correct the articles of those below them
+(waiting for approval, published or offline — never drafts) instead of only rejecting them; the
+author sees who changed what. `PRESSERL_ARTICLE_CORRECTIONS` in `.env` sets the installation
+default: `true` (default) or `false`. The publisher can override it for the newspaper in the admin
+app under *Newspaper*; any other value stops the startup with an error naming the variable.
+
 ### Spell check
 
 While writing, the admin app marks German spelling, grammar and punctuation mistakes and suggests

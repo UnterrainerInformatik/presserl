@@ -145,6 +145,38 @@ class ArticleResourceTest {
         return as(token).post("/api/articles/" + id + "/offline").then();
     }
 
+    private static ValidatableResponse action(String token, long id, String action) {
+        return as(token).post("/api/articles/" + id + "/" + action).then();
+    }
+
+    /**
+     * Sport with {@code reader} as reporter and {@code nogroups} as section editor.
+     */
+    private long staffedSport() {
+        long sport = section("Sport");
+        assign(sport, "reader", "REPORTER");
+        assign(sport, "nogroups", "SECTION_EDITOR");
+        return sport;
+    }
+
+    /**
+     * A never-published article of {@code reader} in {@code section} that waits for approval.
+     */
+    private static long submittedByReader(String reader, long section, String headline) {
+        long id = create(reader, in(section, headline));
+        action(reader, id, "submit").statusCode(200);
+        return id;
+    }
+
+    private void setting(String json) {
+        try (java.sql.Connection connection = dataSource.getConnection();
+                java.sql.Statement statement = connection.createStatement()) {
+            statement.executeUpdate("UPDATE newspaper SET settings = '" + json + "' WHERE id = 1");
+        } catch (java.sql.SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     private static List<String> errorFields(ValidatableResponse response) {
         return response.extract().jsonPath().getList("errors.field");
     }
@@ -531,6 +563,105 @@ class ArticleResourceTest {
     }
 
     @Test
+    void correctionOfAnUnpublishedRevisionStartsARevisionOfTheCorrector() {
+        long sport = staffedSport();
+        long id = submittedByReader(reader, sport, "Wir gewinnen gros");
+
+        save(nogroups, id, in(sport, "Wir gewinnen groß")).statusCode(200)
+                .body("revision", equalTo(2))
+                .body("pendingLevel", equalTo("SECTION_EDITOR"))
+                .body("status", equalTo("SUBMITTED"));
+        save(nogroups, id, in(sport, "Wir gewinnen groß!")).statusCode(200).body("revision", equalTo(2));
+
+        as(nogroups).get("/api/articles/" + id + "/revisions").then().statusCode(200)
+                .body("number", contains(2, 1))
+                .body("headline", contains("Wir gewinnen groß!", "Wir gewinnen gros"))
+                .body("author.username", contains("nogroups", "reader"));
+        as(nogroups).get("/api/articles/" + id + "/revisions/2").then().body("author.username", equalTo("nogroups"));
+        get(reader, id).body("author.username", equalTo("reader")).body("lastEditor.username", equalTo("nogroups"));
+    }
+
+    @Test
+    void authorSaveDuringReviewStaysAConflict() {
+        long sport = staffedSport();
+        long id = submittedByReader(reader, sport, "Waiting");
+
+        save(reader, id, in(sport, "Changed")).statusCode(409);
+    }
+
+    @Test
+    void draftsStayTheAuthors() {
+        long sport = staffedSport();
+        long id = create(reader, in(sport, "Draft"));
+
+        get(chief, id).body("allowedActions", empty());
+        save(chief, id, in(sport, "Chief's draft"), version(reader, id)).statusCode(409);
+        save(nogroups, id, in(sport, "Editor's draft"), version(reader, id)).statusCode(409);
+        get(reader, id).body("headline", equalTo("Draft")).body("revision", equalTo(1));
+    }
+
+    @Test
+    void pendingLevelAboveTheCorrector() {
+        long sport = staffedSport();
+        long id = submittedByReader(reader, sport, "Waiting");
+        action(nogroups, id, "approve").statusCode(200);
+        action(chief, id, "approve").statusCode(200).body("pendingLevel", equalTo("PUBLISHER"));
+
+        get(nogroups, id).body("allowedActions", empty());
+        save(nogroups, id, in(sport, "Too late"), version(reader, id)).statusCode(403);
+    }
+
+    @Test
+    void correctorMayNotMoveTheArticle() {
+        long sport = staffedSport();
+        long kultur = section("Kultur");
+        long id = submittedByReader(reader, sport, "Stays in Sport");
+        action(publisher, id, "approve").statusCode(200).body("status", equalTo("PUBLISHED"));
+
+        ValidatableResponse refused = save(chief, id, in(kultur, "Moved"), version(reader, id)).statusCode(403);
+        assertThat(errorFields(refused)).containsExactly("sectionId");
+        get(reader, id).body("section.id", equalTo((int) sport)).body("revision", equalTo(1));
+        save(chief, id, in(sport, "Corrected in place")).statusCode(200).body("section.id", equalTo((int) sport));
+    }
+
+    @Test
+    void correctorMayNotDelete() {
+        long sport = staffedSport();
+        long id = submittedByReader(reader, sport, "Waiting");
+        action(nogroups, id, "approve").statusCode(200).body("pendingLevel", equalTo("EDITOR_IN_CHIEF"));
+
+        get(chief, id).body("allowedActions", contains("EDIT", "APPROVE", "REJECT"));
+        as(chief).delete("/api/articles/" + id).then().statusCode(403);
+        get(reader, id).statusCode(200);
+    }
+
+    @Test
+    void correctionsSwitchedOff() {
+        long sport = staffedSport();
+        long id = submittedByReader(reader, sport, "Published");
+        action(publisher, id, "approve").statusCode(200);
+        setting("{\"article.corrections\": false}");
+        try {
+            get(publisher, id).body("allowedActions", contains("TAKE_OFFLINE"));
+            save(publisher, id, in(sport, "Corrected")).statusCode(403);
+            long waiting = submittedByReader(reader, sport, "Waiting");
+            get(nogroups, waiting).body("allowedActions", contains("APPROVE", "REJECT"));
+        } finally {
+            setting("{}");
+        }
+        get(publisher, id).body("allowedActions", contains("EDIT", "TAKE_OFFLINE"));
+    }
+
+    @Test
+    void authorWroteTheLatestRevision() {
+        long id = create(chief, content("Mine"));
+        get(chief, id).statusCode(200)
+                .body("author.username", equalTo("chief"))
+                .body("lastEditor.username", equalTo("chief"))
+                .body("lastEditor.displayName", notNullValue());
+    }
+
+    @Test
     void editingAPublishedArticleStartsANewRevision() {
         long id = create(publisher, content("First"));
         publish(publisher, id).statusCode(200);
@@ -568,9 +699,11 @@ class ArticleResourceTest {
                 .body("[0].publishedAt", notNullValue())
                 .body("[1].publishedAt", notNullValue())
                 .body("[0].createdAt", notNullValue())
-                .body("[0].updatedAt", notNullValue());
+                .body("[0].updatedAt", notNullValue())
+                .body("author.username", contains("publisher", "publisher"));
         as(publisher).get("/api/articles/" + id + "/revisions/1").then().statusCode(200)
                 .body("number", equalTo(1)).body("live", equalTo(false)).body("headline", equalTo("First"))
+                .body("author.username", equalTo("publisher"))
                 .body("kicker", equalTo("")).body("body.version", equalTo(1));
     }
 
@@ -800,7 +933,7 @@ class ArticleResourceTest {
         assertThat(summary).containsEntry("headline", "Older, edited").containsEntry("kicker", "K")
                 .containsEntry("status", "DRAFT").containsEntry("revision", 1)
                 .containsEntry("hasUnpublishedChanges", false)
-                .containsKeys("updatedAt", "publishedAt", "liveRevision", "author")
+                .containsKeys("createdAt", "updatedAt", "publishedAt", "liveRevision", "author")
                 .doesNotContainKey("body");
         assertThat((List<Object>) summary.get("allowedActions")).containsExactly("EDIT", "PUBLISH", "DELETE");
     }
@@ -812,6 +945,43 @@ class ArticleResourceTest {
         as(chief).get("/api/articles?status=PUBLISHED").then().statusCode(200)
                 .body("id", hasItem((int) published))
                 .body("status", everyItem(equalTo("PUBLISHED")));
+    }
+
+    @Test
+    void newestFirst() {
+        long older = create(publisher, content("Created first"));
+        long newer = create(publisher, content("Created second"));
+        save(publisher, older, content("Changed last")).statusCode(200);
+
+        List<Long> changed = as(publisher).get("/api/articles?sort=changed").then().statusCode(200).extract()
+                .jsonPath().getList("id", Long.class);
+        assertThat(changed.indexOf(older)).isLessThan(changed.indexOf(newer));
+        List<Map<String, Object>> newest = as(publisher).get("/api/articles?sort=newest").then().statusCode(200)
+                .extract().jsonPath().getList("$");
+        List<Long> ids = newest.stream().map(a -> ((Number) a.get("id")).longValue()).toList();
+        assertThat(ids.indexOf(newer)).isLessThan(ids.indexOf(older));
+        assertThat(newest).allSatisfy(summary -> assertThat(summary.get("createdAt")).isNotNull());
+    }
+
+    @Test
+    void bySection() {
+        long sport = section("Sport");
+        long kultur = section("Kultur");
+        long kulturOld = create(publisher, in(kultur, "Kultur old"));
+        long sportOld = create(publisher, in(sport, "Sport old"));
+        long kulturNew = create(publisher, in(kultur, "Kultur new"));
+        long sportNew = create(publisher, in(sport, "Sport new"));
+
+        List<Long> ids = as(publisher).get("/api/articles?sort=section").then().statusCode(200).extract()
+                .jsonPath().getList("id", Long.class);
+        assertThat(ids).containsSubsequence(sportNew, sportOld, kulturNew, kulturOld);
+        assertThat(ids.subList(0, 2)).containsExactly(sportNew, sportOld);
+    }
+
+    @Test
+    void unknownSort() {
+        ValidatableResponse response = as(publisher).get("/api/articles?sort=title").then().statusCode(400);
+        assertThat(errorFields(response)).containsExactly("sort");
     }
 
     @Test

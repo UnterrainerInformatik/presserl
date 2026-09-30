@@ -74,6 +74,28 @@ private fun verifyImageBlockStrings(): Promise<JsAny?> = js(
 ).then(() => null)""",
 )
 
+/** Rejects unless both files define the strings of corrections, sectionless reporters, counts and sorting as expected. */
+private fun verifyCorrectionStrings(): Promise<JsAny?> = js(
+    """Promise.all([
+    ['values', { role_sectionless_reporter: 'Redakteur (ohne Ressort)', corrections_title: 'Korrekturen durch Vorgesetzte',
+        section_counts: '%1\u0024d online · %2\u0024d gesamt', section_issue_count: 'Ausgabe %1\u0024d: %2\u0024d',
+        sort_changed: 'Zuletzt geändert', sort_newest: 'Neueste zuerst', sort_section: 'Nach Ressort',
+        show_changes: 'Änderungen anzeigen' }],
+    ['values-en', { role_sectionless_reporter: 'Reporter (no section)', corrections_title: 'Corrections by higher levels',
+        section_counts: '%1\u0024d online · %2\u0024d in total', section_issue_count: 'Issue %1\u0024d: %2\u0024d',
+        sort_changed: 'Last changed', sort_newest: 'Newest first', sort_section: 'By section',
+        show_changes: 'Show changes' }],
+].map(([qualifier, expected]) =>
+    fetch('/strings/' + qualifier + '/strings.xml').then(response => response.text()).then(text => {
+        const strings = new DOMParser().parseFromString(text, 'application/xml');
+        Object.entries(expected).forEach(([name, value]) => {
+            const actual = strings.querySelector('string[name="' + name + '"]')?.textContent;
+            if (actual !== value) throw new Error(qualifier + ': ' + name + ' is ' + actual);
+        });
+    }))
+).then(() => null)""",
+)
+
 /** German (default) and English must stay complete; a missing key would silently fall back to German. */
 class StringsTest {
 
@@ -88,4 +110,7 @@ class StringsTest {
 
     @Test
     fun imageBlockLabelsInGermanAndEnglish(): Promise<JsAny?> = verifyImageBlockStrings()
+
+    @Test
+    fun correctionAndSectionlessReporterLabelsInGermanAndEnglish(): Promise<JsAny?> = verifyCorrectionStrings()
 }

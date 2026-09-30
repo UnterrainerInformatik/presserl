@@ -23,9 +23,8 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 
 val json = Json { ignoreUnknownKeys = true }
 
@@ -72,27 +71,29 @@ class ApiClient(
     suspend fun newspaper(): NewspaperDto = http.get("$baseUrl/api/newspaper").body()
 
     /**
-     * Sets the newspaper overrides in [changes] (setting name to value); a `null` value is sent as JSON `null` and
-     * removes the override. Answers the settings after the change.
+     * Sets the newspaper overrides in [changes] (setting name to JSON value: a string for enumerated settings, a
+     * boolean for switches); JSON `null` removes the override. Answers the settings after the change.
      */
-    suspend fun updateNewspaperSettings(changes: Map<String, String?>): NewspaperDto =
+    suspend fun updateNewspaperSettings(changes: Map<String, JsonElement>): NewspaperDto =
         http.put("$baseUrl/api/newspaper/settings") {
             bearerAuth(accessToken())
             contentType(ContentType.Application.Json)
-            setBody(JsonObject(changes.mapValues { (_, value) -> value?.let(::JsonPrimitive) ?: JsonNull }))
+            setBody(JsonObject(changes))
         }.body()
 
     suspend fun me(): MeDto = http.get("$baseUrl/api/me") { bearerAuth(accessToken()) }.body()
 
     /**
-     * Articles, newest change first; [status] filters by status, [mine] to the user's own articles,
-     * [pending] to articles waiting for approval, [awaitingMe] to those the user may approve now.
+     * Articles in the order [sort] (`changed`, `newest` or `section`; the server's default, newest change first, when
+     * `null`); [status] filters by status, [mine] to the user's own articles, [pending] to articles waiting for
+     * approval, [awaitingMe] to those the user may approve now.
      */
     suspend fun articles(
         status: String? = null,
         mine: Boolean = false,
         pending: Boolean = false,
         awaitingMe: Boolean = false,
+        sort: String? = null,
     ): List<ArticleSummaryDto> =
         http.get("$baseUrl/api/articles") {
             bearerAuth(accessToken())
@@ -100,6 +101,7 @@ class ApiClient(
             if (mine) parameter("mine", true)
             if (pending) parameter("pending", true)
             if (awaitingMe) parameter("awaitingMe", true)
+            sort?.let { parameter("sort", it) }
         }.body()
 
     suspend fun article(id: Long): ArticleDto = http.get("$baseUrl/api/articles/$id") { bearerAuth(accessToken()) }.body()
@@ -143,15 +145,25 @@ class ApiClient(
     suspend fun submitArticle(id: Long): ArticleDto =
         http.post("$baseUrl/api/articles/$id/submit") { bearerAuth(accessToken()) }.body()
 
-    suspend fun approveArticle(id: Long): ArticleDto =
-        http.post("$baseUrl/api/articles/$id/approve") { bearerAuth(accessToken()) }.body()
+    /** Approves up to the user's level; [version] is the article version the user saw (`409` if stale). */
+    suspend fun approveArticle(id: Long, version: Long? = null): ArticleDto =
+        http.post("$baseUrl/api/articles/$id/approve") {
+            bearerAuth(accessToken())
+            if (version != null) {
+                contentType(ContentType.Application.Json)
+                setBody(ApproveVersion(version))
+            }
+        }.body()
 
-    /** Ends the submission with [note] (`400` naming `note` when it is blank or too long). */
-    suspend fun rejectArticle(id: Long, note: String): ArticleDto =
+    /**
+     * Ends the submission with [note] (`400` naming `note` when it is blank or too long); [version] is the article
+     * version the user saw (`409` if stale).
+     */
+    suspend fun rejectArticle(id: Long, note: String, version: Long? = null): ArticleDto =
         http.post("$baseUrl/api/articles/$id/reject") {
             bearerAuth(accessToken())
             contentType(ContentType.Application.Json)
-            setBody(RejectNote(note))
+            setBody(RejectNote(note, version))
         }.body()
 
     suspend fun withdrawArticle(id: Long): ArticleDto =
@@ -359,9 +371,13 @@ class ApiClient(
 /** A file name safe inside a quoted `Content-Disposition` parameter. */
 private fun String.quotable(): String = filter { it >= ' ' && it != '"' && it != '\\' }.ifEmpty { "upload" }
 
-/** Body of `POST /api/articles/{id}/reject`. */
+/** Body of `POST /api/articles/{id}/reject`; a `null` [version] is left out. */
 @Serializable
-private data class RejectNote(val note: String)
+private data class RejectNote(val note: String, val version: Long? = null)
+
+/** Body of `POST /api/articles/{id}/approve`. */
+@Serializable
+private data class ApproveVersion(val version: Long)
 
 /** Body of `PUT /api/sections/order`. */
 @Serializable

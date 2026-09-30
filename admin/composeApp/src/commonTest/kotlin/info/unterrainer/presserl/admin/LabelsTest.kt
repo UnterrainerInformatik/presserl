@@ -10,6 +10,7 @@ import info.unterrainer.presserl.admin.resources.role_publisher
 import info.unterrainer.presserl.admin.resources.role_reader
 import info.unterrainer.presserl.admin.resources.role_reporter
 import info.unterrainer.presserl.admin.resources.role_section_editor
+import info.unterrainer.presserl.admin.resources.role_sectionless_reporter
 import info.unterrainer.presserl.admin.resources.status_draft
 import info.unterrainer.presserl.admin.resources.status_offline
 import info.unterrainer.presserl.admin.resources.status_published
@@ -21,6 +22,7 @@ import info.unterrainer.presserl.admin.ui.roleLabel
 import info.unterrainer.presserl.admin.ui.section.SECTION_COLORS
 import info.unterrainer.presserl.admin.ui.section.defaultSectionColor
 import info.unterrainer.presserl.admin.ui.sectionRoleLabel
+import info.unterrainer.presserl.admin.ui.sectionlessReporterLabel
 import info.unterrainer.presserl.admin.ui.statusLabel
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -48,6 +50,11 @@ class LabelsTest {
     fun unknownValuesHaveNoLabel() {
         assertNull(roleLabel("SECTION_EDITOR"))
         assertNull(statusLabel("ARCHIVED"))
+    }
+
+    @Test
+    fun sectionlessReporterHasItsOwnLabel() {
+        assertEquals(Res.string.role_sectionless_reporter, sectionlessReporterLabel)
     }
 
     @Test

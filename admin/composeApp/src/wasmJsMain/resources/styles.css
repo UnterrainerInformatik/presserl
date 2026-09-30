@@ -1,3 +1,19 @@
+/* Start-up screen colours: Material 3 baseline neutrals, dark when the system prefers it */
+:root {
+    color-scheme: light dark;
+    --presserl-startup-bg: #fff;
+    --presserl-startup-fg: #1c1b1f;
+    --presserl-startup-track: #e0dfe3;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --presserl-startup-bg: #1c1b1f;
+        --presserl-startup-fg: #e6e1e5;
+        --presserl-startup-track: #49454f;
+    }
+}
+
 html, body {
     width: 100%;
     height: 100%;
@@ -15,8 +31,8 @@ html, body {
     overflow: auto;
     box-sizing: border-box;
     padding: 48px 24px;
-    background: #fff;
-    color: #1c1b1f;
+    background: var(--presserl-startup-bg);
+    color: var(--presserl-startup-fg);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     font-size: 16px;
     line-height: 1.5;
@@ -49,8 +65,8 @@ html, body {
     justify-content: center;
     box-sizing: border-box;
     padding: 24px;
-    background: #fff;
-    color: #1c1b1f;
+    background: var(--presserl-startup-bg);
+    color: var(--presserl-startup-fg);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     font-size: 16px;
     line-height: 1.5;
@@ -65,8 +81,8 @@ html, body {
     width: 32px;
     height: 32px;
     box-sizing: border-box;
-    border: 3px solid #e0dfe3;
-    border-top-color: #1c1b1f;
+    border: 3px solid var(--presserl-startup-track);
+    border-top-color: var(--presserl-startup-fg);
     border-radius: 50%;
     animation: presserl-startup-spin 0.9s linear infinite;
 }

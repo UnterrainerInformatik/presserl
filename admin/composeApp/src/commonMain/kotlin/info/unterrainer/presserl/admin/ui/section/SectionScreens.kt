@@ -44,6 +44,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import info.unterrainer.presserl.admin.api.AccountDto
 import info.unterrainer.presserl.admin.api.ApiClient
+import info.unterrainer.presserl.admin.api.ArticleCountsDto
 import info.unterrainer.presserl.admin.api.MemberDto
 import info.unterrainer.presserl.admin.api.SectionDto
 import info.unterrainer.presserl.admin.api.SectionListDto
@@ -60,6 +61,8 @@ import info.unterrainer.presserl.admin.resources.edit_section
 import info.unterrainer.presserl.admin.resources.field_color
 import info.unterrainer.presserl.admin.resources.field_section_name
 import info.unterrainer.presserl.admin.resources.loading
+import info.unterrainer.presserl.admin.resources.section_counts
+import info.unterrainer.presserl.admin.resources.section_issue_count
 import info.unterrainer.presserl.admin.resources.move_down
 import info.unterrainer.presserl.admin.resources.move_up
 import info.unterrainer.presserl.admin.resources.new_section
@@ -212,7 +215,17 @@ private fun SectionRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ColorMarker(section.color)
-            Text(section.name, style = MaterialTheme.typography.titleMedium)
+            Column {
+                Text(section.name, style = MaterialTheme.typography.titleMedium)
+                section.articleCounts?.let { counts ->
+                    val lines = countLines(
+                        counts,
+                        totals = { live, total -> stringResource(Res.string.section_counts, live, total) },
+                        issue = { number, count -> stringResource(Res.string.section_issue_count, number, count) },
+                    )
+                    lines.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                }
+            }
         }
         if (canManage) {
             TextButton(onClick = { onMove(-1) }, enabled = enabled && !first) { IconLabel(Icons.Up, stringResource(Res.string.move_up)) }
@@ -415,3 +428,17 @@ private fun label(account: AccountDto): String =
     listOf(account.username, listOf(account.firstName, account.lastName).filter { it.isNotEmpty() }.joinToString(" "))
         .filter { it.isNotEmpty() }
         .joinToString(" · ")
+
+/**
+ * The count lines of a section entry: the live and total articles ([totals], e.g. "2 online · 4 gesamt") and, when
+ * issues hold articles of the section, their counts joined by " · " ([issue], e.g. "Ausgabe 2: 2 · Ausgabe 1: 1"), in
+ * the server's order (highest issue number first).
+ */
+inline fun countLines(
+    counts: ArticleCountsDto,
+    totals: (live: Int, total: Int) -> String,
+    issue: (number: Int, count: Int) -> String,
+): List<String> {
+    val issues = counts.issues.map { issue(it.number, it.count) }
+    return listOfNotNull(totals(counts.live, counts.total), issues.joinToString(" · ").ifEmpty { null })
+}

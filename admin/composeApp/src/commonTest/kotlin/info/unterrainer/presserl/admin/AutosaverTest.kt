@@ -194,6 +194,70 @@ class AutosaverTest {
         assertEquals(SaveState.Conflict, saver.state.value)
     }
 
+    /** An API whose approve answers [status] (the article on `200`), recording the sent versions. */
+    private fun TestScope.approvals(status: HttpStatusCode, versions: MutableList<Long>): ApiClient {
+        val engine = MockEngine(
+            MockEngineConfig().apply {
+                dispatcher = UnconfinedTestDispatcher(testScheduler)
+                addHandler { request ->
+                    val sent = Json.parseToJsonElement((request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString())
+                    versions += sent.jsonObject.getValue("version").jsonPrimitive.long
+                    if (status == HttpStatusCode.OK) {
+                        respond(ARTICLE.replace("\"version\": 5", "\"version\": 9"), status, headersOf(HttpHeaders.ContentType, "application/json"))
+                    } else {
+                        refused(status, """{ "errors": [ { "message": "article was changed in the meantime" } ] }""")
+                    }
+                }
+            },
+        )
+        return ApiClient(HttpClient(engine), "https://news.example.org") { "token" }
+    }
+
+    @Test
+    fun correctAndApprove() = runTest {
+        val saver = autosaver()
+        val versions = mutableListOf<Long>()
+        val api = approvals(HttpStatusCode.OK, versions)
+        saver.changed(content("Wir gewinnen groß"))
+
+        val approved = saver.decide { version -> api.approveArticle(42, version) }
+
+        // the correction is saved first (version 5 -> 6), the approval carries the new version
+        assertEquals(listOf(Put("Wir gewinnen groß", 5)), puts)
+        assertEquals(listOf(6L), versions)
+        assertEquals(9, approved?.version)
+        assertEquals(9, saver.currentVersion)
+        assertEquals(SaveState.Saved, saver.state.value)
+    }
+
+    @Test
+    fun staleApproveShowsTheConflict() = runTest {
+        val saver = autosaver()
+        val versions = mutableListOf<Long>()
+        val api = approvals(HttpStatusCode.Conflict, versions)
+
+        val approved = saver.decide { version -> api.approveArticle(42, version) }
+
+        assertEquals(null, approved)
+        assertEquals(listOf(5L), versions)
+        assertEquals(SaveState.Conflict, saver.state.value)
+        // nothing is saved any more until the current state is loaded
+        saver.changed(content("Mine"))
+        advanceTimeBy(10_000)
+        assertEquals(emptyList(), puts)
+    }
+
+    @Test
+    fun noDecisionWhenTheChangesCannotBeSaved() = runTest {
+        val saver = autosaver()
+        answer = { refused(HttpStatusCode.Conflict, """{ "errors": [ { "message": "changed elsewhere" } ] }""") }
+        saver.changed(content("Mine"))
+        var decided = false
+
+        assertEquals(null, saver.decide { decided = true; error("not reached") })
+        assertFalse(decided)
+    }
+
     @Test
     fun networkErrorsAreRetriedWithBackoff() = runTest {
         val saver = autosaver()

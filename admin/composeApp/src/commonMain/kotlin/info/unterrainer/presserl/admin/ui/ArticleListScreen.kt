@@ -3,6 +3,7 @@ package info.unterrainer.presserl.admin.ui
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -10,8 +11,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -25,9 +28,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.ArticleSummaryDto
+import info.unterrainer.presserl.admin.api.SectionRefDto
 import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.changed_at
 import info.unterrainer.presserl.admin.resources.loading
@@ -35,6 +41,11 @@ import info.unterrainer.presserl.admin.resources.locked
 import info.unterrainer.presserl.admin.resources.new_article
 import info.unterrainer.presserl.admin.resources.no_articles
 import info.unterrainer.presserl.admin.resources.no_headline
+import info.unterrainer.presserl.admin.resources.no_section
+import info.unterrainer.presserl.admin.resources.sort_changed
+import info.unterrainer.presserl.admin.resources.sort_label
+import info.unterrainer.presserl.admin.resources.sort_newest
+import info.unterrainer.presserl.admin.resources.sort_section
 import info.unterrainer.presserl.admin.resources.tab_all
 import info.unterrainer.presserl.admin.resources.tab_mine
 import info.unterrainer.presserl.admin.resources.tab_queue
@@ -44,6 +55,34 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
 enum class ListTab { MINE, ALL, QUEUE }
+
+/** Orders of "My articles" and "All articles", named like the server's `sort` values in [wire]. */
+enum class ArticleSort(val wire: String) { CHANGED("changed"), NEWEST("newest"), SECTION("section") }
+
+/** The parameters of `GET /api/articles` for a list tab other than the queue. */
+data class ArticleListRequest(val mine: Boolean, val sort: String)
+
+fun ListTab.request(sort: ArticleSort): ArticleListRequest = ArticleListRequest(mine = this == ListTab.MINE, sort = sort.wire)
+
+/** An entry of an article list: a section heading (only when sorted by section) or an article. */
+sealed interface ArticleListItem {
+    data class Heading(val section: SectionRefDto?) : ArticleListItem
+    data class Entry(val article: ArticleSummaryDto) : ArticleListItem
+}
+
+/**
+ * The [articles] as returned by the server; with [ArticleSort.SECTION], a heading precedes the first article of each
+ * section (the server already groups them).
+ */
+fun listItems(articles: List<ArticleSummaryDto>, sort: ArticleSort): List<ArticleListItem> {
+    if (sort != ArticleSort.SECTION) return articles.map { ArticleListItem.Entry(it) }
+    val items = mutableListOf<ArticleListItem>()
+    articles.forEachIndexed { index, article ->
+        if (index == 0 || articles[index - 1].section?.id != article.section?.id) items += ArticleListItem.Heading(article.section)
+        items += ArticleListItem.Entry(article)
+    }
+    return items
+}
 
 /** The tabs offered: [ListTab.QUEUE] only while the last queue response ([queue], `null` before the first) is non-empty. */
 fun visibleTabs(queue: List<ArticleSummaryDto>?): List<ListTab> =
@@ -57,6 +96,7 @@ fun tabAfterQueue(tab: ListTab, queue: List<ArticleSummaryDto>): ListTab =
  * The article lists. The review queue (`awaitingMe`) is fetched on every entry and reload whatever
  * [tab] is selected and handed to [onQueue]; [queue] is the last response, kept by the caller so
  * the tab survives a visit to the editor. With [ListTab.QUEUE] selected it is also the list shown.
+ * "My articles" and "All articles" are requested in the order [sort], which the caller keeps while the app is open.
  */
 @Composable
 fun ArticleListScreen(
@@ -66,10 +106,12 @@ fun ArticleListScreen(
     onQueue: (List<ArticleSummaryDto>) -> Unit,
     onTab: (ListTab) -> Unit,
     onOpen: (Long) -> Unit,
+    sort: ArticleSort = ArticleSort.CHANGED,
+    onSort: (ArticleSort) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
-    var articles by remember(tab) { mutableStateOf<List<ArticleSummaryDto>?>(null) }
-    var error by remember(tab) { mutableStateOf<String?>(null) }
+    var articles by remember(tab, sort) { mutableStateOf<List<ArticleSummaryDto>?>(null) }
+    var error by remember(tab, sort) { mutableStateOf<String?>(null) }
     // whether this entry's queue response arrived; until then a selected queue shows "loading"
     var queueLoaded by remember { mutableStateOf(false) }
     var queueError by remember { mutableStateOf<String?>(null) }
@@ -86,10 +128,11 @@ fun ArticleListScreen(
             if (next != currentTab) onTab(next)
         }
     }
-    LaunchedEffect(tab, loads) {
+    LaunchedEffect(tab, sort, loads) {
         if (tab == ListTab.QUEUE) return@LaunchedEffect
         error = null
-        articles = attempt({ error = it }) { api.articles(mine = tab == ListTab.MINE) }
+        val request = tab.request(sort)
+        articles = attempt({ error = it }) { api.articles(mine = request.mine, sort = request.sort) }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -116,6 +159,7 @@ fun ArticleListScreen(
                 },
             ) { Text(stringResource(Res.string.new_article)) }
         }
+        if (tab != ListTab.QUEUE) SortChooser(sort, onSort)
         val current = if (tab == ListTab.QUEUE) queue.takeIf { queueLoaded } else articles
         val failure = if (tab == ListTab.QUEUE) queueError else error
         when {
@@ -123,12 +167,59 @@ fun ArticleListScreen(
             current == null -> Text(stringResource(Res.string.loading))
             current.isEmpty() -> Text(stringResource(Res.string.no_articles))
             else -> LazyColumn {
-                items(current, key = { it.id }) { article ->
-                    ArticleRow(article, onClick = { onOpen(article.id) })
-                    HorizontalDivider()
+                items(listItems(current, if (tab == ListTab.QUEUE) ArticleSort.CHANGED else sort), key = { item ->
+                    when (item) {
+                        is ArticleListItem.Heading -> "section-${item.section?.id}"
+                        is ArticleListItem.Entry -> item.article.id
+                    }
+                }) { item ->
+                    when (item) {
+                        is ArticleListItem.Heading -> SectionHeading(item.section)
+                        is ArticleListItem.Entry -> {
+                            ArticleRow(item.article, onClick = { onOpen(item.article.id) })
+                            HorizontalDivider()
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SortChooser(sort: ArticleSort, onSort: (ArticleSort) -> Unit) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(stringResource(Res.string.sort_label), style = MaterialTheme.typography.bodyMedium)
+        ArticleSort.entries.forEach { option ->
+            val label = stringResource(
+                when (option) {
+                    ArticleSort.CHANGED -> Res.string.sort_changed
+                    ArticleSort.NEWEST -> Res.string.sort_newest
+                    ArticleSort.SECTION -> Res.string.sort_section
+                },
+            )
+            if (option == sort) {
+                FilledTonalButton(onClick = {}) { Text(label) }
+            } else {
+                OutlinedButton(onClick = { onSort(option) }) { Text(label) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeading(section: SectionRefDto?) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp, start = 4.dp).semantics { heading() },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        section?.let { ColorMarker(it.color) }
+        Text(section?.name ?: stringResource(Res.string.no_section), style = MaterialTheme.typography.titleSmall)
     }
 }
 

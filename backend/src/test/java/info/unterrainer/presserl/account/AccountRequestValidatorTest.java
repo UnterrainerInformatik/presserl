@@ -70,7 +70,51 @@ class AccountRequestValidatorTest {
 
     @Test
     void emptyBoth() {
-        assertInvalid("{\"roles\": [], \"sectionRoles\": []}", "roles");
+        assertInvalid("{\"roles\": [], \"sectionRoles\": [], \"sectionlessReporter\": false}", "roles");
+    }
+
+    @Test
+    void emptyBothWithoutTheMarkerIsJudgedByTheRoleEdit() {
+        // whether the account keeps a marker is known only with the account
+        EditRolesRequest request = AccountRequestValidator.validateRoles(json("{\"roles\": [], \"sectionRoles\": []}"));
+        assertThat(request.sectionlessReporter()).isNull();
+    }
+
+    @Test
+    void markerAloneIsARole() {
+        EditRolesRequest request = AccountRequestValidator.validateRoles(json(
+                "{\"roles\": [], \"sectionRoles\": [], \"sectionlessReporter\": true}"));
+        assertThat(request.sectionlessReporter()).isTrue();
+    }
+
+    @Test
+    void markerMustBeABoolean() {
+        assertInvalid("{\"roles\": [\"READER\"], \"sectionRoles\": [], \"sectionlessReporter\": \"yes\"}",
+                "sectionlessReporter");
+    }
+
+    @Test
+    void createWithTheMarkerOnly() {
+        CreateAccountRequest request = AccountRequestValidator.validate(json(
+                "{\"firstName\": \"Pia\", \"username\": \"pia\", \"roles\": [], \"sectionlessReporter\": true}"));
+        assertThat(request.sectionlessReporter()).isTrue();
+        assertThat(AccountRequestValidator.validate(json(
+                "{\"firstName\": \"Pia\", \"username\": \"pia\", \"roles\": [\"READER\"]}")).sectionlessReporter())
+                .isFalse();
+    }
+
+    @Test
+    void createNeedsARoleOrTheMarker() {
+        for (String body : List.of("{\"firstName\": \"Pia\", \"username\": \"pia\", \"roles\": []}",
+                "{\"firstName\": \"Pia\", \"username\": \"pia\", \"roles\": [], \"sectionlessReporter\": false}")) {
+            assertThatThrownBy(() -> AccountRequestValidator.validate(json(body)))
+                    .isInstanceOfSatisfying(AccountException.class, e -> assertThat(e.errors())
+                            .extracting(FieldError::field).containsExactly("roles"));
+        }
+        assertThatThrownBy(() -> AccountRequestValidator.validate(json(
+                "{\"firstName\": \"Pia\", \"username\": \"pia\", \"roles\": [], \"sectionlessReporter\": \"yes\"}")))
+                .isInstanceOfSatisfying(AccountException.class, e -> assertThat(e.errors())
+                        .extracting(FieldError::field).containsExactly("sectionlessReporter"));
     }
 
     @Test

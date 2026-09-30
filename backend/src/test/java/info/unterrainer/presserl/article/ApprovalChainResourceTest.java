@@ -71,6 +71,7 @@ class ApprovalChainResourceTest {
     @AfterEach
     void cleanUp() {
         TestSupport.deleteSections(dataSource);
+        TestSupport.deleteTrust(dataSource);
     }
 
     // --- helpers
@@ -150,6 +151,40 @@ class ApprovalChainResourceTest {
                 .post("/api/articles/" + id + "/reject").then();
     }
 
+    private static ValidatableResponse approve(String token, long id, long version) {
+        return as(token).body("{\"version\": %d}".formatted(version)).post("/api/articles/" + id + "/approve").then();
+    }
+
+    private static ValidatableResponse reject(String token, long id, String note, long version) {
+        return as(token).body(MAPPER.createObjectNode().put("note", note).put("version", version).toString())
+                .post("/api/articles/" + id + "/reject").then();
+    }
+
+    /**
+     * Lets {@code level} trust {@code username} ({@code sectionId} for {@code SECTION_EDITOR}, else
+     * {@code null}), set by a holder of the level: {@code nogroups}, {@code chief} or the publisher.
+     */
+    private void trust(String username, String level, Long sectionId) {
+        String setter = switch (level) {
+            case "SECTION_EDITOR" -> nogroups;
+            case "EDITOR_IN_CHIEF" -> chief;
+            default -> publisher;
+        };
+        as(setter).body("{\"level\": \"%s\", \"sectionId\": %s, \"trusted\": true}".formatted(level, sectionId))
+                .put("/api/accounts/%s/trust".formatted(accountId(username))).then().statusCode(200);
+    }
+
+    /**
+     * A published article of {@code reader} in {@code section}, approved by the publisher directly,
+     * live revision 1.
+     */
+    private long publishedByReader(long section, String headline) {
+        long id = create(reader, in(section, headline));
+        submit(reader, id).statusCode(200);
+        approve(publisher, id).statusCode(200).body("status", equalTo("PUBLISHED"));
+        return id;
+    }
+
     private static ValidatableResponse reviews(String token, long id) {
         return as(token).get("/api/articles/" + id + "/reviews").then();
     }
@@ -169,6 +204,150 @@ class ApprovalChainResourceTest {
         return id;
     }
 
+    // --- corrections: the chain over every contributor
+
+    @Test
+    void sectionEditorCorrectsAndApprovesAndTheArticleWaitsForTheEditorInChief() {
+        long sport = staffedSport();
+        trust("reader", "EDITOR_IN_CHIEF", null);
+        trust("reader", "PUBLISHER", null);
+        long corrected = create(reader, in(sport, "Wir gewinnen gros"));
+        long untouched = create(reader, in(sport, "Unberührt"));
+        submit(reader, corrected).statusCode(200).body("pendingLevel", equalTo("SECTION_EDITOR"));
+        submit(reader, untouched).statusCode(200).body("pendingLevel", equalTo("SECTION_EDITOR"));
+        get(nogroups, corrected).body("allowedActions", contains("EDIT", "APPROVE", "REJECT"));
+
+        save(nogroups, corrected, in(sport, "Wir gewinnen groß")).statusCode(200)
+                .body("revision", equalTo(2))
+                .body("pendingLevel", equalTo("SECTION_EDITOR"))
+                .body("author.username", equalTo("reader"))
+                .body("lastEditor.username", equalTo("nogroups"));
+
+        // trust in the author skips the higher levels only for an article nobody else wrote
+        approve(nogroups, untouched).statusCode(200).body("status", equalTo("PUBLISHED"));
+        approve(nogroups, corrected).statusCode(200).body("pendingLevel", equalTo("EDITOR_IN_CHIEF"));
+        approve(chief, corrected).statusCode(200).body("pendingLevel", equalTo("PUBLISHER"));
+        approve(publisher, corrected).statusCode(200).body("status", equalTo("PUBLISHED"))
+                .body("liveRevision", equalTo(2));
+        assertThat(readerPage(corrected, 200)).contains("Wir gewinnen groß");
+    }
+
+    @Test
+    void publisherCorrectsAPublishedArticleAndPublishesDirectly() {
+        long sport = staffedSport();
+        long id = publishedByReader(sport, "Published");
+        get(publisher, id).body("allowedActions", contains("EDIT", "TAKE_OFFLINE"));
+
+        save(publisher, id, in(sport, "Corrected")).statusCode(200)
+                .body("revision", equalTo(2))
+                .body("liveRevision", equalTo(1))
+                .body("hasUnpublishedChanges", equalTo(true))
+                .body("allowedActions", contains("EDIT", "PUBLISH", "TAKE_OFFLINE"));
+        action(publisher, id, "publish").statusCode(200)
+                .body("liveRevision", equalTo(2))
+                .body("author.username", equalTo("reader"))
+                .body("lastEditor.username", equalTo("publisher"));
+
+        assertThat(readerPage(id, 200)).contains("Corrected");
+        get(reader, id).body("author.username", equalTo("reader")).body("lastEditor.username", equalTo("publisher"));
+        as(reader).get("/api/articles/" + id + "/revisions").then().statusCode(200)
+                .body("number", contains(2, 1))
+                .body("author.username", contains("publisher", "reader"));
+    }
+
+    @Test
+    void sectionEditorSubmitsTheirCorrection() {
+        long sport = staffedSport();
+        long id = publishedByReader(sport, "Published");
+
+        save(nogroups, id, in(sport, "Corrected by the section editor")).statusCode(200)
+                .body("allowedActions", contains("EDIT", "SUBMIT", "TAKE_OFFLINE"));
+        submit(nogroups, id).statusCode(200)
+                .body("status", equalTo("PUBLISHED"))
+                .body("liveRevision", equalTo(1))
+                .body("pendingLevel", equalTo("EDITOR_IN_CHIEF"));
+    }
+
+    @Test
+    void correctorWhoIsNoContributorMayNotSubmit() {
+        long sport = staffedSport();
+        long id = publishedByReader(sport, "Published");
+        save(reader, id, in(sport, "Changed by the author")).statusCode(200);
+
+        get(nogroups, id).body("allowedActions", contains("EDIT", "TAKE_OFFLINE"));
+        submit(nogroups, id).statusCode(403);
+        get(reader, id).body("pendingLevel", nullValue());
+    }
+
+    @Test
+    void publishedRevisionsDoNotCount() {
+        long sport = staffedSport();
+        trust("reader", "SECTION_EDITOR", sport);
+        trust("reader", "EDITOR_IN_CHIEF", null);
+        trust("reader", "PUBLISHER", null);
+        long id = create(reader, in(sport, "Trusted"));
+        action(reader, id, "publish").statusCode(200).body("liveRevision", equalTo(1));
+
+        // the editor-in-chief's correction brings in the publisher
+        save(chief, id, in(sport, "Corrected by the chief")).statusCode(200);
+        get(reader, id).body("allowedActions", contains("EDIT", "SUBMIT", "TAKE_OFFLINE"));
+        submit(reader, id).statusCode(200).body("pendingLevel", equalTo("PUBLISHER"));
+        approve(publisher, id).statusCode(200).body("liveRevision", equalTo(2));
+
+        // once live, the correction no longer counts: the trusted author publishes their change directly
+        save(reader, id, in(sport, "Changed by the author")).statusCode(200).body("revision", equalTo(3));
+        get(reader, id).body("allowedActions", contains("EDIT", "PUBLISH", "TAKE_OFFLINE"));
+    }
+
+    @Test
+    void offlineWithoutChangesHasTheAuthorAsContributor() {
+        long sport = staffedSport();
+        long id = publishedByReader(sport, "Published");
+        action(reader, id, "offline").statusCode(200).body("locked", equalTo(false));
+
+        get(reader, id).body("allowedActions", contains("EDIT", "SUBMIT"));
+        submit(reader, id).statusCode(200).body("status", equalTo("OFFLINE")).body("pendingLevel",
+                equalTo("SECTION_EDITOR"));
+    }
+
+    @Test
+    void staleApprovalAndRejectionAreConflicts() {
+        long sport = staffedSport();
+        long id = create(reader, in(sport, "Waiting"));
+        submit(reader, id).statusCode(200);
+        long seen = version(chief, id);
+        save(nogroups, id, in(sport, "Corrected meanwhile")).statusCode(200);
+
+        approve(chief, id, seen).statusCode(409).body("errors[0].message", notNullValue());
+        reject(chief, id, "Too short", seen).statusCode(409);
+        get(chief, id).body("pendingLevel", equalTo("SECTION_EDITOR")).body("headline", equalTo("Corrected meanwhile"));
+        reviews(chief, id).body("size()", equalTo(0));
+
+        approve(chief, id, version(chief, id)).statusCode(200).body("pendingLevel", equalTo("PUBLISHER"));
+    }
+
+    @Test
+    void currentVersionRejects() {
+        long sport = staffedSport();
+        long id = create(reader, in(sport, "Waiting"));
+        submit(reader, id).statusCode(200);
+
+        reject(nogroups, id, "Please add who scored.", version(nogroups, id)).statusCode(200)
+                .body("status", equalTo("DRAFT"));
+    }
+
+    @Test
+    void invalidApproveBody() {
+        long sport = staffedSport();
+        long id = create(reader, in(sport, "Waiting"));
+        submit(reader, id).statusCode(200);
+
+        as(nogroups).body("{\"version\": \"x\"}").post("/api/articles/" + id + "/approve").then().statusCode(400)
+                .body("errors.field", contains("version"));
+        as(nogroups).body("[1]").post("/api/articles/" + id + "/approve").then().statusCode(400);
+        get(nogroups, id).body("pendingLevel", equalTo("SECTION_EDITOR"));
+    }
+
     // --- the chain
 
     @Test
@@ -181,7 +360,7 @@ class ApprovalChainResourceTest {
                 .body("pendingLevel", equalTo("SECTION_EDITOR"))
                 .body("allowedActions", contains("WITHDRAW", "DELETE"));
         readerPage(id, 404);
-        get(nogroups, id).body("allowedActions", contains("APPROVE", "REJECT"));
+        get(nogroups, id).body("allowedActions", contains("EDIT", "APPROVE", "REJECT"));
 
         approve(nogroups, id).statusCode(200)
                 .body("status", equalTo("SUBMITTED"))
@@ -303,7 +482,7 @@ class ApprovalChainResourceTest {
         action(publisher, id, "offline").statusCode(200)
                 .body("status", equalTo("OFFLINE"))
                 .body("locked", equalTo(true))
-                .body("allowedActions", contains("UNLOCK"));
+                .body("allowedActions", contains("EDIT", "UNLOCK"));
         get(chief, id).body("locked", equalTo(true)).body("allowedActions", contains("EDIT", "SUBMIT"));
         as(chief).get("/api/articles?mine=true").then().statusCode(200).body("locked", contains(true));
     }
@@ -328,7 +507,7 @@ class ApprovalChainResourceTest {
                 .body("locked", equalTo(false))
                 .body("liveRevision", equalTo(1))
                 .body("version", greaterThan((int) before))
-                .body("allowedActions", empty());
+                .body("allowedActions", contains("EDIT"));
         unlock(publisher, id).statusCode(409);
     }
 
@@ -712,7 +891,7 @@ class ApprovalChainResourceTest {
                 .body("pendingLevel[0]", nullValue());
         submit(reader, id).statusCode(200);
         as(nogroups).get("/api/articles").then().statusCode(200)
-                .body("allowedActions[0]", contains("APPROVE", "REJECT"))
+                .body("allowedActions[0]", contains("EDIT", "APPROVE", "REJECT"))
                 .body("pendingLevel[0]", equalTo("SECTION_EDITOR"));
     }
 }

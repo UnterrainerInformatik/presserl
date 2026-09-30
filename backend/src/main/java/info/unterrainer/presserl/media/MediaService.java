@@ -72,7 +72,7 @@ public class MediaService {
     }
 
     public Uni<MediaView> upload(Newsroom newsroom, Path file, long size) {
-        requireWriter(newsroom);
+        requireMediaUser(newsroom);
         if (size == 0) {
             throw MediaException.invalid("the file is empty");
         }
@@ -88,7 +88,7 @@ public class MediaService {
     }
 
     public Uni<MediaView> get(Newsroom newsroom, long id) {
-        requireWriter(newsroom);
+        requireMediaUser(newsroom);
         return Panache.withSession(() -> MediaEntity.<MediaEntity>findById(id)
                 .onItem().ifNull().failWith(() -> MediaException.notFound("media " + id + " does not exist"))
                 .flatMap(media -> MediaRenditionEntity.<MediaRenditionEntity>list("mediaId", id)
@@ -115,7 +115,7 @@ public class MediaService {
      * Like {@link #content}, a matching {@code ifNoneMatch} skips reading the object store.
      */
     public Uni<Content> rendition(Newsroom newsroom, long id, String kind, String ifNoneMatch) {
-        requireWriter(newsroom);
+        requireMediaUser(newsroom);
         RenditionKind parsed = RenditionKind.parse(kind)
                 .orElseThrow(() -> MediaException.notFound("unknown rendition '" + kind + "'"));
         return Panache.withSession(() -> MediaRenditionEntity
@@ -171,7 +171,7 @@ public class MediaService {
      * @param beforeParam a positive media id or {@code null}
      */
     public Uni<MediaPageDto> list(Newsroom newsroom, String limitParam, String beforeParam) {
-        requireWriter(newsroom);
+        requireMediaUser(newsroom);
         List<FieldError> errors = new ArrayList<>();
         int limit = DEFAULT_PAGE_SIZE;
         if (limitParam != null) {
@@ -230,7 +230,7 @@ public class MediaService {
      * changed first, and whether the caller may edit the media.
      */
     public Uni<MediaUsageDto> usage(Newsroom newsroom, long id) {
-        requireWriter(newsroom);
+        requireMediaUser(newsroom);
         return Panache.withSession(() -> findMedia(id)
                 .flatMap(media -> blockingUse(id)
                         .flatMap(blocking -> uses(id)
@@ -308,7 +308,7 @@ public class MediaService {
      * removes the new objects and leaves the media unchanged.
      */
     public Uni<MediaView> edit(Newsroom newsroom, long id, JsonNode json) {
-        requireWriter(newsroom);
+        requireMediaUser(newsroom);
         MediaEditValidator.EditRequest request = MediaEditValidator.parse(json);
         return Panache.withSession(() -> findMedia(id)
                 .flatMap(media -> blockingUse(id).map(blocking -> {
@@ -554,9 +554,12 @@ public class MediaService {
         }
     }
 
-    static void requireWriter(Newsroom newsroom) {
-        if (!newsroom.isWriter()) {
-            throw MediaException.forbidden("only writers may upload and read media");
+    /**
+     * Writers and sectionless reporters ({@link Newsroom#mayUseMedia()}, {@code USE_MEDIA}).
+     */
+    static void requireMediaUser(Newsroom newsroom) {
+        if (!newsroom.mayUseMedia()) {
+            throw MediaException.forbidden("only writers and sectionless reporters may upload and read media");
         }
     }
 }

@@ -10,6 +10,7 @@ import org.jboss.logging.Logger;
 import info.unterrainer.presserl.account.AccountDto;
 import info.unterrainer.presserl.account.AccountService;
 import info.unterrainer.presserl.account.KeycloakCalls;
+import io.quarkus.hibernate.reactive.panache.Panache;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -40,6 +41,9 @@ public class SectionMembers {
 
     @Inject
     KeycloakCalls keycloakCalls;
+
+    @Inject
+    LastSectionRule lastSectionRule;
 
     /**
      * @throws NotFoundException  for an unknown section
@@ -74,7 +78,8 @@ public class SectionMembers {
     }
 
     /**
-     * Removes the account's role in the section.
+     * Removes the account's role in the section; an account left without any section role becomes a
+     * sectionless reporter ({@link LastSectionRule}) in the same transaction.
      *
      * @throws NotFoundException  for an unknown section, an account without a role there or an
      *                            unknown account
@@ -89,7 +94,8 @@ public class SectionMembers {
                         throw SectionException.forbidden("role", "you may not remove " + current
                                 + " in this section");
                     }
-                    return sectionRoles.remove(sectionId, accountId)
+                    return Panache.withTransaction(() -> sectionRoles.remove(sectionId, accountId)
+                            .call(() -> lastSectionRule.apply(List.of(accountId), newsroom.user())))
                             .invoke(() -> LOG.infof("Section role %s of '%s' in section '%s' removed by '%s'",
                                     current, account.username(), section.name, newsroom.user().username()))
                             .replaceWithVoid();

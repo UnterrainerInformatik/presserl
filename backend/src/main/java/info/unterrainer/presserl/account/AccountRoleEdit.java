@@ -22,10 +22,13 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 /**
- * Replaces the newspaper roles (Keycloak) and section roles (database) of an account, all or
- * nothing. Only the difference to the current roles is checked and written: every added or removed
- * role must be one the requesting user may assign, unchanged roles need no permission. Keycloak is
- * changed first; when storing the section roles fails, the Keycloak change is reverted.
+ * Replaces the newspaper roles (Keycloak), section roles and sectionless-reporter marker (database)
+ * of an account, all or nothing. Only the difference to the current roles is checked and written:
+ * every added or removed role must be one the requesting user may assign, unchanged roles need no
+ * permission. Without the marker in the request, the marker stays, except that an account losing its
+ * last section role without keeping {@code PUBLISHER} or {@code EDITOR_IN_CHIEF} gets it
+ * automatically (no permission needed). Keycloak is changed first; section roles and marker are then
+ * stored in one transaction, and when that fails, the Keycloak change is reverted.
  */
 @ApplicationScoped
 public class AccountRoleEdit {
@@ -58,11 +61,14 @@ public class AccountRoleEdit {
             if (change.isEmpty()) {
                 return Uni.createFrom().item(target);
             }
-            AccountDto edited = target.withRoles(request.roles()).withSectionRoles(change.sectionRoles());
+            AccountDto edited = target.withRoles(request.roles()).withSectionRoles(change.sectionRoles())
+                    .withSectionlessReporter(change.marker());
             return write(requester, target, change)
                     .invoke(() -> LOG.infof("Roles of account '%s' changed by '%s': roles %s -> %s, "
-                            + "section roles %s -> %s", target.username(), requester.user().username(),
-                            target.roles(), edited.roles(), target.sectionRoles(), edited.sectionRoles()))
+                            + "section roles %s -> %s, sectionless reporter %s -> %s%s", target.username(),
+                            requester.user().username(), target.roles(), edited.roles(), target.sectionRoles(),
+                            edited.sectionRoles(), target.sectionlessReporter(), edited.sectionlessReporter(),
+                            change.automaticMarker() ? " (lost the last section role)" : ""))
                     .replaceWith(edited);
         });
     }
@@ -71,13 +77,15 @@ public class AccountRoleEdit {
         Uni<Void> groups = change.rolesChanged()
                 ? keycloakCalls.run(() -> accounts.changeGroups(target.id(), change.added(), change.removed()))
                 : Uni.createFrom().voidItem();
-        if (!change.sectionRolesChanged()) {
+        if (!change.sectionRolesChanged() && !change.markerChanged()) {
             return groups;
         }
-        return groups.flatMap(done -> sectionRoles.replace(target.id(), change.sectionRoles(), requester.user().sub())
+        String by = requester.user().sub();
+        return groups.flatMap(done -> sectionRoles.replace(target.id(), change.sectionRoles(),
+                change.sectionRolesChanged(), change.markerChanged() ? change.marker() : null, by)
                 .onFailure().call(e -> {
-                    LOG.errorf(e, "Storing the section roles of account '%s' failed; reverting its newspaper roles",
-                            target.username());
+                    LOG.errorf(e, "Storing the section roles and marker of account '%s' failed; reverting its "
+                            + "newspaper roles", target.username());
                     return revertGroups(target, change);
                 })
                 .onFailure(e -> !(e instanceof AccountException)).transform(AccountException::unavailable));
@@ -101,9 +109,11 @@ public class AccountRoleEdit {
      *
      * @param sectionIds the ids of all sections by position
      * @throws AccountException {@code 400 sectionRoles} for a section not in {@code sectionIds},
+     *                          {@code 400 roles} when no role and no marker would remain,
      *                          {@code 403 roles} for an added or removed newspaper role the requester
      *                          may not assign, {@code 403 sectionRoles} for a changed section outside
-     *                          the requester's scope
+     *                          the requester's scope, {@code 403 sectionlessReporter} for a marker
+     *                          change the requester may not make
      */
     static Change check(Newsroom requester, AccountDto target, EditRolesRequest request, List<Long> sectionIds) {
         List<Long> unknown = request.sectionRoles().stream().map(SectionRoleDto::sectionId)
@@ -140,9 +150,22 @@ public class AccountRoleEdit {
                     "you may not change the section roles in sections " + refusedSections);
         }
 
+        boolean automatic = request.sectionlessReporter() == null && !target.sectionRoles().isEmpty()
+                && request.sectionRoles().isEmpty() && !request.roles().contains(NewspaperRole.PUBLISHER)
+                && !request.roles().contains(NewspaperRole.EDITOR_IN_CHIEF) && !target.sectionlessReporter();
+        boolean marker = request.sectionlessReporter() != null ? request.sectionlessReporter()
+                : target.sectionlessReporter() || automatic;
+        if (request.sectionlessReporter() != null && marker != target.sectionlessReporter()) {
+            AccountCreation.requireMayAssignMarker(requester);
+        }
+        if (request.roles().isEmpty() && request.sectionRoles().isEmpty() && !marker) {
+            throw AccountException.invalid(List.of(AccountRequestValidator.noRole()));
+        }
+
         List<SectionRoleDto> ordered = request.sectionRoles().stream()
                 .sorted(Comparator.comparingInt(role -> sectionIds.indexOf(role.sectionId()))).toList();
-        return new Change(added, removed, ordered, !changed.isEmpty());
+        return new Change(added, removed, ordered, !changed.isEmpty(), marker, marker != target.sectionlessReporter(),
+                automatic);
     }
 
     private static Map<Long, SectionRole> bySection(List<SectionRoleDto> roles) {
@@ -152,17 +175,19 @@ public class AccountRoleEdit {
     }
 
     /**
-     * @param sectionRoles the requested section roles by section position
+     * @param sectionRoles    the requested section roles by section position
+     * @param marker          whether the account carries the marker afterwards
+     * @param automaticMarker whether the marker is set because the last section role goes
      */
     record Change(List<NewspaperRole> added, List<NewspaperRole> removed, List<SectionRoleDto> sectionRoles,
-            boolean sectionRolesChanged) {
+            boolean sectionRolesChanged, boolean marker, boolean markerChanged, boolean automaticMarker) {
 
         boolean rolesChanged() {
             return !added.isEmpty() || !removed.isEmpty();
         }
 
         boolean isEmpty() {
-            return !rolesChanged() && !sectionRolesChanged;
+            return !rolesChanged() && !sectionRolesChanged && !markerChanged;
         }
     }
 }

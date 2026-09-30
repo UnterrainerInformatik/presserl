@@ -364,6 +364,43 @@ Authorization: Bearer {{accessToken}}
     });
 %}
 
+### List sorted by creation, newest first, with createdAt
+GET {{baseUrl}}/api/articles?sort=newest
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200, newest creation first", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const created = response.body.map(a => a.createdAt);
+        client.assert(created.every(c => typeof c === "string"), JSON.stringify(created));
+        client.assert(created.every((c, i) => i === 0 || created[i - 1] >= c), JSON.stringify(created));
+    });
+%}
+
+### List sorted by section
+GET {{baseUrl}}/api/articles?sort=section
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200, every section in one run", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const sections = response.body.map(a => a.section.id);
+        const runs = sections.filter((id, i) => i === 0 || sections[i - 1] !== id);
+        client.assert(new Set(runs).size === runs.length, JSON.stringify(sections));
+    });
+%}
+
+### Unknown sort
+GET {{baseUrl}}/api/articles?sort=title
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("400 naming sort", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "sort", JSON.stringify(response.body));
+    });
+%}
+
 ### Create a draft to delete
 POST {{baseUrl}}/api/articles
 Authorization: Bearer {{accessToken}}
@@ -516,7 +553,7 @@ Authorization: Bearer {{nogroupsToken}}
         const entry = response.body.find(a => a.id === client.global.get("chainId"));
         client.assert(entry !== undefined, JSON.stringify(response.body.map(a => a.id)));
         client.assert(entry.pendingLevel === "SECTION_EDITOR", "pendingLevel " + entry.pendingLevel);
-        client.assert(JSON.stringify(entry.allowedActions) === '["APPROVE","REJECT"]', JSON.stringify(entry.allowedActions));
+        client.assert(JSON.stringify(entry.allowedActions) === '["EDIT","APPROVE","REJECT"]', JSON.stringify(entry.allowedActions));
         client.assert(response.body.every(a => a.pendingLevel !== null), "only pending articles");
     });
 %}
@@ -533,6 +570,66 @@ Authorization: Bearer {{nogroupsToken}}
     });
 %}
 
+### Correction: the section editor corrects the waiting article
+PUT {{baseUrl}}/api/articles/{{chainId}}
+Authorization: Bearer {{nogroupsToken}}
+Content-Type: application/json
+
+{ "version": {{chainVersion}}, "headline": "Harvest festival in the garden" }
+
+> {%
+    client.test("200, a new revision by the corrector, still waiting", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.revision === 2, "revision " + response.body.revision);
+        client.assert(response.body.author.username === "reader", "author " + JSON.stringify(response.body.author));
+        client.assert(response.body.lastEditor.username === "nogroups", "lastEditor " + JSON.stringify(response.body.lastEditor));
+        client.assert(response.body.pendingLevel === "SECTION_EDITOR", "pendingLevel " + response.body.pendingLevel);
+        client.assert(response.body.status === "SUBMITTED", "status " + response.body.status);
+    });
+    client.global.set("staleChainVersion", client.global.get("chainVersion"));
+    client.global.set("chainVersion", response.body.version);
+%}
+
+### Correction: a corrector may not move the article
+PUT {{baseUrl}}/api/articles/{{chainId}}
+Authorization: Bearer {{nogroupsToken}}
+Content-Type: application/json
+
+{ "version": {{chainVersion}}, "sectionId": {{kitchenId}}, "headline": "Harvest festival in the garden" }
+
+> {%
+    client.test("403 naming sectionId", () => {
+        client.assert(response.status === 403, "status " + response.status);
+        client.assert(response.body.errors[0].field === "sectionId", JSON.stringify(response.body));
+    });
+%}
+
+### Correction: the history names the corrector
+GET {{baseUrl}}/api/articles/{{chainId}}/revisions
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("200, revision 2 by nogroups, 1 by reader", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(JSON.stringify(response.body.map(r => r.author.username)) === '["nogroups","reader"]',
+            JSON.stringify(response.body.map(r => r.author)));
+    });
+%}
+
+### Correction: an approval with the version seen before the correction is stale
+POST {{baseUrl}}/api/articles/{{chainId}}/approve
+Authorization: Bearer {{nogroupsToken}}
+Content-Type: application/json
+
+{ "version": {{staleChainVersion}} }
+
+> {%
+    client.test("409, still waiting", () => {
+        client.assert(response.status === 409, "status " + response.status);
+        client.assert(response.body.errors[0].message.includes("changed in the meantime"), JSON.stringify(response.body));
+    });
+%}
+
 ### Chain: nothing awaits the reporter, not even their own submission
 GET {{baseUrl}}/api/articles?awaitingMe=true
 Authorization: Bearer {{readerToken}}
@@ -544,9 +641,12 @@ Authorization: Bearer {{readerToken}}
     });
 %}
 
-### Chain: section editor approves, it waits for the editor-in-chief
+### Chain: section editor approves with the version it saw, it waits for the editor-in-chief
 POST {{baseUrl}}/api/articles/{{chainId}}/approve
 Authorization: Bearer {{nogroupsToken}}
+Content-Type: application/json
+
+{ "version": {{chainVersion}} }
 
 > {%
     client.test("200 waiting for EDITOR_IN_CHIEF", () => {
@@ -662,7 +762,8 @@ Authorization: Bearer {{accessToken}}
         client.assert(response.status === 200, "status " + response.status);
         client.assert(response.body.status === "PUBLISHED", "status " + response.body.status);
         client.assert(response.body.pendingLevel === null, "pendingLevel " + response.body.pendingLevel);
-        client.assert(response.body.liveRevision === 1 && response.body.publishedAt !== null, "live");
+        // revision 2 is the section editor's correction
+        client.assert(response.body.liveRevision === 2 && response.body.publishedAt !== null, "live " + response.body.liveRevision);
     });
 %}
 
@@ -690,7 +791,8 @@ Authorization: Bearer {{accessToken}}
         client.assert(response.status === 200, "status " + response.status);
         client.assert(response.body.status === "OFFLINE", "status " + response.body.status);
         client.assert(response.body.locked === true, "locked " + response.body.locked);
-        client.assert(JSON.stringify(response.body.allowedActions) === '["UNLOCK"]',
+        // the publisher may still correct it
+        client.assert(JSON.stringify(response.body.allowedActions) === '["EDIT","UNLOCK"]',
             JSON.stringify(response.body.allowedActions));
     });
 %}
@@ -744,11 +846,21 @@ Authorization: Bearer {{readerToken}}
     client.test("204", () => client.assert(response.status === 204, "status " + response.status));
 %}
 
-### Clean up: reader is no reporter any more
-DELETE {{baseUrl}}/api/sections/{{gardenId}}/members/{{readerId}}
+### Clean up: reader is no reporter any more and no sectionless reporter either
+PUT {{baseUrl}}/api/accounts/{{readerId}}/roles
 Authorization: Bearer {{accessToken}}
+Content-Type: application/json
 
-### Clean up: nogroups is no section editor any more
+{ "roles": ["READER"], "sectionRoles": [], "sectionlessReporter": false }
+
+> {%
+    client.test("200 READER only", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.sectionRoles.length === 0 && response.body.sectionlessReporter === false, JSON.stringify(response.body));
+    });
+%}
+
+### Clean up: nogroups is no section editor any more (it keeps the automatic sectionless-reporter marker)
 DELETE {{baseUrl}}/api/sections/{{gardenId}}/members/{{nogroupsId}}
 Authorization: Bearer {{accessToken}}
 

@@ -32,17 +32,17 @@ class RejectRequestValidatorTest {
 
     @Test
     void trimsTheNote() {
-        assertThat(RejectRequestValidator.validate(note("  Please add who scored.\n"))).isEqualTo("Please add who scored.");
+        assertThat(RejectRequestValidator.validate(note("  Please add who scored.\n")).note()).isEqualTo("Please add who scored.");
     }
 
     @Test
     void keepsLineFeedsInside() {
-        assertThat(RejectRequestValidator.validate(note("First\nSecond"))).isEqualTo("First\nSecond");
+        assertThat(RejectRequestValidator.validate(note("First\nSecond")).note()).isEqualTo("First\nSecond");
     }
 
     @Test
     void acceptsTheMaximumLengthInCodePoints() {
-        assertThat(RejectRequestValidator.validate(note("😀".repeat(ArticleLimits.REVIEW_NOTE_MAX)))).hasSize(2000);
+        assertThat(RejectRequestValidator.validate(note("😀".repeat(ArticleLimits.REVIEW_NOTE_MAX))).note()).hasSize(2000);
     }
 
     @Test
@@ -82,5 +82,33 @@ class RejectRequestValidatorTest {
     void rejectsNonObjects() throws Exception {
         assertInvalid(json("[\"note\"]"), (String) null);
         assertInvalid(json("\"note\""), (String) null);
+    }
+
+    @Test
+    void readsTheOptionalVersion() throws Exception {
+        assertThat(RejectRequestValidator.validate(json("{\"note\": \"Too short\", \"version\": 7}")))
+                .isEqualTo(new RejectRequestValidator.Request("Too short", 7L));
+        assertThat(RejectRequestValidator.validate(note("Too short")).version()).isNull();
+    }
+
+    @Test
+    void rejectsInvalidVersions() throws Exception {
+        assertInvalid(json("{\"note\": \"ok\", \"version\": \"7\"}"), "version");
+        assertInvalid(json("{\"note\": \"ok\", \"version\": -1}"), "version");
+        assertInvalid(json("{\"note\": \"ok\", \"version\": 1.5}"), "version");
+        assertInvalid(json("{\"version\": 1.5}"), "version", "note");
+    }
+
+    @Test
+    void approveBodyIsOptionalAndHoldsTheVersionOnly() throws Exception {
+        assertThat(RejectRequestValidator.approveVersion(null)).isNull();
+        assertThat(RejectRequestValidator.approveVersion(json("{}"))).isNull();
+        assertThat(RejectRequestValidator.approveVersion(json("{\"version\": 5}"))).isEqualTo(5L);
+        assertThatThrownBy(() -> RejectRequestValidator.approveVersion(json("{\"note\": \"x\"}")))
+                .isInstanceOfSatisfying(ArticleException.class, e -> assertThat(e.errors())
+                        .extracting(FieldError::field).containsExactly("note"));
+        assertThatThrownBy(() -> RejectRequestValidator.approveVersion(json("{\"version\": true}")))
+                .isInstanceOfSatisfying(ArticleException.class, e -> assertThat(e.errors())
+                        .extracting(FieldError::field).containsExactly("version"));
     }
 }

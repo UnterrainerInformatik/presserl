@@ -26,26 +26,31 @@ data class EditRolesState(
     val roles: Set<String>,
     /** The chosen section role per section id; sections without a role are absent. */
     val sectionRoles: Map<Long, String>,
+    /** The choice "Redakteur (ohne Ressort)". */
+    val sectionlessReporter: Boolean = false,
     val changed: Boolean = false,
     val errors: Map<AccountField, String> = emptyMap(),
     val general: String? = null,
     val saving: Boolean = false,
 ) {
     val canSave: Boolean
-        get() = changed && (roles.isNotEmpty() || sectionRoles.isNotEmpty()) && !saving
+        get() = changed && (roles.isNotEmpty() || sectionRoles.isNotEmpty() || sectionlessReporter) && !saving
 }
 
 /**
  * "Edit roles" form (design D6), preset from [account]. Newspaper roles are editable when in [assignableRoles],
  * section roles where the section's `assignableRoles` contain the account's current role (or it has none there);
  * the account's other roles are shown read-only, and sections where nothing is assignable and the account holds no
- * role are left out. [submit] sends the complete roles, read-only ones included.
+ * role are left out. "Redakteur (ohne Ressort)" is always shown, editable only with [mayAssignSectionlessReporter]:
+ * then removing the last section role selects it while neither `PUBLISHER` nor `EDITOR_IN_CHIEF` is selected, as the
+ * server would. [submit] sends the complete roles, read-only ones included, and the marker only when it is editable.
  */
 class EditRolesModel(
     private val scope: CoroutineScope,
     val account: AccountDto,
     assignableRoles: List<String>,
     sections: List<SectionDto>,
+    val mayAssignSectionlessReporter: Boolean = false,
     private val save: suspend (accountId: String, EditRolesRequest) -> AccountDto,
 ) {
     private val initialRoles = account.roles.toSet()
@@ -61,7 +66,7 @@ class EditRolesModel(
         if (editable || current != null) SectionChoice(section, editable) else null
     }
 
-    private val _state = MutableStateFlow(EditRolesState(initialRoles, initialSectionRoles))
+    private val _state = MutableStateFlow(EditRolesState(initialRoles, initialSectionRoles, account.sectionlessReporter))
     val state: StateFlow<EditRolesState> = _state.asStateFlow()
 
     fun role(role: String, selected: Boolean) {
@@ -69,11 +74,25 @@ class EditRolesModel(
         change { it.copy(roles = if (selected) it.roles + role else it.roles - role) }
     }
 
-    /** Chooses [role] in the section, or no role for `null`. */
+    /** Selects or clears "Redakteur (ohne Ressort)"; ignored when the user may not change it. */
+    fun sectionlessReporter(selected: Boolean) {
+        if (!mayAssignSectionlessReporter) return
+        change { it.copy(sectionlessReporter = selected) }
+    }
+
+    /** Chooses [role] in the section, or no role for `null`; removing the last one may select the marker. */
     fun sectionRole(sectionId: Long, role: String?) {
         val choice = sectionChoices.firstOrNull { it.section.id == sectionId && it.editable } ?: return
         if (role != null && role !in choice.section.assignableRoles) return
-        change { it.copy(sectionRoles = if (role == null) it.sectionRoles - sectionId else it.sectionRoles + (sectionId to role)) }
+        change { state ->
+            val sectionRoles = if (role == null) state.sectionRoles - sectionId else state.sectionRoles + (sectionId to role)
+            val lostTheLast = state.sectionRoles.isNotEmpty() && sectionRoles.isEmpty() &&
+                "PUBLISHER" !in state.roles && "EDITOR_IN_CHIEF" !in state.roles
+            state.copy(
+                sectionRoles = sectionRoles,
+                sectionlessReporter = state.sectionlessReporter || (lostTheLast && mayAssignSectionlessReporter),
+            )
+        }
     }
 
     /** Sends the complete roles; [onSaved] gets the account with its new roles, refusals end up in the state. */
@@ -87,6 +106,7 @@ class EditRolesModel(
             sectionRoles = current.sectionRoles.entries
                 .sortedBy { (id, _) -> sectionOrder.indexOf(id).let { if (it < 0) Int.MAX_VALUE else it } }
                 .map { (id, role) -> SectionRoleDto(id, role) },
+            sectionlessReporter = if (mayAssignSectionlessReporter) current.sectionlessReporter else null,
         )
         scope.launch {
             try {
@@ -106,8 +126,9 @@ class EditRolesModel(
         _state.update { state ->
             edit(state).let {
                 it.copy(
-                    changed = it.roles != initialRoles || it.sectionRoles != initialSectionRoles,
-                    errors = it.errors - AccountField.ROLES - AccountField.SECTION_ROLES,
+                    changed = it.roles != initialRoles || it.sectionRoles != initialSectionRoles ||
+                        it.sectionlessReporter != account.sectionlessReporter,
+                    errors = it.errors - AccountField.ROLES - AccountField.SECTION_ROLES - AccountField.SECTIONLESS_REPORTER,
                 )
             }
         }

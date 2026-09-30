@@ -7,6 +7,8 @@ import info.unterrainer.presserl.admin.api.SpellMatchDto
 import info.unterrainer.presserl.admin.api.json
 import info.unterrainer.presserl.admin.article.Run
 import info.unterrainer.presserl.admin.ui.editor.BlockType
+import info.unterrainer.presserl.admin.ui.editor.CorrectionNotice
+import info.unterrainer.presserl.admin.ui.editor.correctionNotice
 import info.unterrainer.presserl.admin.ui.editor.Draft
 import info.unterrainer.presserl.admin.ui.editor.EditorActions
 import info.unterrainer.presserl.admin.ui.editor.EditorBlock
@@ -307,5 +309,40 @@ class EditorModelTest {
         assertEquals("a\nb", limitNote("a\nb"))
         val emoji = "😀".repeat(REJECT_NOTE_MAX + 1)
         assertEquals(2 * REJECT_NOTE_MAX, limitNote(emoji).length)
+    }
+
+    // --- corrections
+
+    @Test
+    fun authorSeesNoCorrectionNotice() {
+        val own = article.copy(lastEditor = article.author)
+
+        assertEquals(CorrectionNotice(), correctionNotice(own, "papa"))
+        assertEquals(CorrectionNotice(), correctionNotice(article, "papa"))
+    }
+
+    @Test
+    fun correctorSeesWhoseArticleItIs() {
+        val waiting = article.copy(allowedActions = listOf("EDIT", "APPROVE", "REJECT"))
+
+        assertEquals(CorrectionNotice(correcting = AuthorDto("papa", "Papa")), correctionNotice(waiting, "nogroups"))
+    }
+
+    @Test
+    fun readOnlyVisitorIsNoCorrector() {
+        val readOnly = article.copy(allowedActions = listOf("TAKE_OFFLINE"))
+
+        assertEquals(CorrectionNotice(), correctionNotice(readOnly, "chief"))
+    }
+
+    @Test
+    fun everyoneSeesTheLastEditorOfACorrectedArticle() {
+        val corrected = article.copy(lastEditor = AuthorDto("chief", "Lena"))
+
+        assertEquals(CorrectionNotice(lastChangedBy = AuthorDto("chief", "Lena")), correctionNotice(corrected, "papa"))
+        assertEquals(
+            CorrectionNotice(correcting = AuthorDto("papa", "Papa"), lastChangedBy = AuthorDto("chief", "Lena")),
+            correctionNotice(corrected, "chief"),
+        )
     }
 }

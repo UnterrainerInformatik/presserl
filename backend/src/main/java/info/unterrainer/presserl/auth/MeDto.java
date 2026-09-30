@@ -9,5 +9,5 @@ import info.unterrainer.presserl.section.NamedSectionRoleDto;
  * {@code allowedActions} in declaration order of {@link NewspaperAction}.
  */
 public record MeDto(String username, String displayName, List<NewspaperRole> roles,
-        List<NamedSectionRoleDto> sectionRoles, List<NewspaperAction> allowedActions) {
+        List<NamedSectionRoleDto> sectionRoles, boolean sectionlessReporter, List<NewspaperAction> allowedActions) {
 }

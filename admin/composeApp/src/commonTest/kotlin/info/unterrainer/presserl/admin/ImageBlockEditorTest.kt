@@ -6,6 +6,7 @@ import info.unterrainer.presserl.admin.api.RevisionDto
 import info.unterrainer.presserl.admin.api.json
 import info.unterrainer.presserl.admin.article.Block
 import info.unterrainer.presserl.admin.article.Body
+import info.unterrainer.presserl.admin.ui.editor.imageCaptionKey
 import info.unterrainer.presserl.admin.ui.editor.Autosaver
 import info.unterrainer.presserl.admin.ui.editor.BlockType
 import info.unterrainer.presserl.admin.ui.editor.CAPTION_MAX
@@ -192,6 +193,28 @@ class ImageBlockEditorTest {
         assertEquals(Block.Image(17), model.draft.body().blocks[1])
         dispatch(EditorIntent.Redo)
         assertEquals("The finish line", image(1).caption)
+    }
+
+    @Test
+    fun aChosenCaptionSuggestionIsItsOwnUndoStep() {
+        dispatch(EditorIntent.AddImageBlock(paragraph, 17))
+        val block = image(1).id
+        dispatch(EditorIntent.SetImageCaption(block, "Unser"))
+        dispatch(EditorIntent.SetImageCaption(block, "Unser Klasenfoto"), afterMillis = 200)
+        // the suggestion right after typing still starts its own step
+        dispatch(EditorIntent.SetImageCaption(block, "Unser Klassenfoto", ownStep = true), afterMillis = 200)
+        assertEquals("Unser Klassenfoto", image(1).caption)
+
+        dispatch(EditorIntent.Undo)
+        assertEquals("Unser Klasenfoto", image(1).caption)
+        dispatch(EditorIntent.Undo)
+        assertEquals("", image(1).caption)
+    }
+
+    @Test
+    fun captionSpellCheckKeyIsItsOwn() {
+        assertEquals("caption:7", imageCaptionKey(7))
+        assertFalse(imageCaptionKey(7) == "block:7" || imageCaptionKey(7) == "caption")
     }
 
     @Test

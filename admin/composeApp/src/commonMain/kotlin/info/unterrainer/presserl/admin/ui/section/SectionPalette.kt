@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import info.unterrainer.presserl.admin.ui.LocalDarkScheme
 
 /** The section palette keys in the server's palette order. */
 val SECTION_COLORS = listOf("red", "orange", "yellow", "green", "teal", "blue", "purple", "pink")
@@ -16,20 +17,34 @@ val SECTION_COLORS = listOf("red", "orange", "yellow", "green", "teal", "blue", 
 /** The colour the server picks for a new section when none is sent. */
 fun defaultSectionColor(existingSections: Int): String = SECTION_COLORS[existingSections % SECTION_COLORS.size]
 
-/** Display colour of a palette key; the reader theme defines its own. */
-fun sectionColor(key: String): Color = when (key) {
-    "red" -> Color(0xFFD32F2F)
-    "orange" -> Color(0xFFF57C00)
-    "yellow" -> Color(0xFFFBC02D)
-    "green" -> Color(0xFF388E3C)
-    "teal" -> Color(0xFF00897B)
-    "blue" -> Color(0xFF1976D2)
-    "purple" -> Color(0xFF7B1FA2)
-    "pink" -> Color(0xFFC2185B)
-    else -> Color.Gray
+/** Display colour of a palette key in the light or dark scheme; the dark tones match the reader's dark section tokens. */
+fun sectionColor(key: String, dark: Boolean): Color = if (dark) {
+    when (key) {
+        "red" -> Color(0xFFEF6B6B)
+        "orange" -> Color(0xFFF39A4A)
+        "yellow" -> Color(0xFFE3C24A)
+        "green" -> Color(0xFF6CC070)
+        "teal" -> Color(0xFF4DB6AC)
+        "blue" -> Color(0xFF6EA8F0)
+        "purple" -> Color(0xFFC08BE0)
+        "pink" -> Color(0xFFF06BA0)
+        else -> Color.Gray
+    }
+} else {
+    when (key) {
+        "red" -> Color(0xFFD32F2F)
+        "orange" -> Color(0xFFF57C00)
+        "yellow" -> Color(0xFFFBC02D)
+        "green" -> Color(0xFF388E3C)
+        "teal" -> Color(0xFF00897B)
+        "blue" -> Color(0xFF1976D2)
+        "purple" -> Color(0xFF7B1FA2)
+        "pink" -> Color(0xFFC2185B)
+        else -> Color.Gray
+    }
 }
 
 @Composable
 fun ColorMarker(key: String, size: Dp = 16.dp, modifier: Modifier = Modifier) {
-    Box(modifier.size(size).background(sectionColor(key), CircleShape))
+    Box(modifier.size(size).background(sectionColor(key, LocalDarkScheme.current), CircleShape))
 }

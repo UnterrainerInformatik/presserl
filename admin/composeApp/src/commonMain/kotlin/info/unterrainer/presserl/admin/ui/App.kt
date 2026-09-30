@@ -87,8 +87,8 @@ sealed interface Screen {
     data class LoggedIn(val newspaper: NewspaperDto, val me: MeDto, val spellCheck: Boolean = false) : Screen {
         val navEntries: List<NavEntry> get() = navEntries(me.allowedActions)
 
-        /** Without it the article list is replaced by a notice. */
-        val mayWriteArticles: Boolean get() = NewspaperAction.WRITE_ARTICLES in me.allowedActions
+        /** The view opened after login; without one the notice about the missing writing role is shown. */
+        val start: NavEntry? get() = startEntry(me.allowedActions)
     }
     data class Error(val message: String) : Screen
 }
@@ -99,6 +99,8 @@ sealed interface Route {
     data class Editor(val articleId: Long) : Route
     data class Revisions(val articleId: Long) : Route
     data class Revision(val articleId: Long, val number: Int) : Route
+    /** The comparison of revision [number] with the one before it. */
+    data class RevisionDiff(val articleId: Long, val number: Int) : Route
     data object Sections : Route
     /** "New section" when [section] is `null`, preselecting [defaultColor]; otherwise "Edit". */
     data class SectionForm(val section: SectionDto?, val defaultColor: String) : Route
@@ -106,8 +108,18 @@ sealed interface Route {
     data object Issues : Route
     data class IssueDetail(val issueId: Long) : Route
     data object Accounts : Route
-    data class NewAccount(val assignableRoles: List<String>, val sections: List<SectionDto>) : Route
-    data class EditRoles(val account: AccountDto, val assignableRoles: List<String>, val sections: List<SectionDto>) : Route
+    /** [mayAssignSectionlessReporter] offers "Redakteur (ohne Ressort)". */
+    data class NewAccount(
+        val assignableRoles: List<String>,
+        val sections: List<SectionDto>,
+        val mayAssignSectionlessReporter: Boolean = false,
+    ) : Route
+    data class EditRoles(
+        val account: AccountDto,
+        val assignableRoles: List<String>,
+        val sections: List<SectionDto>,
+        val mayAssignSectionlessReporter: Boolean = false,
+    ) : Route
     /** Holds the generated password; leaving the slip drops it. */
     data class AccountSlip(val created: CreatedAccountDto) : Route
     data object Newspaper : Route
@@ -143,7 +155,7 @@ fun App(auth: AuthClient, api: ApiClient, siteUrl: String, slipPrinter: SlipPrin
         }
     }
 
-    MaterialTheme {
+    PresserlTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             when (val current = screen) {
                 Screen.Loading -> Message { Text(stringResource(Res.string.loading)) }
@@ -168,12 +180,20 @@ private fun Message(content: @Composable () -> Unit) {
 
 @Composable
 private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, slipPrinter: SlipPrinter, onLogout: () -> Unit) {
-    // empty without a writing role: the notice is shown instead of a route
+    // empty without a writing role or images: the notice is shown instead of a route
     var stack by remember {
-        mutableStateOf(if (screen.mayWriteArticles) listOf<Route>(Route.ArticleList(ListTab.MINE)) else emptyList())
+        mutableStateOf(
+            when (screen.start) {
+                NavEntry.ARTICLES -> listOf<Route>(Route.ArticleList(ListTab.MINE))
+                NavEntry.IMAGES -> listOf<Route>(Route.Media)
+                else -> emptyList()
+            },
+        )
     }
     // the last review-queue response, kept while the editor is open (design D3/D4)
     var queue by remember { mutableStateOf<List<ArticleSummaryDto>?>(null) }
+    // the order of the article lists, kept while the app is open
+    var sort by remember { mutableStateOf(ArticleSort.CHANGED) }
     // kept while detail and edit views are open, so the grid keeps its pages and thumbnails
     val newMediaGrid = { MediaGridModel { before -> api.listMedia(MEDIA_PAGE_SIZE, before) } }
     var mediaGrid by remember { mutableStateOf(newMediaGrid()) }
@@ -220,6 +240,8 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                         onQueue = { queue = it },
                         onTab = { stack = stack.dropLast(1) + Route.ArticleList(it) },
                         onOpen = { push(Route.Editor(it)) },
+                        sort = sort,
+                        onSort = { sort = it },
                     )
                     is Route.Editor -> key(route) {
                         EditorScreen(
@@ -230,10 +252,19 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                             spellCheck = screen.spellCheck,
                             onBack = back,
                             onRevisions = { push(Route.Revisions(route.articleId)) },
+                            username = screen.me.username,
+                            onShowChanges = { push(Route.RevisionDiff(route.articleId, it)) },
                         )
                     }
-                    is Route.Revisions -> RevisionsScreen(api, route.articleId, onBack = back, onOpen = { push(Route.Revision(route.articleId, it)) })
+                    is Route.Revisions -> RevisionsScreen(
+                        api,
+                        route.articleId,
+                        onBack = back,
+                        onOpen = { push(Route.Revision(route.articleId, it)) },
+                        onChanges = { push(Route.RevisionDiff(route.articleId, it)) },
+                    )
                     is Route.Revision -> key(route) { RevisionScreen(api, route.articleId, route.number, onBack = back) }
+                    is Route.RevisionDiff -> key(route) { RevisionDiffScreen(api, route.articleId, route.number, onBack = back) }
                     Route.Sections -> SectionListScreen(
                         api,
                         onNew = { push(Route.SectionForm(null, it)) },
@@ -257,8 +288,8 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                     }
                     Route.Accounts -> AccountListScreen(
                         api,
-                        onNew = { roles, sections -> push(Route.NewAccount(roles, sections)) },
-                        onEditRoles = { account, roles, sections -> push(Route.EditRoles(account, roles, sections)) },
+                        onNew = { roles, sections, marker -> push(Route.NewAccount(roles, sections, marker)) },
+                        onEditRoles = { account, roles, sections, marker -> push(Route.EditRoles(account, roles, sections, marker)) },
                         onReset = { push(Route.AccountSlip(it)) },
                     )
                     is Route.NewAccount -> key(route) {
@@ -266,6 +297,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                             api,
                             route.assignableRoles,
                             route.sections,
+                            route.mayAssignSectionlessReporter,
                             onBack = back,
                             onCreated = { stack = stack.dropLast(1) + Route.AccountSlip(it) },
                         )
@@ -276,6 +308,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                             route.account,
                             route.assignableRoles,
                             route.sections,
+                            route.mayAssignSectionlessReporter,
                             onBack = back,
                             onSaved = { stack = listOf(Route.Accounts) },
                         )
@@ -291,6 +324,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                         api,
                         spellCheck = screen.spellCheck,
                         mayConfigureSpellCheck = NewspaperAction.CONFIGURE_SPELL_CHECK in screen.me.allowedActions,
+                        mayConfigureCorrections = NewspaperAction.CONFIGURE_CORRECTIONS in screen.me.allowedActions,
                     )
                     Route.Media -> MediaGridScreen(mediaGrid, mediaThumbnails, onOpen = { push(Route.MediaDetail(it)) })
                     is Route.MediaDetail -> key(route) {
@@ -330,6 +364,7 @@ private fun Header(screen: Screen.LoggedIn, entry: NavEntry?, onEntry: (NavEntry
         Column(modifier) {
             Text(screen.newspaper.name, style = MaterialTheme.typography.titleLarge)
             val roles = screen.me.roles.map { roleText(it) } +
+                (if (screen.me.sectionlessReporter) listOf(stringResource(sectionlessReporterLabel)) else emptyList()) +
                 screen.me.sectionRoles.map { sectionRoleText(it.role) + " · " + it.sectionName }
             Text(
                 screen.me.displayName + " · " + (if (roles.isEmpty()) stringResource(Res.string.no_roles) else roles.joinToString(", ")),

@@ -49,7 +49,8 @@ class NewspaperResourceTest {
                 .body("settings.'reader.text-size'", equalTo("m"))
                 .body("settings.'media.max-size'", equalTo("10M"))
                 .body("settings.'spell-check.help'", equalTo("suggestions"))
-                .body("settings.size()", equalTo(6))
+                .body("settings.'article.corrections'", equalTo(true))
+                .body("settings.size()", equalTo(7))
                 .body("overrides", is(anEmptyMap()));
     }
 
@@ -235,6 +236,45 @@ class NewspaperResourceTest {
                 .statusCode(200)
                 .body("overrides.'reader.text-size'", equalTo("l"));
         assertThat(storedSettings()).contains("\"reader.text-size\": \"l\"");
+    }
+
+    @Test
+    void publisherSwitchesCorrectionsOffAndBack() throws SQLException {
+        TestSupport.awaitReady();
+        String publisher = TestSupport.token("publisher", "publisher");
+
+        put(publisher, "{\"article.corrections\": false}").then()
+                .statusCode(200)
+                .body("settings.'article.corrections'", equalTo(false))
+                .body("overrides.'article.corrections'", equalTo(false));
+        assertThat(storedSettings()).isEqualTo("{\"article.corrections\": false}");
+        given().get("/api/newspaper").then().body("settings.'article.corrections'", equalTo(false));
+
+        put(publisher, "{\"article.corrections\": null}").then()
+                .statusCode(200)
+                .body("settings.'article.corrections'", equalTo(true))
+                .body("overrides", is(anEmptyMap()));
+    }
+
+    @Test
+    void editorInChiefMayNotSwitchCorrections() throws SQLException {
+        TestSupport.awaitReady();
+
+        put(TestSupport.token("chief", "chief"), "{\"article.corrections\": false}").then()
+                .statusCode(403)
+                .body(equalTo(""));
+        assertThat(storedSettings()).isEqualTo("{}");
+    }
+
+    @Test
+    void correctionsValueMustBeABoolean() throws SQLException {
+        TestSupport.awaitReady();
+
+        put(TestSupport.token("publisher", "publisher"), "{\"article.corrections\": \"no\"}").then()
+                .statusCode(400)
+                .body("errors[0].field", equalTo("article.corrections"))
+                .body("errors[0].message", equalTo("must be one of true, false"));
+        assertThat(storedSettings()).isEqualTo("{}");
     }
 
     @Test

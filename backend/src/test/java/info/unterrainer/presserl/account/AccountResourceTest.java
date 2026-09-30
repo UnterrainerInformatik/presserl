@@ -126,7 +126,8 @@ class AccountResourceTest {
         sectionRole(section("Sport"), "nogroups", "SECTION_EDITOR");
 
         as(TestSupport.token("nogroups", "nogroups")).get("/api/accounts").then().statusCode(200)
-                .body("assignableRoles", empty());
+                .body("assignableRoles", empty())
+                .body("mayAssignSectionlessReporter", equalTo(false));
         as(TestSupport.token("nogroups", "nogroups")).get("/api/accounts/username-suggestion?firstName=Anna")
                 .then().statusCode(200);
     }
@@ -182,12 +183,15 @@ class AccountResourceTest {
     @Test
     void assignableRolesOfPublisher() {
         as(publisher).get("/api/accounts").then()
-                .body("assignableRoles", contains("PUBLISHER", "EDITOR_IN_CHIEF", "READER"));
+                .body("assignableRoles", contains("PUBLISHER", "EDITOR_IN_CHIEF", "READER"))
+                .body("mayAssignSectionlessReporter", equalTo(true))
+                .body("accounts.sectionlessReporter", everyItem(equalTo(false)));
     }
 
     @Test
     void assignableRolesOfEditorInChief() {
-        as(chief).get("/api/accounts").then().body("assignableRoles", contains("EDITOR_IN_CHIEF", "READER"));
+        as(chief).get("/api/accounts").then().body("assignableRoles", contains("EDITOR_IN_CHIEF", "READER"))
+                .body("mayAssignSectionlessReporter", equalTo(true));
     }
 
     // --- username suggestion ----------------------------------------------------------------
@@ -240,6 +244,8 @@ class AccountResourceTest {
                 .body("account.firstName", equalTo("Lena"))
                 .body("account.lastName", equalTo(""))
                 .body("account.roles", contains("EDITOR_IN_CHIEF"))
+                .body("account.sectionRoles", empty())
+                .body("account.sectionlessReporter", equalTo(false))
                 .body("account.enabled", equalTo(true))
                 .body("password", matchesPattern(PASSWORD));
         assertThat(response.header("Location")).endsWith("/api/accounts/" + response.path("account.id"));
@@ -295,6 +301,42 @@ class AccountResourceTest {
                 .body("roles", empty())
                 .body("sectionRoles.sectionName", contains("Sport", "Kultur"))
                 .body("sectionRoles.role", contains("REPORTER", "SECTION_EDITOR"));
+    }
+
+    @Test
+    void editorInChiefCreatesAPhotographer() {
+        io.restassured.response.Response response = post(chief, "pia", """
+                {"firstName": "Pia", "username": "pia", "roles": [], "sectionlessReporter": true}""");
+
+        response.then().statusCode(201)
+                .body("account.roles", empty())
+                .body("account.sectionRoles", empty())
+                .body("account.sectionlessReporter", equalTo(true));
+        as(TestSupport.token("pia", response.path("password"))).get("/api/me").then().statusCode(200)
+                .body("sectionlessReporter", equalTo(true))
+                .body("allowedActions", contains("USE_MEDIA"));
+        assertThat(listedAs(publisher, "pia").getBoolean("sectionlessReporter")).isTrue();
+    }
+
+    @Test
+    void sectionEditorMayNotAssignTheMarker() {
+        long sport = section("Sport");
+        sectionRole(sport, "nogroups", "SECTION_EDITOR");
+
+        post(TestSupport.token("nogroups", "nogroups"), "snapper", """
+                {"firstName": "Snap", "username": "snapper", "roles": [],
+                 "sectionRoles": [{"sectionId": %d, "role": "REPORTER"}], "sectionlessReporter": true}"""
+                .formatted(sport))
+                .then().statusCode(403).body("errors.field", contains("sectionlessReporter"));
+
+        assertThat(realm.users().searchByUsername("snapper", true)).isEmpty();
+    }
+
+    @Test
+    void markerMustBeABoolean() {
+        post(publisher, "yesman", """
+                {"firstName": "Yes", "username": "yesman", "roles": ["READER"], "sectionlessReporter": "yes"}""")
+                .then().statusCode(400).body("errors.field", contains("sectionlessReporter"));
     }
 
     @Test
@@ -721,7 +763,65 @@ class AccountResourceTest {
 
         assertThat(messages).containsExactly(
                 "Roles of account 'same' changed by 'publisher': roles [READER] -> [EDITOR_IN_CHIEF], "
-                        + "section roles [] -> []");
+                        + "section roles [] -> [], sectionless reporter false -> false");
+    }
+
+    @Test
+    void markerAloneIsARole() {
+        String id = createReader("marked");
+
+        putRoles(publisher, id, """
+                {"roles": [], "sectionRoles": [], "sectionlessReporter": true}""").then().statusCode(200)
+                .body("roles", empty())
+                .body("sectionRoles", empty())
+                .body("sectionlessReporter", equalTo(true));
+
+        assertThat(groupsOf(id)).isEmpty();
+        assertThat(listedAs(publisher, "marked").getBoolean("sectionlessReporter")).isTrue();
+    }
+
+    @Test
+    void explicitRemovalOfEveryWritingRight() {
+        long sport = section("Sport");
+        String id = createReader("quitter");
+        sectionRole(sport, "quitter", "REPORTER");
+
+        putRoles(publisher, id, """
+                {"roles": ["READER"], "sectionRoles": [], "sectionlessReporter": false}""").then().statusCode(200)
+                .body("roles", contains("READER"))
+                .body("sectionRoles", empty())
+                .body("sectionlessReporter", equalTo(false));
+    }
+
+    @Test
+    void lastSectionRemovedWithoutTheField() {
+        long sport = section("Sport");
+        sectionRole(sport, "nogroups", "SECTION_EDITOR");
+        String id = createReader("leaver");
+        sectionRole(sport, "leaver", "REPORTER");
+
+        putRoles(TestSupport.token("nogroups", "nogroups"), id, """
+                {"roles": ["READER"], "sectionRoles": []}""").then().statusCode(200)
+                .body("sectionRoles", empty())
+                .body("sectionlessReporter", equalTo(true));
+        assertThat(listedAs(publisher, "leaver").getBoolean("sectionlessReporter")).isTrue();
+    }
+
+    @Test
+    void sectionEditorMayNotRemoveTheMarker() {
+        long sport = section("Sport");
+        sectionRole(sport, "nogroups", "SECTION_EDITOR");
+        String id = createReader("keepmark");
+        sectionRole(sport, "keepmark", "REPORTER");
+        putRoles(publisher, id, """
+                {"roles": ["READER"], "sectionRoles": [{"sectionId": %d, "role": "REPORTER"}],
+                 "sectionlessReporter": true}""".formatted(sport)).then().statusCode(200);
+
+        putRoles(TestSupport.token("nogroups", "nogroups"), id, """
+                {"roles": ["READER"], "sectionRoles": [{"sectionId": %d, "role": "REPORTER"}],
+                 "sectionlessReporter": false}""".formatted(sport))
+                .then().statusCode(403).body("errors.field", contains("sectionlessReporter"));
+        assertThat(listedAs(publisher, "keepmark").getBoolean("sectionlessReporter")).isTrue();
     }
 
     @Test
@@ -906,7 +1006,7 @@ class AccountResourceTest {
         }
 
         assertThat(messages).anySatisfy(message -> assertThat(message).contains("'logged'", "'publisher'",
-                "EDITOR_IN_CHIEF", "READER", "REPORTER"));
+                "EDITOR_IN_CHIEF", "READER", "REPORTER", "sectionless reporter false"));
         assertThat(messages).allSatisfy(message -> assertThat(message).doesNotContain(password));
         assertThat(password).isNotBlank();
     }

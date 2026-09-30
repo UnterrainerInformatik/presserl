@@ -47,8 +47,9 @@ data class OidcDto(
 )
 
 /**
- * `GET /api/me`; [sectionRoles] are ordered by section position, [allowedActions] are the
- * newspaper-wide actions the server grants (unknown values are kept and ignored by the app).
+ * `GET /api/me`; [sectionRoles] are ordered by section position, [sectionlessReporter] is the marker that lets the
+ * account use the images without writing articles, [allowedActions] are the newspaper-wide actions the server grants
+ * (unknown values are kept and ignored by the app).
  */
 @Serializable
 data class MeDto(
@@ -56,6 +57,7 @@ data class MeDto(
     val displayName: String,
     val roles: List<String>,
     val sectionRoles: List<MySectionRoleDto> = emptyList(),
+    val sectionlessReporter: Boolean = false,
     val allowedActions: List<String> = emptyList(),
 )
 
@@ -188,6 +190,7 @@ data class IssueRefDto(
  * (`{"version": 1, "blocks": [...]}`). [pendingLevel] is the approval level the article waits for
  * (`SECTION_EDITOR`, `EDITOR_IN_CHIEF`, `PUBLISHER`), `null` while no submission is pending.
  * [locked] is the emergency-brake lock: a publisher took the article offline, only a publisher puts it back online.
+ * [lastEditor] wrote the latest revision (the author unless someone corrected it; `null` on older servers).
  * Timestamps are ISO-8601 strings.
  */
 @Serializable
@@ -195,6 +198,7 @@ data class ArticleDto(
     val id: Long,
     val status: String,
     val author: AuthorDto,
+    val lastEditor: AuthorDto? = null,
     val section: SectionRefDto? = null,
     val issue: IssueRefDto? = null,
     val revision: Int,
@@ -230,6 +234,7 @@ data class ArticleSummaryDto(
     val hasUnpublishedChanges: Boolean,
     val pendingLevel: String? = null,
     val locked: Boolean = false,
+    val createdAt: String? = null,
     val updatedAt: String,
     val publishedAt: String? = null,
     val allowedActions: List<String>,
@@ -253,22 +258,24 @@ data class ArticleContent(
     @EncodeDefault val leadImage: LeadImageRequest? = null,
 )
 
-/** Entry of `GET /api/articles/{id}/revisions`. */
+/** Entry of `GET /api/articles/{id}/revisions`; [author] wrote the revision (`null` on older servers). */
 @Serializable
 data class RevisionSummaryDto(
     val number: Int,
     val headline: String,
+    val author: AuthorDto? = null,
     val createdAt: String,
     val updatedAt: String,
     val publishedAt: String? = null,
     val live: Boolean,
 )
 
-/** `GET /api/articles/{id}/revisions/{number}` */
+/** `GET /api/articles/{id}/revisions/{number}`; [author] wrote the revision (`null` on older servers). */
 @Serializable
 data class RevisionDto(
     val number: Int,
     val headline: String,
+    val author: AuthorDto? = null,
     val createdAt: String,
     val updatedAt: String,
     val publishedAt: String? = null,
@@ -307,7 +314,8 @@ data class FieldErrorDto(
 
 /**
  * Entry of `GET /api/accounts`; [roles] are newspaper roles in the order publisher, editor-in-chief, reader,
- * [sectionRoles] are ordered by section position, [trusts] the levels that trust the account, [trustScopes] the trust
+ * [sectionRoles] are ordered by section position, [sectionlessReporter] is the marker "Redakteur (ohne Ressort)",
+ * [trusts] the levels that trust the account, [trustScopes] the trust
  * entries the user may set or clear on it (both ordered publisher, editor-in-chief, section editor by section
  * position), [allowedActions] what the user may do with it now (`EDIT_ROLES`, `RESET_PASSWORD`, `LOCK`, `UNLOCK`).
  */
@@ -320,6 +328,7 @@ data class AccountDto(
     val roles: List<String>,
     val enabled: Boolean,
     val sectionRoles: List<SectionRoleDto> = emptyList(),
+    val sectionlessReporter: Boolean = false,
     val trusts: List<TrustScopeDto> = emptyList(),
     val trustScopes: List<TrustScopeDto> = emptyList(),
     val allowedActions: List<String> = emptyList(),
@@ -350,18 +359,25 @@ data class SectionRoleDto(
     val role: String,
 )
 
-/** `GET /api/accounts`: all accounts and the roles the requesting user may assign. */
+/**
+ * `GET /api/accounts`: all accounts, the roles the requesting user may assign and whether they may assign the
+ * sectionless-reporter marker.
+ */
 @Serializable
 data class AccountListDto(
     val assignableRoles: List<String>,
     val accounts: List<AccountDto>,
+    val mayAssignSectionlessReporter: Boolean = false,
 )
 
 /** `GET /api/accounts/username-suggestion` */
 @Serializable
 data class UsernameSuggestionDto(val username: String)
 
-/** Request body of `POST /api/accounts`; [roles] may be empty when [sectionRoles] is not. */
+/**
+ * Request body of `POST /api/accounts`; [roles] may be empty when [sectionRoles] is not or [sectionlessReporter] is
+ * `true`. [sectionlessReporter] is left out when `null` (the user may not assign it).
+ */
 @Serializable
 data class CreateAccountRequest(
     val firstName: String,
@@ -369,13 +385,19 @@ data class CreateAccountRequest(
     val username: String,
     val roles: List<String>,
     val sectionRoles: List<SectionRoleDto> = emptyList(),
+    val sectionlessReporter: Boolean? = null,
 )
 
-/** Request body of `PUT /api/accounts/{id}/roles`: the complete roles; both lists are always sent. */
+/**
+ * Request body of `PUT /api/accounts/{id}/roles`: the complete roles; both lists are always sent, [sectionlessReporter]
+ * only when the user may change it (left out when `null`: the server keeps the marker, or sets it when the last
+ * section role goes).
+ */
 @Serializable
 data class EditRolesRequest(
     val roles: List<String>,
     val sectionRoles: List<SectionRoleDto>,
+    val sectionlessReporter: Boolean? = null,
 )
 
 /** Response of `POST /api/accounts`; [password] exists only in this response. */
@@ -389,7 +411,8 @@ data class CreatedAccountDto(
 
 /**
  * One section; [color] is a palette key (`red` … `pink`), [assignableRoles] the section roles the user may assign in it,
- * [canWrite] whether the user may write articles in it.
+ * [canWrite] whether the user may write articles in it, [articleCounts] how many articles it holds (writers only,
+ * `null` otherwise).
  */
 @Serializable
 data class SectionDto(
@@ -400,6 +423,26 @@ data class SectionDto(
     val position: Int,
     val assignableRoles: List<String>,
     val canWrite: Boolean = false,
+    val articleCounts: ArticleCountsDto? = null,
+)
+
+/**
+ * The articles of a section now: [live] published, [total] in any status, and per issue holding at least one of them
+ * ([issues], highest issue number first).
+ */
+@Serializable
+data class ArticleCountsDto(
+    val live: Int,
+    val total: Int,
+    val issues: List<IssueCountDto> = emptyList(),
+)
+
+/** The number of a section's articles in one issue. */
+@Serializable
+data class IssueCountDto(
+    val issueId: Long,
+    val number: Int,
+    val count: Int,
 )
 
 /** `GET /api/sections` and `PUT /api/sections/order`: [canManage] allows creating, changing and reordering sections. */

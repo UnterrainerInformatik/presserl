@@ -47,12 +47,13 @@ public final class TestSupport {
 
     /**
      * Deletes every article (a section with articles cannot be deleted) and every section, and with
-     * them every section role, so the dev users hold none.
+     * them every section role, and every sectionless-reporter marker, so the dev users hold none.
      */
     public static void deleteSections(DataSource dataSource) {
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
             statement.executeUpdate("DELETE FROM article");
             statement.executeUpdate("DELETE FROM section");
+            statement.executeUpdate("DELETE FROM sectionless_reporter");
         } catch (SQLException e) {
             throw new IllegalStateException(e);
         }

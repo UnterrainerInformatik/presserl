@@ -8,11 +8,13 @@ import static org.hamcrest.Matchers.emptyOrNullString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasItems;
+import static org.hamcrest.Matchers.nullValue;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Handler;
@@ -126,7 +128,47 @@ class SectionResourceTest {
         as(reader).get("/api/sections").then().statusCode(200)
                 .body("canManage", equalTo(false))
                 .body("sections.name", contains("Sport"))
-                .body("sections[0].assignableRoles", empty());
+                .body("sections[0].assignableRoles", empty())
+                .body("sections[0].articleCounts", nullValue());
+    }
+
+    @Test
+    void articleCounts() {
+        TestSupport.resetIssues(dataSource);
+        long sport = create(publisher, "Sport");
+        create(publisher, "Kultur");
+        long first = article(sport);
+        long second = article(sport);
+        long offline = article(sport);
+        article(sport);
+        for (long id : List.of(first, second, offline)) {
+            as(publisher).post("/api/articles/%d/publish".formatted(id)).then().statusCode(200);
+        }
+        as(publisher).post("/api/articles/%d/offline".formatted(offline)).then().statusCode(200);
+        try {
+            long issueOne = issueId(1);
+            long issueTwo = newIssue(2);
+            execute("UPDATE article SET issue_id = %d, issue_position = 0 WHERE id IN (%d, %d)"
+                    .formatted(issueTwo, first, second));
+            execute("UPDATE article SET issue_id = %d, issue_position = 0 WHERE id = %d".formatted(issueOne, offline));
+
+            as(publisher).get("/api/sections").then().statusCode(200)
+                    .body("sections[0].articleCounts.live", equalTo(2))
+                    .body("sections[0].articleCounts.total", equalTo(4))
+                    .body("sections[0].articleCounts.issues.issueId", contains((int) issueTwo, (int) issueOne))
+                    .body("sections[0].articleCounts.issues.number", contains(2, 1))
+                    .body("sections[0].articleCounts.issues.count", contains(2, 1))
+                    .body("sections[1].articleCounts.live", equalTo(0))
+                    .body("sections[1].articleCounts.total", equalTo(0))
+                    .body("sections[1].articleCounts.issues", empty());
+        } finally {
+            TestSupport.resetIssues(dataSource);
+        }
+    }
+
+    private long article(long section) {
+        return as(publisher).body("{\"headline\": \"Counted\", \"sectionId\": %d}".formatted(section))
+                .post("/api/articles").then().statusCode(201).extract().jsonPath().getLong("id");
     }
 
     @Test
@@ -377,6 +419,21 @@ class SectionResourceTest {
         as(publisher).delete("/api/sections/" + kultur).then().statusCode(204);
 
         assertThat(sectionRoleCount(accountId("reader"))).isZero();
+        assertThat(marked(accountId("reader"))).isTrue();
+    }
+
+    @Test
+    void deletingASectionKeepsNoMarkerForAnEditorInChiefOrAnotherMember() {
+        long kultur = create(publisher, "Kultur");
+        long sport = create(publisher, "Sport");
+        assign(publisher, kultur, "chief", "REPORTER").statusCode(200);
+        assign(publisher, kultur, "reader", "REPORTER").statusCode(200);
+        assign(publisher, sport, "reader", "REPORTER").statusCode(200);
+
+        as(publisher).delete("/api/sections/" + kultur).then().statusCode(204);
+
+        assertThat(marked(accountId("chief"))).isFalse();
+        assertThat(marked(accountId("reader"))).isFalse();
     }
 
     @Test
@@ -437,7 +494,8 @@ class SectionResourceTest {
                 .body("sectionRoles.sectionId", contains((int) sport))
                 .body("sectionRoles.sectionName", contains("Sport"))
                 .body("sectionRoles.role", contains("SECTION_EDITOR"))
-                .body("allowedActions", contains("WRITE_ARTICLES", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS"));
+                .body("allowedActions", contains("WRITE_ARTICLES", "USE_MEDIA", "ASSIGN_SECTION_ROLES",
+                        "ADMINISTER_ACCOUNTS"));
     }
 
     @Test
@@ -446,12 +504,13 @@ class SectionResourceTest {
         assign(publisher, sport, "nogroups", "REPORTER").statusCode(200);
 
         as(nogroups).get("/api/me").then().statusCode(200)
-                .body("allowedActions", contains("WRITE_ARTICLES"));
+                .body("allowedActions", contains("WRITE_ARTICLES", "USE_MEDIA"));
 
         assign(publisher, sport, "nogroups", "SECTION_EDITOR").statusCode(200);
 
         as(nogroups).get("/api/me").then().statusCode(200)
-                .body("allowedActions", contains("WRITE_ARTICLES", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS"));
+                .body("allowedActions", contains("WRITE_ARTICLES", "USE_MEDIA", "ASSIGN_SECTION_ROLES",
+                        "ADMINISTER_ACCOUNTS"));
     }
 
     @Test
@@ -513,6 +572,46 @@ class SectionResourceTest {
         as(publisher).delete(path).then().statusCode(204);
         as(publisher).delete(path).then().statusCode(404);
         as(publisher).get("/api/sections/%d/members".formatted(sport)).then().body("members", empty());
+        // the last section role went: reader becomes a sectionless reporter
+        assertThat(marked(accountId("reader"))).isTrue();
+        as(reader).get("/api/me").then().body("sectionlessReporter", equalTo(true))
+                .body("allowedActions", contains("USE_MEDIA"));
+    }
+
+    @Test
+    void removingOneOfTwoSectionsSetsNoMarker() {
+        long sport = create(publisher, "Sport");
+        long kultur = create(publisher, "Kultur");
+        assign(publisher, sport, "reader", "REPORTER").statusCode(200);
+        assign(publisher, kultur, "reader", "REPORTER").statusCode(200);
+
+        as(publisher).delete("/api/sections/%d/members/%s".formatted(sport, accountId("reader"))).then()
+                .statusCode(204);
+
+        assertThat(marked(accountId("reader"))).isFalse();
+    }
+
+    @Test
+    void sectionEditorRemovingTheLastSectionSetsTheMarker() {
+        long sport = create(publisher, "Sport");
+        assign(publisher, sport, "nogroups", "SECTION_EDITOR").statusCode(200);
+        assign(publisher, sport, "reader", "REPORTER").statusCode(200);
+
+        as(nogroups).delete("/api/sections/%d/members/%s".formatted(sport, accountId("reader"))).then()
+                .statusCode(204);
+
+        assertThat(marked(accountId("reader"))).isTrue();
+    }
+
+    @Test
+    void editorInChiefLosingTheOnlySectionRoleKeepsNoMarker() {
+        long sport = create(publisher, "Sport");
+        assign(publisher, sport, "chief", "REPORTER").statusCode(200);
+
+        as(publisher).delete("/api/sections/%d/members/%s".formatted(sport, accountId("chief"))).then()
+                .statusCode(204);
+
+        assertThat(marked(accountId("chief"))).isFalse();
     }
 
     @Test
@@ -581,6 +680,46 @@ class SectionResourceTest {
             public void close() {
             }
         };
+    }
+
+    private boolean marked(String accountId) {
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(
+                        "SELECT count(*) FROM sectionless_reporter WHERE account_id = ?")) {
+            statement.setString(1, accountId);
+            try (ResultSet result = statement.executeQuery()) {
+                result.next();
+                return result.getInt(1) > 0;
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private long issueId(int number) {
+        return single("SELECT id FROM issue WHERE number = " + number);
+    }
+
+    private long newIssue(int number) {
+        return single("INSERT INTO issue (number) VALUES (%d) RETURNING id".formatted(number));
+    }
+
+    private long single(String sql) {
+        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
+                ResultSet result = statement.executeQuery(sql)) {
+            result.next();
+            return result.getLong(1);
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private void execute(String sql) {
+        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+            statement.executeUpdate(sql);
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private int sectionRoleCount(String accountId) {

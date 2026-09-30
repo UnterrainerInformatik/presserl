@@ -42,7 +42,7 @@ class AccountServiceTest {
     private static final CurrentUser PUBLISHER = new CurrentUser("sub", "publisher", "Publisher",
             List.of(NewspaperRole.PUBLISHER));
     private static final CreateAccountRequest LENA = new CreateAccountRequest("Lena", "", "lena",
-            List.of(NewspaperRole.EDITOR_IN_CHIEF), List.of());
+            List.of(NewspaperRole.EDITOR_IN_CHIEF), List.of(), false);
 
     private final List<String> deleted = new ArrayList<>();
 
@@ -76,12 +76,13 @@ class AccountServiceTest {
             }
 
             @Override
-            public Uni<Void> insert(String accountId, List<SectionRoleDto> roles, String assignedBy) {
+            public Uni<Void> insert(String accountId, List<SectionRoleDto> roles, boolean sectionlessReporter,
+                    String assignedBy) {
                 return Uni.createFrom().failure(new IllegalStateException("database down"));
             }
         };
         CreateAccountRequest max = new CreateAccountRequest("Max", "", "max", List.of(),
-                List.of(new SectionRoleDto(7L, SectionRole.REPORTER)));
+                List.of(new SectionRoleDto(7L, SectionRole.REPORTER)), false);
 
         assertThatThrownBy(() -> creation.create(new Newsroom(PUBLISHER, Map.of()), max).await().indefinitely())
                 .hasMessageContaining("database down");
@@ -106,14 +107,15 @@ class AccountServiceTest {
             }
 
             @Override
-            public Uni<Void> replace(String accountId, List<SectionRoleDto> requested, String assignedBy) {
+            public Uni<Void> replace(String accountId, List<SectionRoleDto> requested, boolean sectionRoles,
+                    Boolean sectionlessReporter, String assignedBy) {
                 return Uni.createFrom().failure(new IllegalStateException("database down"));
             }
         };
         AccountDto reader = new AccountDto("id-6", "reader", "Reader", "", List.of(NewspaperRole.READER), List.of(),
-                true, List.of(), List.of(), List.of());
+                false, true, List.of(), List.of(), List.of());
         EditRolesRequest request = new EditRolesRequest(List.of(NewspaperRole.EDITOR_IN_CHIEF),
-                List.of(new SectionRoleDto(7L, SectionRole.REPORTER)));
+                List.of(new SectionRoleDto(7L, SectionRole.REPORTER)), null);
 
         assertThatThrownBy(() -> edit.edit(new Newsroom(PUBLISHER, Map.of()), reader, request).await().indefinitely())
                 .isInstanceOfSatisfying(AccountException.class,
@@ -221,7 +223,7 @@ class AccountServiceTest {
         AccountService service = service(stub(RealmResource.class, Map.of()));
         CurrentUser chief = new CurrentUser("sub", "chief", "Chief", List.of(NewspaperRole.EDITOR_IN_CHIEF));
         CreateAccountRequest boss = new CreateAccountRequest("Boss", "", "boss", List.of(NewspaperRole.PUBLISHER),
-                List.of());
+                List.of(), false);
 
         assertThatThrownBy(() -> service.create(chief, boss)).isInstanceOfSatisfying(AccountException.class, e -> {
             assertThat(e.status()).isEqualTo(Status.FORBIDDEN);
@@ -232,8 +234,8 @@ class AccountServiceTest {
     @Test
     void createdAccountHidesThePasswordInToString() {
         CreatedAccountDto created = new CreatedAccountDto(
-                new AccountDto("id", "lena", "Lena", "", List.of(NewspaperRole.READER), List.of(), true, List.of(), List.of(),
-                        List.of()), "tiger-wolke-apfel-leiter");
+                new AccountDto("id", "lena", "Lena", "", List.of(NewspaperRole.READER), List.of(), false, true, List.of(),
+                        List.of(), List.of()), "tiger-wolke-apfel-leiter");
 
         assertThat(created.toString()).contains("lena").doesNotContain("tiger");
     }

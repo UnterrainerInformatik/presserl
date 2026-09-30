@@ -195,7 +195,8 @@ sealed interface EditorIntent {
 
     /** Replaces the image of an image block; its caption is kept. Its own undo step. */
     data class SetBlockImage(val blockId: Long, val mediaId: Long) : EditorIntent
-    data class SetImageCaption(val blockId: Long, val value: String) : EditorIntent
+    /** [ownStep]: a chosen spell-check suggestion, recorded as its own undo step instead of joining the typing. */
+    data class SetImageCaption(val blockId: Long, val value: String, val ownStep: Boolean = false) : EditorIntent
     data class MoveBlock(val blockId: Long, val delta: Int) : EditorIntent
     data class RemoveBlock(val blockId: Long) : EditorIntent
     data class AddListItem(val blockId: Long, val afterItemId: Long) : EditorIntent
@@ -279,7 +280,7 @@ class EditorModel(
                 change(draft.mapBlock(intent.blockId) { (it as? EditorBlock.Image)?.copy(mediaId = intent.mediaId) ?: it })
             is EditorIntent.SetImageCaption -> change(
                 draft.mapBlock(intent.blockId) { (it as? EditorBlock.Image)?.copy(caption = singleLine(intent.value, CAPTION_MAX)) ?: it },
-                typing = CAPTION_KEY to intent.blockId,
+                typing = (CAPTION_KEY to intent.blockId).unless(intent.ownStep),
             )
             is EditorIntent.MoveBlock -> {
                 val from = draft.indexOf(intent.blockId)

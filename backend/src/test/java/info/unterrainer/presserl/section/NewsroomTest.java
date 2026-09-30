@@ -97,16 +97,16 @@ class NewsroomTest {
     @Test
     void publisherMayDoEverything() {
         assertThat(newsroom(Map.of(), NewspaperRole.PUBLISHER).allowedActions()).containsExactly(
-                NewspaperAction.WRITE_ARTICLES, NewspaperAction.MANAGE_SECTIONS,
+                NewspaperAction.WRITE_ARTICLES, NewspaperAction.USE_MEDIA, NewspaperAction.MANAGE_SECTIONS,
                 NewspaperAction.ASSIGN_SECTION_ROLES, NewspaperAction.MANAGE_ISSUES,
                 NewspaperAction.ADMINISTER_ACCOUNTS, NewspaperAction.CONFIGURE_NEWSPAPER,
-                NewspaperAction.CONFIGURE_SPELL_CHECK);
+                NewspaperAction.CONFIGURE_SPELL_CHECK, NewspaperAction.CONFIGURE_CORRECTIONS);
     }
 
     @Test
     void editorInChiefMayDoEverythingButChooseTheSpellCheckHelp() {
         assertThat(newsroom(Map.of(), NewspaperRole.EDITOR_IN_CHIEF).allowedActions()).containsExactly(
-                NewspaperAction.WRITE_ARTICLES, NewspaperAction.MANAGE_SECTIONS,
+                NewspaperAction.WRITE_ARTICLES, NewspaperAction.USE_MEDIA, NewspaperAction.MANAGE_SECTIONS,
                 NewspaperAction.ASSIGN_SECTION_ROLES, NewspaperAction.MANAGE_ISSUES,
                 NewspaperAction.ADMINISTER_ACCOUNTS, NewspaperAction.CONFIGURE_NEWSPAPER);
     }
@@ -124,20 +124,29 @@ class NewsroomTest {
     @Test
     void reporterMayOnlyWrite() {
         assertThat(newsroom(Map.of(1L, SectionRole.REPORTER)).allowedActions())
-                .containsExactly(NewspaperAction.WRITE_ARTICLES);
+                .containsExactly(NewspaperAction.WRITE_ARTICLES, NewspaperAction.USE_MEDIA);
+    }
+
+    @Test
+    void sectionlessReporterUsesMediaOnly() {
+        Newsroom marked = new Newsroom(new CurrentUser("sub", "pia", "Pia", List.of()), Map.of(), true);
+        assertThat(marked.allowedActions()).containsExactly(NewspaperAction.USE_MEDIA);
+        assertThat(marked.isWriter()).isFalse();
+        assertThat(marked.mayUseMedia()).isTrue();
     }
 
     @Test
     void sectionEditorMayWriteAssignAndAdministerAccounts() {
         assertThat(newsroom(Map.of(1L, SectionRole.SECTION_EDITOR)).allowedActions()).containsExactly(
-                NewspaperAction.WRITE_ARTICLES, NewspaperAction.ASSIGN_SECTION_ROLES,
+                NewspaperAction.WRITE_ARTICLES, NewspaperAction.USE_MEDIA, NewspaperAction.ASSIGN_SECTION_ROLES,
                 NewspaperAction.ADMINISTER_ACCOUNTS);
     }
 
     @Test
     void reporterInOneSectionAndSectionEditorInAnother() {
         assertThat(newsroom(Map.of(1L, SectionRole.REPORTER, 2L, SectionRole.SECTION_EDITOR)).allowedActions())
-                .containsExactly(NewspaperAction.WRITE_ARTICLES, NewspaperAction.ASSIGN_SECTION_ROLES,
+                .containsExactly(NewspaperAction.WRITE_ARTICLES, NewspaperAction.USE_MEDIA,
+                        NewspaperAction.ASSIGN_SECTION_ROLES,
                         NewspaperAction.ADMINISTER_ACCOUNTS);
     }
 

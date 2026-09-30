@@ -8,6 +8,7 @@ import org.hibernate.type.SqlTypes;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import info.unterrainer.presserl.auth.CurrentUser;
 import io.quarkus.hibernate.reactive.panache.PanacheEntityBase;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -16,8 +17,9 @@ import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
 
 /**
- * One numbered revision of an article. The latest revision is overwritten by saves until it has
- * been published.
+ * One numbered revision of an article. The latest revision is overwritten by saves of its own author
+ * until it has been published. The author is identified by the token subject; username and display
+ * name are snapshots taken when the revision was created.
  */
 @Entity
 @Table(name = "article_revision")
@@ -62,6 +64,15 @@ public class ArticleRevisionEntity extends PanacheEntityBase {
     @Column(name = "lead_image_caption", columnDefinition = "text", nullable = false)
     public String leadImageCaption = "";
 
+    @Column(name = "author_sub", columnDefinition = "text", nullable = false)
+    public String authorSub;
+
+    @Column(name = "author_username", columnDefinition = "text", nullable = false)
+    public String authorUsername;
+
+    @Column(name = "author_display_name", columnDefinition = "text", nullable = false)
+    public String authorDisplayName;
+
     @Column(name = "created_at", nullable = false)
     public Instant createdAt;
 
@@ -89,6 +100,15 @@ public class ArticleRevisionEntity extends PanacheEntityBase {
      */
     public ArticleContent.LeadImage leadImage() {
         return leadImageMediaId == null ? null : new ArticleContent.LeadImage(leadImageMediaId, leadImageCaption);
+    }
+
+    /**
+     * Records the user as the revision's author.
+     */
+    void writtenBy(CurrentUser user) {
+        authorSub = user.sub();
+        authorUsername = user.username();
+        authorDisplayName = user.displayName();
     }
 
     void apply(ArticleContent content) {

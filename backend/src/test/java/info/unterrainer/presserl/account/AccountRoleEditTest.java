@@ -33,8 +33,8 @@ class AccountRoleEditTest {
             Map.of(SPORT, SectionRole.SECTION_EDITOR));
 
     private static final AccountDto SPORT_REPORTER = new AccountDto("rep", "rep", "Rep", "",
-            List.of(NewspaperRole.READER), List.of(sectionRole(SPORT, SectionRole.REPORTER)), true, List.of(), List.of(),
-            List.of());
+            List.of(NewspaperRole.READER), List.of(sectionRole(SPORT, SectionRole.REPORTER)), false, true, List.of(),
+            List.of(), List.of());
 
     @Test
     void sectionEditorKeepsUnchangedReaderRole() {
@@ -65,6 +65,63 @@ class AccountRoleEditTest {
 
         assertThat(change.sectionRoles()).isEmpty();
         assertThat(change.isEmpty()).isFalse();
+        // the last section role goes without the field: the account becomes a sectionless reporter
+        assertThat(change.marker()).isTrue();
+        assertThat(change.markerChanged()).isTrue();
+        assertThat(change.automaticMarker()).isTrue();
+    }
+
+    @Test
+    void explicitFalseRemovesEveryWritingRight() {
+        AccountRoleEdit.Change change = AccountRoleEdit.check(PUBLISHER, SPORT_REPORTER,
+                markerRequest(List.of(NewspaperRole.READER), false), SECTIONS);
+
+        assertThat(change.marker()).isFalse();
+        assertThat(change.markerChanged()).isFalse();
+        assertThat(change.automaticMarker()).isFalse();
+    }
+
+    @Test
+    void editorInChiefKeepsNoMarker() {
+        AccountRoleEdit.Change change = AccountRoleEdit.check(PUBLISHER, SPORT_REPORTER,
+                request(List.of(NewspaperRole.EDITOR_IN_CHIEF)), SECTIONS);
+
+        assertThat(change.marker()).isFalse();
+        assertThat(change.automaticMarker()).isFalse();
+    }
+
+    @Test
+    void markerAloneIsARole() {
+        AccountRoleEdit.Change change = AccountRoleEdit.check(PUBLISHER, SPORT_REPORTER,
+                markerRequest(List.of(), true), SECTIONS);
+
+        assertThat(change.marker()).isTrue();
+        assertThat(change.markerChanged()).isTrue();
+        assertThat(change.removed()).containsExactly(NewspaperRole.READER);
+    }
+
+    @Test
+    void noRoleAndNoMarkerLeft() {
+        assertThatThrownBy(() -> AccountRoleEdit.check(PUBLISHER, SPORT_REPORTER, markerRequest(List.of(), false),
+                SECTIONS)).isInstanceOfSatisfying(AccountException.class, e -> {
+                    assertThat(e.status()).isEqualTo(Status.BAD_REQUEST);
+                    assertThat(e.errors()).extracting(FieldError::field).containsExactly("roles");
+                });
+    }
+
+    @Test
+    void sectionEditorMayNotAssignTheMarker() {
+        assertRefused(SPORT_EDITOR, new EditRolesRequest(List.of(NewspaperRole.READER),
+                List.of(sectionRole(SPORT, SectionRole.REPORTER)), true), "sectionlessReporter");
+    }
+
+    @Test
+    void sectionEditorSendingTheUnchangedMarkerIsNoChange() {
+        AccountRoleEdit.Change change = AccountRoleEdit.check(SPORT_EDITOR, SPORT_REPORTER,
+                new EditRolesRequest(List.of(NewspaperRole.READER), List.of(sectionRole(SPORT, SectionRole.REPORTER)),
+                        false), SECTIONS);
+
+        assertThat(change.isEmpty()).isTrue();
     }
 
     @Test
@@ -120,7 +177,14 @@ class AccountRoleEditTest {
     }
 
     private static EditRolesRequest request(List<NewspaperRole> roles, SectionRoleDto... sectionRoles) {
-        return new EditRolesRequest(roles, List.of(sectionRoles));
+        return new EditRolesRequest(roles, List.of(sectionRoles), null);
+    }
+
+    /**
+     * No section roles, the marker as given.
+     */
+    private static EditRolesRequest markerRequest(List<NewspaperRole> roles, boolean marker) {
+        return new EditRolesRequest(roles, List.of(), marker);
     }
 
     private static SectionRoleDto sectionRole(long section, SectionRole role) {

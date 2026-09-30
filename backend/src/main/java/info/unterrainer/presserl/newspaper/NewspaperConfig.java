@@ -2,6 +2,7 @@ package info.unterrainer.presserl.newspaper;
 
 import java.util.Optional;
 
+import info.unterrainer.presserl.newspaper.SettingValueConverter.CorrectionsConverter;
 import info.unterrainer.presserl.newspaper.SettingValueConverter.EditorLevelConverter;
 import info.unterrainer.presserl.newspaper.SettingValueConverter.SpellCheckHelpConverter;
 import info.unterrainer.presserl.newspaper.SettingValueConverter.TextSizeConverter;
@@ -32,6 +33,8 @@ public interface NewspaperConfig {
 
     @WithName("spell-check")
     SpellCheck spellCheck();
+
+    Article article();
 
     interface Newspaper {
 
@@ -79,5 +82,16 @@ public interface NewspaperConfig {
         @WithDefault("suggestions")
         @WithConverter(SpellCheckHelpConverter.class)
         SpellCheckHelp help();
+    }
+
+    interface Article {
+
+        /**
+         * Whether higher levels may correct the articles of those below them; {@code true} or
+         * {@code false} only.
+         */
+        @WithDefault("true")
+        @WithConverter(CorrectionsConverter.class)
+        Boolean corrections();
     }
 }

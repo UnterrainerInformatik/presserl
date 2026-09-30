@@ -1,6 +1,7 @@
 package info.unterrainer.presserl.admin
 
 import info.unterrainer.presserl.admin.api.SpellMatchDto
+import info.unterrainer.presserl.admin.ui.editor.imageCaptionKey
 import info.unterrainer.presserl.admin.ui.spell.SpellChecker
 import info.unterrainer.presserl.admin.ui.spell.SpellFinding
 import kotlinx.coroutines.CompletableDeferred
@@ -50,6 +51,23 @@ class SpellCheckerTest {
 
         assertEquals(listOf("Der Hund ist gros"), sent)
         assertEquals(listOf(SpellFinding(13, 17, "gros", "Tippfehler", listOf("groß"))), checker.findings("headline", "Der Hund ist gros"))
+    }
+
+    @Test
+    fun imageBlockCaptionsAreCheckedIndependently() = runTest {
+        val checker = checker()
+        val first = imageCaptionKey(7)
+        val second = imageCaptionKey(8)
+        checker.changed(first, "Unser gros Foto")
+        checker.changed(second, "Unser Foto")
+        checker.changed("caption", "Titelbild")
+        advanceTimeBy(1_001)
+        runCurrent()
+
+        assertEquals(setOf("Unser gros Foto", "Unser Foto", "Titelbild"), sent.toSet())
+        assertEquals(1, checker.findings(first, "Unser gros Foto").size)
+        assertEquals(emptyList(), checker.findings(second, "Unser Foto"))
+        assertEquals(emptyList(), checker.findings("caption", "Titelbild"))
     }
 
     @Test

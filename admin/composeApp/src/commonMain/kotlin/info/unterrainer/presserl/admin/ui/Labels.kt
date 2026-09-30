@@ -17,6 +17,7 @@ import info.unterrainer.presserl.admin.resources.role_publisher
 import info.unterrainer.presserl.admin.resources.role_reader
 import info.unterrainer.presserl.admin.resources.role_reporter
 import info.unterrainer.presserl.admin.resources.role_section_editor
+import info.unterrainer.presserl.admin.resources.role_sectionless_reporter
 import info.unterrainer.presserl.admin.resources.status_draft
 import info.unterrainer.presserl.admin.resources.status_offline
 import info.unterrainer.presserl.admin.resources.status_published
@@ -32,6 +33,9 @@ fun roleLabel(role: String): StringResource? = when (role) {
     "READER" -> Res.string.role_reader
     else -> null
 }
+
+/** Label of the sectionless-reporter marker of `GET /api/me` and the account list. */
+val sectionlessReporterLabel: StringResource get() = Res.string.role_sectionless_reporter
 
 /** Label of a section role; `null` for a role this app does not know. */
 fun sectionRoleLabel(role: String): StringResource? = when (role) {

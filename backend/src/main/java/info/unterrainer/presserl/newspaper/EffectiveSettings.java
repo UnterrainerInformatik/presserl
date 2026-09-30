@@ -23,6 +23,7 @@ public record EffectiveSettings(
         TextSize readerTextSize,
         String mediaMaxSize,
         SpellCheckHelp spellCheckHelp,
+        boolean articleCorrections,
         Set<String> overridden) {
 
     public static final String VISIBILITY = "visibility";
@@ -32,6 +33,7 @@ public record EffectiveSettings(
     public static final String READER_TEXT_SIZE = "reader.text-size";
     public static final String MEDIA_MAX_SIZE = "media.max-size";
     public static final String SPELL_CHECK_HELP = "spell-check.help";
+    public static final String ARTICLE_CORRECTIONS = "article.corrections";
 
     private static final Logger LOG = Logger.getLogger(EffectiveSettings.class);
 
@@ -61,6 +63,7 @@ public record EffectiveSettings(
                 mediaMaxSize,
                 override(overrides, SPELL_CHECK_HELP, SpellCheckHelp.class, overridden)
                         .orElse(config.spellCheck().help()),
+                booleanOverride(overrides, ARTICLE_CORRECTIONS, overridden).orElse(config.article().corrections()),
                 overridden);
     }
 
@@ -75,6 +78,7 @@ public record EffectiveSettings(
         map.put(READER_TEXT_SIZE, readerTextSize.value());
         map.put(MEDIA_MAX_SIZE, mediaMaxSize);
         map.put(SPELL_CHECK_HELP, spellCheckHelp.value());
+        map.put(ARTICLE_CORRECTIONS, articleCorrections);
         return map;
     }
 

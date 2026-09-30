@@ -17,7 +17,8 @@ Hierarchy: **Publisher > Editor-in-chief > Section editor > Reporter > Reader.**
 - **Several people per role.** Two publishers (both parents), two editors-in-chief, several section editors per section are all fine.
 - **Several roles per person.** A person can hold roles on several levels; for an article, the highest role the author holds *in the article's section* counts.
 - **Delegation.** Everyone from section editor up may create accounts and assign roles **at or below their own level, within their own scope** — a section editor assigns section editors and reporters only in their own sections and no newspaper-wide roles. Reporters and readers do not delegate. There is no confirmation step; publishers see every account and can lock it — except other publishers and their own.
-- **Implementation split.** Newspaper-wide roles (`PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`) are Keycloak groups and end up in the token. Per-section roles (`SECTION_EDITOR`, `REPORTER`) and trust switches live in the Presserl database. The backend manages Keycloak users and groups through a service account, so nobody needs the Keycloak admin console.
+- **Reporter without a section** ("Redakteur (ohne Ressort)", `sectionlessReporter`): a newspaper-wide marker for someone who only takes photos — they upload and edit their own images in the **Images** view but write no articles, and the admin app opens with the images. It is stored in the Presserl database (acts at once, no Keycloak change) and counts as a role. Editors-in-chief and publishers assign and remove it. An account that loses its last section role (removed from its last section, the section deleted, or roles edited without the marker) and holds neither publisher nor editor-in-chief gets it automatically, so a child who drops out of every section can keep taking photos; an editor-in-chief can clear it again.
+- **Implementation split.** Newspaper-wide roles (`PUBLISHER`, `EDITOR_IN_CHIEF`, `READER`) are Keycloak groups and end up in the token. Per-section roles (`SECTION_EDITOR`, `REPORTER`), the sectionless-reporter marker and trust switches live in the Presserl database. The backend manages Keycloak users and groups through a service account, so nobody needs the Keycloak admin console.
 
 ## Accounts
 
@@ -31,7 +32,7 @@ Hierarchy: **Publisher > Editor-in-chief > Section editor > Reporter > Reader.**
 
 ## Images
 
-Every writer (publisher, editor-in-chief or any section role) sees every image of the newspaper in the admin app's **Images** view: who uploaded it when and which articles use it (live, in the current working version or only in older versions). An image can be **cropped** and areas of it **pixelated** (faces, name tags, number plates). The edit replaces the image under the same id in every article at once and cannot be undone.
+Every writer (publisher, editor-in-chief or any section role) and every reporter without a section sees every image of the newspaper in the admin app's **Images** view: who uploaded it when and which articles use it (live, in the current working version or only in older versions). An image can be **cropped** and areas of it **pixelated** (faces, name tags, number plates). The edit replaces the image under the same id in every article at once and cannot be undone.
 
 - **Publishers and editors-in-chief** may edit every image, also one that is live.
 - **The uploader** may edit their own image only while no article shows it live and no article waiting for approval uses it — otherwise the change would pass the approval chain. Everyone else may not edit it.
@@ -47,7 +48,7 @@ States: `DRAFT → (SUBMITTED →) PUBLISHED ⇄ OFFLINE`. Every pending submiss
 
 ![Approval chain](diagrams/review-decision.svg)
 
-Levels, bottom to top: **section editor (of the article's section) → editor-in-chief → publisher.** For an article by author *A* in section *S*:
+Levels, bottom to top: **section editor (of the article's section) → editor-in-chief → publisher.** The chain of an article is worked out for each of its **contributors** — everyone who wrote one of its revisions that are not live yet (usually just the author *A*; a corrector joins, see *Corrections* below) — and the levels of all contributors together form the chain. For one contributor *A* in section *S*:
 
 1. Start at the level directly above *A*'s highest role in *S*.
 2. A level is **skipped** when
@@ -67,6 +68,14 @@ While a submission is pending, the article's content and section are **frozen**;
 - **Any holder** of the level may clear a trust, whoever set it. Changing someone's roles does not remove their trust; stale entries stay visible in the account list and can be cleared. Deleting a section removes its trust entries.
 - Setting trust does not move pending submissions (see step 3).
 - *Limitation:* an editor-in-chief who is also the only section editor of a section cannot trust for the section-editor level there (own highest level only), so reporters there always wait for that level. Their editor-in-chief approval settles it anyway, and their editor-in-chief trust skips the next level.
+
+**Corrections by higher levels.** Instead of rejecting with a note, a higher level may correct an article itself: a section editor of the article's section, an editor-in-chief or a publisher, when their level lies above the author's. This works while the article waits for approval (if their level reaches the level it waits for) and on published or offline articles — never on drafts, which stay the author's. Rules:
+
+- A correction always starts a new revision under the corrector's name; the byline stays the author's. The author sees "last changed by …" and can open the changes word by word.
+- A correction is **not an approval**: the corrector approves afterwards, and the corrector's own levels join the chain — trust in the author does not skip them. A corrector may submit or publish their own correction of a published article.
+- A correction keeps the article's section. Correctors never delete or withdraw.
+- Two people saving at once: the second save (or an approval of a version that was changed meanwhile) is refused and the app offers to reload.
+- Publishers can switch corrections off for the newspaper (see *Overrides*).
 
 Consequences:
 
@@ -107,5 +116,6 @@ Issues are assembled by **editors-in-chief and publishers** (`MANAGE_ISSUES`); s
 | Key | Default | Alternatives | Effect |
 |---|---|---|---|
 | `presserl.retract.author-can-retract` | `true` | `false` | whether reporters may take their own articles offline |
+| `presserl.article.corrections` (`PRESSERL_ARTICLE_CORRECTIONS`) | `true` | `false` | whether higher levels may correct the articles of those below them; per newspaper by publishers only (admin app, *Newspaper*) |
 
 Can be set per deployment and per newspaper (see [architecture.md](architecture.md#configuration)). Approval itself is not configured by keys but by roles and trust.

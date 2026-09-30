@@ -41,6 +41,19 @@ public final class SettingValueConverter {
                 .collect(Collectors.joining(", "));
     }
 
+    /**
+     * A strict boolean: {@code true} or {@code false} (ignoring case), unlike the lenient default
+     * converter, which reads every unknown value as {@code false}.
+     */
+    static boolean convertBoolean(String property, String raw) {
+        String value = raw == null ? "" : raw.trim();
+        if (value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false")) {
+            return Boolean.parseBoolean(value);
+        }
+        throw new IllegalArgumentException("Invalid value '%s' for %s (%s). Allowed values: true, false".formatted(
+                value, envName(property), property));
+    }
+
     public static class VisibilityConverter implements Converter<Visibility> {
         @Override
         public Visibility convert(String raw) {
@@ -66,6 +79,13 @@ public final class SettingValueConverter {
         @Override
         public SpellCheckHelp convert(String raw) {
             return SettingValueConverter.convert(SpellCheckHelp.class, "presserl.spell-check.help", raw);
+        }
+    }
+
+    public static class CorrectionsConverter implements Converter<Boolean> {
+        @Override
+        public Boolean convert(String raw) {
+            return SettingValueConverter.convertBoolean("presserl.article.corrections", raw);
         }
     }
 }

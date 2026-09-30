@@ -362,6 +362,18 @@ class MediaEditResourceTest {
     // --- who may edit
 
     @Test
+    void sectionlessReporterEditsTheirUnusedUpload() {
+        String id = keycloak.realm(keycloakRealm.name()).users().searchByUsername("nogroups", true).getFirst().getId();
+        sql("DELETE FROM section_role WHERE account_id = '%s'".formatted(id));
+        sql("INSERT INTO sectionless_reporter (account_id, assigned_by, assigned_at) VALUES ('%s', 'test', now())"
+                .formatted(id));
+        long media = upload(anna);
+
+        edit(anna, media, pixelate(0)).statusCode(200).body("version", equalTo(1));
+        edit(anna, upload(publisher), pixelate(0)).statusCode(403);
+    }
+
+    @Test
     void reporterEditsTheirDraftImage() {
         long media = upload(anna);
         article(anna, pets, "Minka", media);

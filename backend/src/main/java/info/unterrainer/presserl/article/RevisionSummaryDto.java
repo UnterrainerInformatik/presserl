@@ -5,11 +5,11 @@ import java.time.Instant;
 /**
  * Entry of {@code GET /api/articles/{id}/revisions}; {@code live} marks the article's live revision.
  */
-public record RevisionSummaryDto(int number, String headline, Instant createdAt, Instant updatedAt,
+public record RevisionSummaryDto(int number, String headline, AuthorDto author, Instant createdAt, Instant updatedAt,
         Instant publishedAt, boolean live) {
 
     public static RevisionSummaryDto of(ArticleEntity article, ArticleRevisionEntity r) {
-        return new RevisionSummaryDto(r.number, r.headline, r.createdAt, r.updatedAt, r.publishedAt,
+        return new RevisionSummaryDto(r.number, r.headline, AuthorDto.of(r), r.createdAt, r.updatedAt, r.publishedAt,
                 r.number.equals(article.liveRevision));
     }
 }

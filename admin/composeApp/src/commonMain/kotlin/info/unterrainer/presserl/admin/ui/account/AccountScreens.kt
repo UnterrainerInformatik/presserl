@@ -101,6 +101,7 @@ import info.unterrainer.presserl.admin.ui.attempt
 import info.unterrainer.presserl.admin.ui.roleText
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
 import info.unterrainer.presserl.admin.ui.sectionRoleText
+import info.unterrainer.presserl.admin.ui.sectionlessReporterLabel
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.floor
 
@@ -110,8 +111,13 @@ private data class AccountsView(val accounts: AccountListDto, val sections: List
 @Composable
 fun AccountListScreen(
     api: ApiClient,
-    onNew: (assignableRoles: List<String>, sections: List<SectionDto>) -> Unit,
-    onEditRoles: (account: AccountDto, assignableRoles: List<String>, sections: List<SectionDto>) -> Unit,
+    onNew: (assignableRoles: List<String>, sections: List<SectionDto>, mayAssignSectionlessReporter: Boolean) -> Unit,
+    onEditRoles: (
+        account: AccountDto,
+        assignableRoles: List<String>,
+        sections: List<SectionDto>,
+        mayAssignSectionlessReporter: Boolean,
+    ) -> Unit,
     onReset: (CreatedAccountDto) -> Unit,
 ) {
     var view by remember { mutableStateOf<AccountsView?>(null) }
@@ -126,9 +132,15 @@ fun AccountListScreen(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val current = view
         val canCreate = current != null &&
-            (current.accounts.assignableRoles.isNotEmpty() || current.sections.any { it.assignableRoles.isNotEmpty() })
+            (current.accounts.assignableRoles.isNotEmpty() || current.sections.any { it.assignableRoles.isNotEmpty() } ||
+                current.accounts.mayAssignSectionlessReporter)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Button(enabled = canCreate, onClick = { current?.let { onNew(it.accounts.assignableRoles, it.sections) } }) {
+            Button(
+                enabled = canCreate,
+                onClick = {
+                    current?.let { onNew(it.accounts.assignableRoles, it.sections, it.accounts.mayAssignSectionlessReporter) }
+                },
+            ) {
                 Text(stringResource(Res.string.new_account))
             }
         }
@@ -136,7 +148,14 @@ fun AccountListScreen(
             error != null -> LoadFailed(error!!, onReload = { loads++ })
             current == null -> Text(stringResource(Res.string.loading))
             else -> key(current) {
-                AccountList(api, current, onEditRoles = { onEditRoles(it, current.accounts.assignableRoles, current.sections) }, onReset)
+                AccountList(
+                    api,
+                    current,
+                    onEditRoles = {
+                        onEditRoles(it, current.accounts.assignableRoles, current.sections, current.accounts.mayAssignSectionlessReporter)
+                    },
+                    onReset,
+                )
             }
         }
     }
@@ -244,6 +263,7 @@ private fun AccountRow(
         val title = listOfNotNull(account.username, stringResource(Res.string.account_locked).takeIf { !account.enabled })
         Text(title.joinToString(" · "), style = MaterialTheme.typography.titleMedium)
         val roles = account.roles.map { roleText(it) } +
+            (if (account.sectionlessReporter) listOf(stringResource(sectionlessReporterLabel)) else emptyList()) +
             account.sectionRoles.map { sectionRoleText(it.role) + " · " + (sectionNames[it.sectionId] ?: "#${it.sectionId}") }
         val details = listOf(
             listOf(account.firstName, account.lastName).filter { it.isNotEmpty() }.joinToString(" "),
@@ -290,12 +310,20 @@ fun NewAccountScreen(
     api: ApiClient,
     assignableRoles: List<String>,
     sections: List<SectionDto>,
+    mayAssignSectionlessReporter: Boolean,
     onBack: () -> Unit,
     onCreated: (CreatedAccountDto) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val model = remember(assignableRoles, sections) {
-        NewAccountModel(scope, assignableRoles, sections, api::usernameSuggestion, api::createAccount)
+    val model = remember(assignableRoles, sections, mayAssignSectionlessReporter) {
+        NewAccountModel(
+            scope,
+            assignableRoles,
+            sections,
+            api::usernameSuggestion,
+            api::createAccount,
+            mayAssignSectionlessReporter = mayAssignSectionlessReporter,
+        )
     }
     val state by model.state.collectAsState()
 
@@ -312,7 +340,9 @@ fun NewAccountScreen(
             state.errors[AccountField.USERNAME],
             hint = stringResource(Res.string.username_hint),
         )
-        if (model.assignableRoles.isNotEmpty()) Text(stringResource(Res.string.field_roles), style = MaterialTheme.typography.titleSmall)
+        if (model.assignableRoles.isNotEmpty() || model.mayAssignSectionlessReporter) {
+            Text(stringResource(Res.string.field_roles), style = MaterialTheme.typography.titleSmall)
+        }
         model.assignableRoles.forEach { role ->
             val selected = role in state.roles
             Row(
@@ -323,7 +353,15 @@ fun NewAccountScreen(
                 Text(roleText(role), Modifier.padding(start = 8.dp))
             }
         }
+        if (model.mayAssignSectionlessReporter) {
+            RoleCheckbox(stringResource(sectionlessReporterLabel), state.sectionlessReporter, editable = true) {
+                model.sectionlessReporter(it)
+            }
+        }
         state.errors[AccountField.ROLES]?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        state.errors[AccountField.SECTIONLESS_REPORTER]?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
         if (model.sections.isNotEmpty()) Text(stringResource(Res.string.field_section_roles), style = MaterialTheme.typography.titleSmall)
         model.sections.forEach { section ->
             SectionRoleRow(section, state.sectionRoles[section.id]) { model.sectionRole(section.id, it) }
@@ -343,13 +381,17 @@ fun EditRolesScreen(
     account: AccountDto,
     assignableRoles: List<String>,
     sections: List<SectionDto>,
+    mayAssignSectionlessReporter: Boolean,
     onBack: () -> Unit,
     onSaved: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val model = remember(account, assignableRoles, sections) { EditRolesModel(scope, account, assignableRoles, sections, api::editRoles) }
+    val model = remember(account, assignableRoles, sections, mayAssignSectionlessReporter) {
+        EditRolesModel(scope, account, assignableRoles, sections, mayAssignSectionlessReporter, save = api::editRoles)
+    }
     val state by model.state.collectAsState()
-    val readOnly = model.roleChoices.any { !it.editable } || model.sectionChoices.any { !it.editable }
+    val readOnly = model.roleChoices.any { !it.editable } || model.sectionChoices.any { !it.editable } ||
+        !model.mayAssignSectionlessReporter
 
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         BackButton(onBack)
@@ -375,7 +417,16 @@ fun EditRolesScreen(
                 )
             }
         }
+        RoleCheckbox(
+            stringResource(sectionlessReporterLabel),
+            state.sectionlessReporter,
+            editable = model.mayAssignSectionlessReporter && !state.saving,
+            readOnly = !model.mayAssignSectionlessReporter,
+        ) { model.sectionlessReporter(it) }
         state.errors[AccountField.ROLES]?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        state.errors[AccountField.SECTIONLESS_REPORTER]?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
         if (model.sectionChoices.isNotEmpty()) Text(stringResource(Res.string.field_section_roles), style = MaterialTheme.typography.titleSmall)
         model.sectionChoices.forEach { choice ->
             SectionRoleRow(choice.section, state.sectionRoles[choice.section.id], editable = choice.editable) {
@@ -388,6 +439,22 @@ fun EditRolesScreen(
             Button(enabled = state.canSave, onClick = { model.submit { onSaved() } }) { Text(stringResource(Res.string.save)) }
             OutlinedButton(onClick = onBack) { Text(stringResource(Res.string.cancel)) }
         }
+    }
+}
+
+/** A role as checkbox; [readOnly] greys it out for a role the user may not change. */
+@Composable
+private fun RoleCheckbox(label: String, selected: Boolean, editable: Boolean, readOnly: Boolean = false, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.heightIn(min = 44.dp).toggleable(value = selected, enabled = editable, role = Role.Checkbox, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = selected, onCheckedChange = null, enabled = !readOnly)
+        Text(
+            label,
+            Modifier.padding(start = 8.dp),
+            color = if (readOnly) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) else Color.Unspecified,
+        )
     }
 }
 

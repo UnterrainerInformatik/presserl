@@ -40,6 +40,8 @@ Authorization: Bearer {{accessToken}}
         const chief = response.body.accounts.find(a => a.username === "chief");
         client.assert(chief && JSON.stringify(chief.roles) === '["EDITOR_IN_CHIEF"]', "chief " + JSON.stringify(chief));
         client.assert(response.body.accounts.every(a => Array.isArray(a.sectionRoles)), "sectionRoles missing");
+        client.assert(response.body.accounts.every(a => typeof a.sectionlessReporter === "boolean"), "sectionlessReporter missing");
+        client.assert(response.body.mayAssignSectionlessReporter === true, "mayAssignSectionlessReporter");
         client.assert(!response.body.accounts.some(a => a.username.startsWith("service-account-")), "service account listed");
     });
 %}
@@ -53,7 +55,9 @@ Authorization: Bearer {{chiefToken}}
         client.assert(response.status === 200, "status " + response.status);
         client.assert(JSON.stringify(response.body.assignableRoles) === '["EDITOR_IN_CHIEF","READER"]',
             "assignableRoles " + JSON.stringify(response.body.assignableRoles));
+        client.assert(response.body.mayAssignSectionlessReporter === true, "mayAssignSectionlessReporter");
     });
+    client.global.set("photoUsername", "foto-" + Math.random().toString(36).slice(2, 8));
 %}
 
 ### Readers may not list accounts
@@ -383,6 +387,89 @@ Content-Type: application/json
     client.test("400 at roles", () => {
         client.assert(response.status === 400, "status " + response.status);
         client.assert(JSON.stringify(response.body.errors.map(e => e.field)) === '["roles"]', JSON.stringify(response.body));
+    });
+%}
+
+### Photographer: the editor-in-chief creates an account with the sectionless-reporter marker only
+POST {{baseUrl}}/api/accounts
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "firstName": "Pia", "username": "{{photoUsername}}", "roles": [], "sectionlessReporter": true }
+
+> {%
+    client.test("201 with the marker and no roles", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        client.assert(JSON.stringify(response.body.account.roles) === '[]', JSON.stringify(response.body.account));
+        client.assert(JSON.stringify(response.body.account.sectionRoles) === '[]', JSON.stringify(response.body.account));
+        client.assert(response.body.account.sectionlessReporter === true, JSON.stringify(response.body.account));
+    });
+    client.global.set("photoPassword", response.body.password);
+    client.global.set("photoAccountId", response.body.account.id);
+%}
+
+### Photographer: logs in
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{photoUsername}}&password={{photoPassword}}
+
+> {%
+    client.global.set("photoToken", response.body.access_token);
+%}
+
+### Photographer: may use the images only
+GET {{baseUrl}}/api/me
+Authorization: Bearer {{photoToken}}
+
+> {%
+    client.test("USE_MEDIA only", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.sectionlessReporter === true, JSON.stringify(response.body));
+        client.assert(JSON.stringify(response.body.allowedActions) === '["USE_MEDIA"]', JSON.stringify(response.body.allowedActions));
+    });
+%}
+
+### Photographer: the marker must be a boolean
+POST {{baseUrl}}/api/accounts
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "firstName": "Pia", "username": "{{photoUsername}}-2", "roles": [], "sectionlessReporter": "yes" }
+
+> {%
+    client.test("400 naming sectionlessReporter", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors.some(e => e.field === "sectionlessReporter"), JSON.stringify(response.body));
+    });
+%}
+
+### Photographer: the publisher makes them a reader and removes the marker
+PUT {{baseUrl}}/api/accounts/{{photoAccountId}}/roles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "roles": ["READER"], "sectionRoles": [], "sectionlessReporter": false }
+
+> {%
+    client.test("200 reader without marker", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(JSON.stringify(response.body.roles) === '["READER"]', JSON.stringify(response.body));
+        client.assert(response.body.sectionlessReporter === false, JSON.stringify(response.body));
+    });
+%}
+
+### Photographer: the marker alone is a role again
+PUT {{baseUrl}}/api/accounts/{{photoAccountId}}/roles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "roles": [], "sectionRoles": [], "sectionlessReporter": true }
+
+> {%
+    client.test("200 marker only", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(JSON.stringify(response.body.roles) === '[]' && response.body.sectionlessReporter === true, JSON.stringify(response.body));
     });
 %}
 

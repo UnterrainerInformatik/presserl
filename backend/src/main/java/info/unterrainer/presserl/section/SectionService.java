@@ -2,6 +2,9 @@ package info.unterrainer.presserl.section;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -13,6 +16,8 @@ import org.hibernate.JDBCException;
 import org.hibernate.reactive.mutiny.Mutiny;
 import org.jboss.logging.Logger;
 
+import info.unterrainer.presserl.article.ArticleStatus;
+import info.unterrainer.presserl.auth.CurrentUser;
 import info.unterrainer.presserl.text.Slugs;
 import io.quarkus.hibernate.reactive.panache.Panache;
 import io.quarkus.hibernate.reactive.panache.common.WithSession;
@@ -42,12 +47,61 @@ public class SectionService {
     @Inject
     Mutiny.SessionFactory sessionFactory;
 
+    @Inject
+    SectionRoleStore sectionRoles;
+
+    @Inject
+    LastSectionRule lastSectionRule;
+
     /**
      * All sections by position (ties by id).
      */
     @WithSession
     public Uni<List<SectionEntity>> list() {
         return SectionEntity.list(BY_POSITION);
+    }
+
+    /**
+     * The article counts of every section holding articles, by section id, from one grouped query.
+     */
+    @WithSession
+    public Uni<Map<Long, ArticleCountsDto>> articleCounts() {
+        return Panache.getSession().flatMap(session -> session.createSelectionQuery(
+                "select a.sectionId, a.status, a.issueId, i.number, count(a) from ArticleEntity a "
+                        + "left join IssueEntity i on i.id = a.issueId "
+                        + "group by a.sectionId, a.status, a.issueId, i.number",
+                Object[].class)
+                .getResultList())
+                .map(SectionService::fold);
+    }
+
+    /**
+     * Folds rows of section id, status, issue id, issue number and count into counts per section.
+     */
+    static Map<Long, ArticleCountsDto> fold(List<Object[]> rows) {
+        Map<Long, long[]> totals = new HashMap<>();
+        Map<Long, Map<Long, ArticleCountsDto.IssueCount>> issues = new HashMap<>();
+        for (Object[] row : rows) {
+            long section = (Long) row[0];
+            long count = (Long) row[4];
+            long[] sums = totals.computeIfAbsent(section, id -> new long[2]);
+            if (row[1] == ArticleStatus.PUBLISHED) {
+                sums[0] += count;
+            }
+            sums[1] += count;
+            if (row[2] != null) {
+                long issueId = (Long) row[2];
+                issues.computeIfAbsent(section, id -> new HashMap<>()).merge(issueId,
+                        new ArticleCountsDto.IssueCount(issueId, (Integer) row[3], count),
+                        (a, b) -> new ArticleCountsDto.IssueCount(issueId, a.number(), a.count() + b.count()));
+            }
+        }
+        Map<Long, ArticleCountsDto> counts = new HashMap<>();
+        totals.forEach((section, sums) -> counts.put(section, new ArticleCountsDto(sums[0], sums[1],
+                issues.getOrDefault(section, Map.of()).values().stream()
+                        .sorted(Comparator.comparingInt(ArticleCountsDto.IssueCount::number).reversed())
+                        .toList())));
+        return counts;
     }
 
     /**
@@ -133,16 +187,18 @@ public class SectionService {
 
     /**
      * Deletes an empty section together with its section roles and sets the positions of the
-     * remaining sections to {@code 0, 1, 2, …} in their previous order. An article filed into the
+     * remaining sections to {@code 0, 1, 2, …} in their previous order. Members left without any
+     * section role become sectionless reporters ({@link LastSectionRule}). An article filed into the
      * section concurrently is caught by the foreign key and answered like a non-empty section.
      *
-     * @param by the acting user's name, for the log
+     * @param by the acting user
      * @throws NotFoundException when there is no section {@code id}
      * @throws SectionException  {@code 409} while articles belong to the section; nothing is
      *                           changed then
      */
     @WithTransaction
-    public Uni<Void> delete(long id, String by) {
+    public Uni<Void> delete(long id, CurrentUser by) {
+        List<String> members = new ArrayList<>();
         return find(id)
                 .call(section -> Panache.getSession().flatMap(session -> session.createSelectionQuery(
                         "select count(a) from ArticleEntity a where a.sectionId = :id", Long.class)
@@ -153,6 +209,8 @@ public class SectionService {
                                 throw notEmpty(articles + " article(s)");
                             }
                         }))
+                // collected before the delete, which removes the section roles by cascade
+                .call(section -> sectionRoles.memberIds(id).invoke(members::addAll))
                 .call(section -> section.delete())
                 .call(section -> SectionEntity.<SectionEntity>list("id <> ?1 " + BY_POSITION, id).invoke(rest -> {
                     for (int position = 0; position < rest.size(); position++) {
@@ -161,7 +219,9 @@ public class SectionService {
                 }))
                 .call(Panache::flush)
                 .onFailure(SectionService::isForeignKeyViolation).transform(e -> notEmpty("articles"))
-                .invoke(section -> LOG.infof("Section '%s' (id %d) deleted by '%s'", section.name, section.id, by))
+                .call(section -> lastSectionRule.apply(members, by))
+                .invoke(section -> LOG.infof("Section '%s' (id %d) deleted by '%s'", section.name, section.id,
+                        by.username()))
                 .replaceWithVoid();
     }
 

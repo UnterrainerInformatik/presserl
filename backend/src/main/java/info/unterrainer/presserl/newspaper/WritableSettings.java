@@ -16,15 +16,18 @@ import info.unterrainer.presserl.section.Newsroom;
 
 /**
  * The newspaper settings that {@code PUT /api/newspaper/settings} may override, each with the parser of
- * its allowed values and who may write it. Further keys are added here one by one.
+ * its allowed JSON values and who may write it. Enumerated settings take their external spelling as a
+ * JSON string and are stored as that string; boolean settings take a JSON boolean and are stored as
+ * one. Further keys are added here one by one.
  */
 public final class WritableSettings {
 
     private static final Map<String, Setting> WRITABLE = Map.of(
             EffectiveSettings.READER_TEXT_SIZE, enumerated(TextSize.class, Newsroom::mayConfigureNewspaper),
-            EffectiveSettings.SPELL_CHECK_HELP, enumerated(SpellCheckHelp.class, Newsroom::mayConfigureSpellCheck));
+            EffectiveSettings.SPELL_CHECK_HELP, enumerated(SpellCheckHelp.class, Newsroom::mayConfigureSpellCheck),
+            EffectiveSettings.ARTICLE_CORRECTIONS, bool(Newsroom::mayConfigureCorrections));
 
-    private record Setting(Function<String, Optional<String>> parser, String allowed, Predicate<Newsroom> mayWrite) {
+    private record Setting(Function<JsonNode, Optional<Object>> parser, String allowed, Predicate<Newsroom> mayWrite) {
     }
 
     private WritableSettings() {
@@ -37,11 +40,11 @@ public final class WritableSettings {
      * @return the changes, keyed by setting name; a {@code null} value removes the override
      * @throws NewspaperSettingsException with every violation
      */
-    public static Map<String, String> changes(JsonNode json) {
+    public static Map<String, Object> changes(JsonNode json) {
         if (json == null || !json.isObject()) {
             throw new NewspaperSettingsException(List.of(new FieldError(null, "request body must be a JSON object")));
         }
-        Map<String, String> changes = new LinkedHashMap<>();
+        Map<String, Object> changes = new LinkedHashMap<>();
         List<FieldError> errors = new ArrayList<>();
         for (Iterator<Map.Entry<String, JsonNode>> fields = json.fields(); fields.hasNext();) {
             Map.Entry<String, JsonNode> field = fields.next();
@@ -53,8 +56,7 @@ public final class WritableSettings {
             } else if (value.isNull()) {
                 changes.put(key, null);
             } else {
-                Optional<String> parsed = value.isTextual() ? setting.parser().apply(value.asText()) : Optional.empty();
-                parsed.ifPresentOrElse(v -> changes.put(key, v),
+                setting.parser().apply(value).ifPresentOrElse(v -> changes.put(key, v),
                         () -> errors.add(new FieldError(key, "must be one of " + setting.allowed())));
             }
         }
@@ -67,12 +69,19 @@ public final class WritableSettings {
     /**
      * Whether the user may write every key of the validated {@code changes}.
      */
-    public static boolean mayWrite(Map<String, String> changes, Newsroom newsroom) {
+    public static boolean mayWrite(Map<String, Object> changes, Newsroom newsroom) {
         return changes.keySet().stream().allMatch(key -> WRITABLE.get(key).mayWrite().test(newsroom));
     }
 
     private static <E extends Enum<E> & SettingValue> Setting enumerated(Class<E> type, Predicate<Newsroom> mayWrite) {
-        return new Setting(value -> SettingValueConverter.parse(type, value).map(SettingValue::value),
+        return new Setting(value -> value.isTextual()
+                ? SettingValueConverter.parse(type, value.asText()).map(SettingValue::value)
+                : Optional.empty(),
                 SettingValueConverter.allowedValues(type), mayWrite);
+    }
+
+    private static Setting bool(Predicate<Newsroom> mayWrite) {
+        return new Setting(value -> value.isBoolean() ? Optional.of(value.booleanValue()) : Optional.empty(),
+                "true, false", mayWrite);
     }
 }

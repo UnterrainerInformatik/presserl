@@ -2,9 +2,12 @@ package info.unterrainer.presserl.admin
 
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.NewspaperDto
+import info.unterrainer.presserl.admin.ui.newspaper.ARTICLE_CORRECTIONS
 import info.unterrainer.presserl.admin.ui.newspaper.NewspaperSettingsModel
 import info.unterrainer.presserl.admin.ui.newspaper.READER_TEXT_SIZE
 import info.unterrainer.presserl.admin.ui.newspaper.SPELL_CHECK_HELP
+import info.unterrainer.presserl.admin.ui.newspaper.SwitchView
+import info.unterrainer.presserl.admin.ui.newspaper.correctionsView
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockEngineConfig
@@ -18,8 +21,13 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -29,18 +37,21 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class NewspaperSettingsModelTest {
 
-    private val sent = mutableListOf<Map<String, String?>>()
+    private val sent = mutableListOf<Map<String, JsonElement>>()
 
     /** The deployment's values, used when the newspaper has no override. */
     private var installationDefault = "m"
     private var installationHelp = "suggestions"
+    private var installationCorrections = true
     private var override: String? = null
     private var helpOverride: String? = null
+    private var correctionsOverride: Boolean? = null
 
     /** Answers the save request; the default applies it like the server. */
-    private var save: suspend (Map<String, String?>) -> NewspaperDto = { changes ->
-        if (READER_TEXT_SIZE in changes) override = changes[READER_TEXT_SIZE]
-        if (SPELL_CHECK_HELP in changes) helpOverride = changes[SPELL_CHECK_HELP]
+    private var save: suspend (Map<String, JsonElement>) -> NewspaperDto = { changes ->
+        if (READER_TEXT_SIZE in changes) override = changes.getValue(READER_TEXT_SIZE).jsonPrimitive.contentOrNull
+        if (SPELL_CHECK_HELP in changes) helpOverride = changes.getValue(SPELL_CHECK_HELP).jsonPrimitive.contentOrNull
+        if (ARTICLE_CORRECTIONS in changes) correctionsOverride = changes.getValue(ARTICLE_CORRECTIONS).jsonPrimitive.booleanOrNull
         newspaper()
     }
 
@@ -52,12 +63,14 @@ class NewspaperSettingsModelTest {
             mapOf(
                 READER_TEXT_SIZE to JsonPrimitive(override ?: installationDefault),
                 SPELL_CHECK_HELP to JsonPrimitive(helpOverride ?: installationHelp),
+                ARTICLE_CORRECTIONS to JsonPrimitive(correctionsOverride ?: installationCorrections),
             ),
         ),
         JsonObject(
             listOfNotNull(
                 override?.let { READER_TEXT_SIZE to JsonPrimitive(it) },
                 helpOverride?.let { SPELL_CHECK_HELP to JsonPrimitive(it) },
+                correctionsOverride?.let { ARTICLE_CORRECTIONS to JsonPrimitive(it) },
             ).toMap(),
         ),
     )
@@ -91,6 +104,40 @@ class NewspaperSettingsModelTest {
     }
 
     @Test
+    fun publisherSwitchesCorrectionsOffAsJsonFalse() = runTest {
+        val model = model()
+        assertEquals(SwitchView(selected = null, effective = true, enabled = true), model.state.value.correctionsView(true))
+
+        model.chooseSwitch(ARTICLE_CORRECTIONS, false)
+        runCurrent()
+
+        assertEquals(listOf(mapOf<String, JsonElement>(ARTICLE_CORRECTIONS to JsonPrimitive(false))), sent)
+        assertEquals(SwitchView(selected = false, effective = false, enabled = true), model.state.value.correctionsView(true))
+    }
+
+    @Test
+    fun correctionsBackToTheInstallationDefaultSendsNull() = runTest {
+        correctionsOverride = false
+        val model = model()
+        assertEquals(false, model.state.value.corrections)
+
+        model.chooseSwitch(ARTICLE_CORRECTIONS, null)
+        runCurrent()
+
+        assertEquals(listOf(mapOf<String, JsonElement>(ARTICLE_CORRECTIONS to JsonNull)), sent)
+        assertNull(model.state.value.corrections)
+        assertEquals(true, model.state.value.effectiveCorrections)
+    }
+
+    @Test
+    fun editorInChiefSeesTheCorrectionsSwitchReadOnly() = runTest {
+        installationCorrections = false
+        val view = model().state.value.correctionsView(mayConfigure = false)
+
+        assertEquals(SwitchView(selected = null, effective = false, enabled = false), view)
+    }
+
+    @Test
     fun choosingMarksSendsOnlyTheSpellCheckHelp() = runTest {
         override = "l"
         val model = model()
@@ -98,7 +145,7 @@ class NewspaperSettingsModelTest {
         model.choose(SPELL_CHECK_HELP, "marks")
         runCurrent()
 
-        assertEquals(listOf(mapOf<String, String?>(SPELL_CHECK_HELP to "marks")), sent)
+        assertEquals(listOf(mapOf<String, JsonElement>(SPELL_CHECK_HELP to JsonPrimitive("marks"))), sent)
         assertEquals("marks", model.state.value.spellCheckHelp)
         assertEquals("marks", model.state.value.effectiveSpellCheckHelp)
         assertEquals("l", model.state.value.textSize)
@@ -113,7 +160,7 @@ class NewspaperSettingsModelTest {
         model.choose(SPELL_CHECK_HELP, null)
         runCurrent()
 
-        assertEquals(listOf(mapOf<String, String?>(SPELL_CHECK_HELP to null)), sent)
+        assertEquals(listOf(mapOf<String, JsonElement>(SPELL_CHECK_HELP to JsonNull)), sent)
         assertNull(model.state.value.spellCheckHelp)
         assertEquals("messages", model.state.value.effectiveSpellCheckHelp)
     }
@@ -144,7 +191,7 @@ class NewspaperSettingsModelTest {
         model.choose(READER_TEXT_SIZE, "l")
         runCurrent()
 
-        assertEquals(listOf(mapOf<String, String?>(READER_TEXT_SIZE to "l")), sent)
+        assertEquals(listOf(mapOf<String, JsonElement>(READER_TEXT_SIZE to JsonPrimitive("l"))), sent)
         assertEquals("l", model.state.value.textSize)
         assertEquals("l", model.state.value.effectiveTextSize)
         assertFalse(model.state.value.saving)
@@ -160,7 +207,7 @@ class NewspaperSettingsModelTest {
         model.choose(READER_TEXT_SIZE, null)
         runCurrent()
 
-        assertEquals(listOf(mapOf<String, String?>(READER_TEXT_SIZE to null)), sent)
+        assertEquals(listOf(mapOf<String, JsonElement>(READER_TEXT_SIZE to JsonNull)), sent)
         assertNull(model.state.value.textSize)
         assertEquals("xl", model.state.value.effectiveTextSize)
     }

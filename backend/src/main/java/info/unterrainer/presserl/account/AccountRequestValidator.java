@@ -25,16 +25,19 @@ import info.unterrainer.presserl.trust.TrustScope;
  * control characters, first name required), username (lower-case words joined by {@code -},
  * {@value UsernameDeriver#MIN_LENGTH} to {@value UsernameDeriver#MAX_LENGTH} characters, not a
  * service-account name), roles (known roles; duplicates collapsed), section roles (a list of
- * {@code sectionId} and a known {@code role}, each section once), at least one role of either kind
- * and no unknown fields. Trust bodies: see {@link #validateTrust}.
+ * {@code sectionId} and a known {@code role}, each section once), an optional boolean
+ * {@code sectionlessReporter}, at least one role of either kind or the marker, and no unknown fields.
+ * Trust bodies: see {@link #validateTrust}.
  */
 public final class AccountRequestValidator {
 
     public static final int NAME_MAX = 100;
     static final Pattern USERNAME = Pattern.compile("^[a-z0-9]+(-[a-z0-9]+)*$");
     static final String SERVICE_ACCOUNT_PREFIX = "service-account-";
-    private static final Set<String> FIELDS = Set.of("firstName", "lastName", "username", "roles", "sectionRoles");
-    private static final Set<String> ROLE_FIELDS = Set.of("roles", "sectionRoles");
+    public static final String SECTIONLESS_REPORTER = "sectionlessReporter";
+    private static final Set<String> FIELDS = Set.of("firstName", "lastName", "username", "roles", "sectionRoles",
+            SECTIONLESS_REPORTER);
+    private static final Set<String> ROLE_FIELDS = Set.of("roles", "sectionRoles", SECTIONLESS_REPORTER);
     private static final Set<String> SECTION_ROLE_FIELDS = Set.of("sectionId", "role");
     private static final Set<String> TRUST_FIELDS = Set.of("level", "sectionId", "trusted");
 
@@ -61,13 +64,17 @@ public final class AccountRequestValidator {
         String username = username(json, errors);
         List<NewspaperRole> roles = roles(json, errors);
         List<SectionRoleDto> sectionRoles = sectionRoles(json, false, errors);
-        failOnViolations(roles, sectionRoles, errors);
-        return new CreateAccountRequest(firstName, lastName, username, roles, sectionRoles);
+        Boolean marker = marker(json, errors);
+        failOnViolations(roles, sectionRoles, Boolean.TRUE.equals(marker), true, errors);
+        return new CreateAccountRequest(firstName, lastName, username, roles, sectionRoles,
+                Boolean.TRUE.equals(marker));
     }
 
     /**
-     * A {@code PUT /api/accounts/{id}/roles} body; both fields are required, so a client forgetting
-     * {@code sectionRoles} cannot remove every section role by accident.
+     * A {@code PUT /api/accounts/{id}/roles} body; {@code roles} and {@code sectionRoles} are
+     * required, so a client forgetting {@code sectionRoles} cannot remove every section role by
+     * accident. Without {@code sectionlessReporter}, whether a role remains depends on the account's
+     * marker and is checked by the role edit.
      *
      * @throws AccountException with status {@code 400} listing every violation
      */
@@ -75,8 +82,9 @@ public final class AccountRequestValidator {
         List<FieldError> errors = unknownFields(json, ROLE_FIELDS);
         List<NewspaperRole> roles = roles(json, errors);
         List<SectionRoleDto> sectionRoles = sectionRoles(json, true, errors);
-        failOnViolations(roles, sectionRoles, errors);
-        return new EditRolesRequest(roles, sectionRoles);
+        Boolean marker = marker(json, errors);
+        failOnViolations(roles, sectionRoles, Boolean.TRUE.equals(marker), marker != null, errors);
+        return new EditRolesRequest(roles, sectionRoles, marker);
     }
 
     /**
@@ -171,19 +179,41 @@ public final class AccountRequestValidator {
     }
 
     /**
-     * Adds the "at least one role" violation when both role fields are valid but empty, then throws
-     * when there is any violation.
+     * Adds the "at least one role" violation when both role fields are valid but empty and the marker
+     * is not set, then throws when there is any violation.
+     *
+     * @param checkEmpty whether the marker is known, so an empty role set can be judged here
      */
-    private static void failOnViolations(List<NewspaperRole> roles, List<SectionRoleDto> sectionRoles,
-            List<FieldError> errors) {
-        boolean rolesValid = errors.stream()
-                .noneMatch(e -> "roles".equals(e.field()) || "sectionRoles".equals(e.field()));
-        if (rolesValid && roles.isEmpty() && sectionRoles.isEmpty()) {
-            errors.add(new FieldError("roles", "must contain at least one role, or sectionRoles one section role"));
+    private static void failOnViolations(List<NewspaperRole> roles, List<SectionRoleDto> sectionRoles, boolean marker,
+            boolean checkEmpty, List<FieldError> errors) {
+        boolean rolesValid = errors.stream().noneMatch(e -> "roles".equals(e.field())
+                || "sectionRoles".equals(e.field()) || SECTIONLESS_REPORTER.equals(e.field()));
+        if (checkEmpty && rolesValid && roles.isEmpty() && sectionRoles.isEmpty() && !marker) {
+            errors.add(noRole());
         }
         if (!errors.isEmpty()) {
             throw AccountException.invalid(errors);
         }
+    }
+
+    static FieldError noRole() {
+        return new FieldError("roles",
+                "must contain at least one role, or sectionRoles one section role, or sectionlessReporter be true");
+    }
+
+    /**
+     * The marker; {@code null} when absent.
+     */
+    private static Boolean marker(JsonNode json, List<FieldError> errors) {
+        JsonNode node = json.get(SECTIONLESS_REPORTER);
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (!node.isBoolean()) {
+            errors.add(new FieldError(SECTIONLESS_REPORTER, "must be a boolean"));
+            return null;
+        }
+        return node.booleanValue();
     }
 
     private static String name(JsonNode json, String field, boolean required, List<FieldError> errors) {

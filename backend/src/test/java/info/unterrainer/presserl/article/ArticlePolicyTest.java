@@ -14,9 +14,11 @@ import static info.unterrainer.presserl.article.ArticlePolicy.Verdict.CONFLICT;
 import static info.unterrainer.presserl.article.ArticlePolicy.Verdict.FORBIDDEN;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
 
@@ -34,6 +36,7 @@ class ArticlePolicyTest {
     private static final Newsroom PUBLISHER = user("pub", NewspaperRole.PUBLISHER);
     private static final Newsroom OTHER_PUBLISHER = user("pub2", NewspaperRole.PUBLISHER);
     private static final Newsroom CHIEF = user("chief", NewspaperRole.EDITOR_IN_CHIEF);
+    private static final Newsroom OTHER_CHIEF = user("chief2", NewspaperRole.EDITOR_IN_CHIEF);
     private static final Newsroom PUBLISHING_CHIEF = user("both", NewspaperRole.PUBLISHER,
             NewspaperRole.EDITOR_IN_CHIEF);
     private static final Newsroom NOBODY = user("nobody");
@@ -44,8 +47,20 @@ class ArticlePolicyTest {
     /**
      * The users above hold their roles; Kultur has no section editor.
      */
-    private static final Staffing STAFFING = new Staffing(Map.of(SPORT, Set.of("sed")), Set.of("chief", "both"),
-            Set.of("pub", "pub2", "both"));
+    private static final Staffing STAFFING = new Staffing(Map.of(SPORT, Set.of("sed")),
+            Set.of("chief", "chief2", "both"), Set.of("pub", "pub2", "both"));
+
+    private static final ArticleRules CORRECTIONS = new ArticleRules(true);
+    private static final ArticleRules NO_CORRECTIONS = new ArticleRules(false);
+
+    /**
+     * {@link #STAFFING} in which {@code article} (given id 42) has exactly {@code contributors}.
+     */
+    private static Staffing contributed(ArticleEntity article, Newsroom... contributors) {
+        article.id = 42L;
+        return new Staffing(STAFFING.sectionEditors(), STAFFING.editorsInChief(), STAFFING.publishers(), Map.of(),
+                Map.of(42L, Arrays.stream(contributors).map(c -> c.user().sub()).collect(Collectors.toSet())));
+    }
 
     private static Newsroom user(String sub, NewspaperRole... roles) {
         return new Newsroom(new CurrentUser(sub, sub, sub, List.of(roles)), Map.of());
@@ -94,7 +109,7 @@ class ArticlePolicyTest {
     }
 
     private static Verdict verdict(ArticleAction action, Newsroom user, ArticleEntity article, int latest) {
-        return ArticlePolicy.verdict(action, user, article, latest, STAFFING);
+        return ArticlePolicy.verdict(action, user, article, latest, STAFFING, CORRECTIONS);
     }
 
     private static Verdict verdict(ArticleAction action, Newsroom user, ArticleEntity article) {
@@ -102,7 +117,7 @@ class ArticlePolicyTest {
     }
 
     private static List<ArticleAction> allowed(Newsroom user, ArticleEntity article, int latest) {
-        return ArticlePolicy.allowedActions(user, article, latest, STAFFING);
+        return ArticlePolicy.allowedActions(user, article, latest, STAFFING, CORRECTIONS);
     }
 
     private static List<ArticleAction> allowed(Newsroom user, ArticleEntity article) {
@@ -131,8 +146,9 @@ class ArticlePolicyTest {
         assertThat(verdict(EDIT, REPORTER, submitted(REPORTER, ApprovalLevel.SECTION_EDITOR))).isEqualTo(CONFLICT);
         assertThat(verdict(EDIT, CHIEF, waiting(article(CHIEF, ArticleStatus.PUBLISHED, 1), ApprovalLevel.PUBLISHER), 2))
                 .isEqualTo(CONFLICT);
+        // the section editor corrects instead (see "corrections")
         assertThat(verdict(EDIT, SECTION_EDITOR, submitted(REPORTER, ApprovalLevel.SECTION_EDITOR)))
-                .isEqualTo(FORBIDDEN);
+                .isEqualTo(ALLOWED);
     }
 
     @Test
@@ -173,10 +189,10 @@ class ArticlePolicyTest {
     @Test
     void publishAllowedWhenNoOtherAccountStaffsALevel() {
         Staffing chiefAlone = new Staffing(Map.of(), Set.of("chief"), Set.of());
-        assertThat(ArticlePolicy.verdict(PUBLISH, CHIEF, article(CHIEF, ArticleStatus.DRAFT, null), 1, chiefAlone))
-                .isEqualTo(ALLOWED);
-        assertThat(ArticlePolicy.verdict(SUBMIT, CHIEF, article(CHIEF, ArticleStatus.DRAFT, null), 1, chiefAlone))
-                .isEqualTo(FORBIDDEN);
+        assertThat(ArticlePolicy.verdict(PUBLISH, CHIEF, article(CHIEF, ArticleStatus.DRAFT, null), 1, chiefAlone,
+                CORRECTIONS)).isEqualTo(ALLOWED);
+        assertThat(ArticlePolicy.verdict(SUBMIT, CHIEF, article(CHIEF, ArticleStatus.DRAFT, null), 1, chiefAlone,
+                CORRECTIONS)).isEqualTo(FORBIDDEN);
     }
 
     @Test
@@ -331,9 +347,11 @@ class ArticlePolicyTest {
         // no other account holds a level: unlocked the reporter publishes directly, locked they submit
         Staffing nobodyElse = new Staffing(Map.of(), Set.of(), Set.of());
         ArticleEntity offline = article(REPORTER, ArticleStatus.OFFLINE, 1);
-        assertThat(ArticlePolicy.verdict(PUBLISH, REPORTER, offline, 1, nobodyElse)).isEqualTo(ALLOWED);
-        assertThat(ArticlePolicy.verdict(PUBLISH, REPORTER, locked(REPORTER), 1, nobodyElse)).isEqualTo(FORBIDDEN);
-        assertThat(ArticlePolicy.verdict(SUBMIT, REPORTER, locked(REPORTER), 1, nobodyElse)).isEqualTo(ALLOWED);
+        assertThat(ArticlePolicy.verdict(PUBLISH, REPORTER, offline, 1, nobodyElse, CORRECTIONS)).isEqualTo(ALLOWED);
+        assertThat(ArticlePolicy.verdict(PUBLISH, REPORTER, locked(REPORTER), 1, nobodyElse, CORRECTIONS))
+                .isEqualTo(FORBIDDEN);
+        assertThat(ArticlePolicy.verdict(SUBMIT, REPORTER, locked(REPORTER), 1, nobodyElse, CORRECTIONS))
+                .isEqualTo(ALLOWED);
     }
 
     @Test
@@ -343,10 +361,10 @@ class ArticlePolicyTest {
 
     @Test
     void allowedActionsOnALockedArticle() {
-        assertThat(allowed(PUBLISHER, locked(CHIEF))).containsExactly(UNLOCK);
+        assertThat(allowed(PUBLISHER, locked(CHIEF))).containsExactly(EDIT, UNLOCK);
         assertThat(allowed(CHIEF, locked(CHIEF))).containsExactly(EDIT, SUBMIT);
         assertThat(allowed(PUBLISHER, waiting(locked(CHIEF), ApprovalLevel.PUBLISHER)))
-                .containsExactly(APPROVE, REJECT, UNLOCK);
+                .containsExactly(EDIT, APPROVE, REJECT, UNLOCK);
     }
 
     // --- allowedActions
@@ -375,23 +393,107 @@ class ArticlePolicyTest {
     @Test
     void sectionEditorOnAWaitingArticleOfTheirSection() {
         assertThat(allowed(SECTION_EDITOR, submitted(REPORTER, ApprovalLevel.SECTION_EDITOR)))
-                .containsExactly(APPROVE, REJECT);
+                .containsExactly(EDIT, APPROVE, REJECT);
     }
 
     @Test
-    void publisherOnOwnArticlesIsUnchangedAndNeedsNoStaffing() {
-        assertThat(ArticlePolicy.allowedActions(PUBLISHER, DRAFT, 1, Staffing.NOT_NEEDED))
-                .containsExactly(EDIT, PUBLISH, DELETE);
-        assertThat(ArticlePolicy.allowedActions(PUBLISHER, PUBLISHED, 2, Staffing.NOT_NEEDED))
+    void foreignArticlesNeedNoStaffingWhileCorrectionsAreOff() {
+        assertThat(ArticlePolicy.allowedActions(SECTION_EDITOR, submitted(REPORTER, ApprovalLevel.SECTION_EDITOR), 1,
+                Staffing.NOT_NEEDED, NO_CORRECTIONS)).containsExactly(APPROVE, REJECT);
+        assertThat(ArticlePolicy.allowedActions(CHIEF, PUBLISHED, 1, Staffing.NOT_NEEDED, NO_CORRECTIONS))
+                .containsExactly(TAKE_OFFLINE);
+    }
+
+    // --- corrections by higher levels
+
+    @Test
+    void higherLevelsCorrectPendingPublishedAndOfflineArticles() {
+        assertThat(verdict(EDIT, CHIEF, submitted(REPORTER, ApprovalLevel.SECTION_EDITOR))).isEqualTo(ALLOWED);
+        assertThat(verdict(EDIT, CHIEF, submitted(REPORTER, ApprovalLevel.EDITOR_IN_CHIEF))).isEqualTo(ALLOWED);
+        assertThat(verdict(EDIT, SECTION_EDITOR, article(REPORTER, ArticleStatus.PUBLISHED, 1))).isEqualTo(ALLOWED);
+        assertThat(verdict(EDIT, CHIEF, article(SECTION_EDITOR, ArticleStatus.OFFLINE, 1))).isEqualTo(ALLOWED);
+        assertThat(verdict(EDIT, PUBLISHER, article(CHIEF, ArticleStatus.PUBLISHED, 1))).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    void draftsStayTheAuthors() {
+        assertThat(verdict(EDIT, CHIEF, REPORTERS_DRAFT)).isEqualTo(CONFLICT);
+        assertThat(verdict(EDIT, SECTION_EDITOR, REPORTERS_DRAFT)).isEqualTo(CONFLICT);
+        assertThat(allowed(PUBLISHER, REPORTERS_DRAFT)).isEmpty();
+    }
+
+    @Test
+    void pendingLevelAboveTheCorrector() {
+        assertThat(verdict(EDIT, SECTION_EDITOR, submitted(REPORTER, ApprovalLevel.PUBLISHER))).isEqualTo(FORBIDDEN);
+        assertThat(verdict(EDIT, CHIEF, submitted(REPORTER, ApprovalLevel.PUBLISHER))).isEqualTo(FORBIDDEN);
+        assertThat(verdict(EDIT, PUBLISHER, submitted(REPORTER, ApprovalLevel.PUBLISHER))).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    void equalOrLowerLevelMayNotCorrect() {
+        assertThat(verdict(EDIT, CHIEF, article(OTHER_CHIEF, ArticleStatus.PUBLISHED, 1))).isEqualTo(FORBIDDEN);
+        assertThat(verdict(EDIT, OTHER_PUBLISHER, PUBLISHED)).isEqualTo(FORBIDDEN);
+        assertThat(verdict(EDIT, SECTION_EDITOR, article(CHIEF, ArticleStatus.PUBLISHED, 1))).isEqualTo(FORBIDDEN);
+        assertThat(verdict(EDIT, OTHER_REPORTER, article(REPORTER, ArticleStatus.PUBLISHED, 1))).isEqualTo(FORBIDDEN);
+        assertThat(allowed(SECTION_EDITOR, PUBLISHED)).containsExactly(TAKE_OFFLINE);
+    }
+
+    @Test
+    void sectionEditorCorrectsInTheirSectionOnly() {
+        assertThat(verdict(EDIT, SECTION_EDITOR, article(REPORTER, ArticleStatus.PUBLISHED, 1, KULTUR)))
+                .isEqualTo(FORBIDDEN);
+    }
+
+    @Test
+    void correctionsSwitchedOff() {
+        ArticleEntity published = article(REPORTER, ArticleStatus.PUBLISHED, 1);
+        assertThat(ArticlePolicy.verdict(EDIT, PUBLISHER, published, 1, STAFFING, NO_CORRECTIONS)).isEqualTo(FORBIDDEN);
+        assertThat(ArticlePolicy.allowedActions(PUBLISHER, published, 1, STAFFING, NO_CORRECTIONS))
+                .containsExactly(TAKE_OFFLINE);
+        assertThat(ArticlePolicy.allowedActions(SECTION_EDITOR, submitted(REPORTER, ApprovalLevel.SECTION_EDITOR), 1,
+                STAFFING, NO_CORRECTIONS)).containsExactly(APPROVE, REJECT);
+    }
+
+    @Test
+    void publisherOnAReportersPublishedArticle() {
+        assertThat(allowed(PUBLISHER, article(REPORTER, ArticleStatus.PUBLISHED, 1))).containsExactly(EDIT, TAKE_OFFLINE);
+    }
+
+    @Test
+    void publisherOnTheirCorrection() {
+        ArticleEntity corrected = article(REPORTER, ArticleStatus.PUBLISHED, 1);
+        assertThat(ArticlePolicy.allowedActions(PUBLISHER, corrected, 2, contributed(corrected, PUBLISHER), CORRECTIONS))
                 .containsExactly(EDIT, PUBLISH, TAKE_OFFLINE);
     }
 
     @Test
-    void foreignArticlesNeedNoStaffing() {
-        assertThat(ArticlePolicy.allowedActions(SECTION_EDITOR, submitted(REPORTER, ApprovalLevel.SECTION_EDITOR), 1,
-                Staffing.NOT_NEEDED)).containsExactly(APPROVE, REJECT);
-        assertThat(ArticlePolicy.allowedActions(CHIEF, PUBLISHED, 1, Staffing.NOT_NEEDED))
-                .containsExactly(TAKE_OFFLINE);
+    void sectionEditorSubmitsTheirCorrection() {
+        ArticleEntity corrected = article(REPORTER, ArticleStatus.PUBLISHED, 1);
+        Staffing staffing = contributed(corrected, SECTION_EDITOR);
+        assertThat(ArticlePolicy.allowedActions(SECTION_EDITOR, corrected, 2, staffing, CORRECTIONS))
+                .containsExactly(EDIT, SUBMIT, TAKE_OFFLINE);
+        assertThat(ArticlePolicy.verdict(SUBMIT, SECTION_EDITOR, corrected, 2, staffing, NO_CORRECTIONS))
+                .isEqualTo(FORBIDDEN);
+    }
+
+    @Test
+    void correctorWhoIsNoContributorMayNotSubmit() {
+        ArticleEntity edited = article(REPORTER, ArticleStatus.PUBLISHED, 1);
+        Staffing staffing = contributed(edited, REPORTER);
+        assertThat(ArticlePolicy.verdict(SUBMIT, SECTION_EDITOR, edited, 2, staffing, CORRECTIONS)).isEqualTo(FORBIDDEN);
+        assertThat(ArticlePolicy.verdict(PUBLISH, PUBLISHER, edited, 2, staffing, CORRECTIONS)).isEqualTo(FORBIDDEN);
+        assertThat(ArticlePolicy.verdict(SUBMIT, REPORTER, edited, 2, staffing, CORRECTIONS)).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    void correctionKeepsTheAuthorsChainForTheAuthor() {
+        // the author submits after a correction: the chain spans both contributors
+        ArticleEntity corrected = article(REPORTER, ArticleStatus.PUBLISHED, 1);
+        Staffing staffing = contributed(corrected, REPORTER, PUBLISHER);
+        assertThat(ArticlePolicy.allowedActions(REPORTER, corrected, 3, staffing, CORRECTIONS))
+                .containsExactly(EDIT, SUBMIT, TAKE_OFFLINE);
+        assertThat(ArticlePolicy.allowedActions(PUBLISHER, corrected, 3, staffing, CORRECTIONS))
+                .containsExactly(EDIT, SUBMIT, TAKE_OFFLINE);
     }
 
     @Test

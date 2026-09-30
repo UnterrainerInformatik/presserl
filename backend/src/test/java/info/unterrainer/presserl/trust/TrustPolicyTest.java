@@ -61,7 +61,7 @@ class TrustPolicyTest {
     }
 
     private static AccountDto account(String id, List<NewspaperRole> roles, List<SectionRoleDto> sectionRoles) {
-        return new AccountDto(id, id, id, "", roles, sectionRoles, true, List.of(), List.of(), List.of());
+        return new AccountDto(id, id, id, "", roles, sectionRoles, false, true, List.of(), List.of(), List.of());
     }
 
     private static AccountDto self(Newsroom newsroom) {

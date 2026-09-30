@@ -14,6 +14,7 @@ import info.unterrainer.presserl.section.Newsroom;
 import info.unterrainer.presserl.section.NewsroomService;
 import info.unterrainer.presserl.section.SectionRoleDto;
 import info.unterrainer.presserl.section.SectionRoleStore;
+import info.unterrainer.presserl.section.SectionlessReporterStore;
 import info.unterrainer.presserl.trust.TrustPolicy;
 import info.unterrainer.presserl.trust.TrustScope;
 import info.unterrainer.presserl.trust.TrustStore;
@@ -71,20 +72,25 @@ public class AccountResource {
     TrustStore trustStore;
 
     @Inject
+    SectionlessReporterStore markers;
+
+    @Inject
     PassPhraseGenerator passPhrases;
 
     @GET
     public Uni<AccountListDto> list() {
         return newsroom().flatMap(newsroom -> keycloakCalls.call(service::list)
                 .flatMap(accounts -> sectionRoles.byAccount().flatMap(roles -> trustStore.byAccount()
-                        .flatMap(trusts -> sectionRoles.sectionIds().map(sectionIds -> new AccountListDto(
-                                RoleDelegation.assignableBy(newsroom.user()),
-                                accounts.stream()
-                                        .map(account -> account
-                                                .withSectionRoles(roles.getOrDefault(account.id(), List.of()))
-                                                .withTrusts(trusts.getOrDefault(account.id(), List.of()))
-                                                .withAllowedActionsFor(newsroom, sectionIds))
-                                        .toList()))))));
+                        .flatMap(trusts -> markers.marked().flatMap(marked -> sectionRoles.sectionIds()
+                                .map(sectionIds -> new AccountListDto(
+                                        RoleDelegation.assignableBy(newsroom.user()), newsroom.isAdministrator(),
+                                        accounts.stream()
+                                                .map(account -> account
+                                                        .withSectionRoles(roles.getOrDefault(account.id(), List.of()))
+                                                        .withSectionlessReporter(marked.contains(account.id()))
+                                                        .withTrusts(trusts.getOrDefault(account.id(), List.of()))
+                                                        .withAllowedActionsFor(newsroom, sectionIds))
+                                                .toList())))))));
     }
 
     @GET
@@ -230,8 +236,8 @@ public class AccountResource {
     }
 
     /**
-     * The account {@code id} with newspaper roles, section roles and trust entries, and the ids of
-     * all sections by position.
+     * The account {@code id} with newspaper roles, section roles, marker and trust entries, and the
+     * ids of all sections by position.
      *
      * @throws AccountException {@code 404} for an unknown id or a service account
      */
@@ -242,6 +248,7 @@ public class AccountResource {
                     return sectionRoles.namedRolesOf(id).map(roles -> account.withSectionRoles(roles.stream()
                             .map(role -> new SectionRoleDto(role.sectionId(), role.role())).toList()));
                 })
+                .flatMap(account -> markers.isMarked(id).map(account::withSectionlessReporter))
                 .flatMap(account -> sectionRoles.sectionIds().flatMap(sectionIds -> trustStore.scopesOf(id)
                         .map(trusts -> new Target(newsroom, account.withTrusts(
                                 trusts.stream().sorted(TrustScope.order(sectionIds)).toList()), sectionIds))));

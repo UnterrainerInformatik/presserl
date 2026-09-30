@@ -14,9 +14,10 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 /**
- * Creates an account with newspaper roles (Keycloak) and section roles (database), all or nothing:
- * every role is checked before Keycloak is called, and when storing the section roles fails, the
- * new Keycloak user is deleted again.
+ * Creates an account with newspaper roles (Keycloak), section roles and the sectionless-reporter
+ * marker (database), all or nothing: every role is checked before Keycloak is called, section roles
+ * and marker are stored in one transaction, and when that fails, the new Keycloak user is deleted
+ * again.
  */
 @ApplicationScoped
 public class AccountCreation {
@@ -33,33 +34,54 @@ public class AccountCreation {
     SectionRoleStore sectionRoles;
 
     /**
-     * @throws AccountException {@code 403 roles} or {@code 403 sectionRoles} when {@code creator}
-     *                          may not assign a role, {@code 400 sectionRoles} for an unknown
-     *                          section, and everything {@link AccountService#create} throws
+     * @throws AccountException {@code 403 roles}, {@code 403 sectionRoles} or
+     *                          {@code 403 sectionlessReporter} when {@code creator} may not assign a
+     *                          role, {@code 400 sectionRoles} for an unknown section, and everything
+     *                          {@link AccountService#create} throws
      */
     public Uni<CreatedAccountDto> create(Newsroom creator, CreateAccountRequest request) {
         AccountService.requireAssignable(creator.user(), request.roles());
+        if (request.sectionlessReporter()) {
+            requireMayAssignMarker(creator);
+        }
         Uni<List<SectionRoleDto>> checked = request.sectionRoles().isEmpty()
                 ? Uni.createFrom().item(List.of())
                 : sectionRoles.sectionIds().map(ids -> checkSectionRoles(creator, request.sectionRoles(), ids));
         return checked.flatMap(ordered -> keycloakCalls.call(() -> accounts.create(creator.user(), request))
-                .flatMap(created -> store(creator, created, ordered)))
-                .invoke(created -> LOG.infof("Account '%s' created by '%s' with roles %s and section roles %s",
-                        created.account().username(), creator.user().username(), created.account().roles(),
-                        created.account().sectionRoles()));
+                .flatMap(created -> store(creator, created, ordered, request.sectionlessReporter())))
+                .invoke(created -> LOG.infof("Account '%s' created by '%s' with roles %s, section roles %s and "
+                        + "sectionless reporter %s", created.account().username(), creator.user().username(),
+                        created.account().roles(), created.account().sectionRoles(),
+                        created.account().sectionlessReporter()));
     }
 
-    private Uni<CreatedAccountDto> store(Newsroom creator, CreatedAccountDto created, List<SectionRoleDto> ordered) {
-        if (ordered.isEmpty()) {
+    /**
+     * Only publishers and editors-in-chief add or remove the sectionless-reporter marker.
+     *
+     * @throws AccountException {@code 403 sectionlessReporter} for anyone else
+     */
+    static void requireMayAssignMarker(Newsroom requester) {
+        if (!requester.isAdministrator()) {
+            throw AccountException.forbidden(AccountRequestValidator.SECTIONLESS_REPORTER,
+                    "only publishers and editors-in-chief may assign or remove the sectionless reporter");
+        }
+    }
+
+    private Uni<CreatedAccountDto> store(Newsroom creator, CreatedAccountDto created, List<SectionRoleDto> ordered,
+            boolean marker) {
+        if (ordered.isEmpty() && !marker) {
             return Uni.createFrom().item(created);
         }
         AccountDto account = created.account();
-        return sectionRoles.insert(account.id(), ordered, creator.user().sub())
+        String by = creator.user().sub();
+        return sectionRoles.insert(account.id(), ordered, marker, by)
                 .onFailure().call(e -> {
-                    LOG.errorf(e, "Storing the section roles of account '%s' failed; deleting it", account.username());
+                    LOG.errorf(e, "Storing the section roles and marker of account '%s' failed; deleting it",
+                            account.username());
                     return keycloakCalls.run(() -> accounts.deleteIncomplete(account.id(), account.username()));
                 })
-                .replaceWith(() -> new CreatedAccountDto(account.withSectionRoles(ordered), created.password()));
+                .replaceWith(() -> new CreatedAccountDto(account.withSectionRoles(ordered)
+                        .withSectionlessReporter(marker), created.password()));
     }
 
     /**

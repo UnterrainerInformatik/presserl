@@ -177,7 +177,9 @@ final class ReaderFixtures {
     void revision(long articleId, int number, String kicker, String headline, String subheadline, String lead,
             String body, Instant publishedAt) {
         String sql = "INSERT INTO article_revision (article_id, number, kicker, headline, subheadline, lead, body, "
-                + "created_at, updated_at, published_at) VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, now(), now(), ?)";
+                + "created_at, updated_at, published_at, author_sub, author_username, author_display_name) "
+                + "SELECT ?, ?, ?, ?, ?, ?, ?::jsonb, now(), now(), ?, a.author_sub, a.author_username, a.author_display_name "
+                + "FROM article a WHERE a.id = ?";
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, articleId);
@@ -188,6 +190,7 @@ final class ReaderFixtures {
             statement.setString(6, lead);
             statement.setString(7, body);
             statement.setTimestamp(8, publishedAt == null ? null : Timestamp.from(publishedAt));
+            statement.setLong(9, articleId);
             statement.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException(e);

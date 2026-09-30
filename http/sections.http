@@ -395,6 +395,44 @@ Authorization: Bearer {{accessToken}}
     client.test("204", () => client.assert(response.status === 204, "status " + response.status));
 %}
 
+### reader lost the last section role and became a sectionless reporter
+GET {{baseUrl}}/api/accounts
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("marker set", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const reader = response.body.accounts.find(a => a.username === "reader");
+        client.assert(reader.sectionRoles.length === 0 && reader.sectionlessReporter === true, JSON.stringify(reader));
+    });
+%}
+
+### reader as sectionless reporter may use the images but not write
+GET {{baseUrl}}/api/me
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("USE_MEDIA only", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.sectionlessReporter === true, JSON.stringify(response.body));
+        client.assert(JSON.stringify(response.body.allowedActions) === '["USE_MEDIA"]', JSON.stringify(response.body.allowedActions));
+    });
+%}
+
+### Clean up: the publisher clears the marker again
+PUT {{baseUrl}}/api/accounts/{{readerId}}/roles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "roles": ["READER"], "sectionRoles": [], "sectionlessReporter": false }
+
+> {%
+    client.test("200 without marker", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.sectionlessReporter === false, JSON.stringify(response.body));
+    });
+%}
+
 ### Removing again finds no membership
 DELETE {{baseUrl}}/api/sections/{{sportId}}/members/{{readerId}}
 Authorization: Bearer {{accessToken}}
@@ -480,6 +518,30 @@ Content-Type: application/json
 > {%
     client.test("201", () => client.assert(response.status === 201, "status " + response.status));
     client.global.set("fullArticleId", response.body.id);
+%}
+
+### Counts: writers see how many articles the section holds
+GET {{baseUrl}}/api/sections
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("one draft, nothing live, no issue", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const full = response.body.sections.find(s => s.id === client.global.get("fullId"));
+        client.assert(JSON.stringify(full.articleCounts) === '{"live":0,"total":1,"issues":[]}', JSON.stringify(full.articleCounts));
+        client.assert(response.body.sections.every(s => s.articleCounts !== null), "every section counted");
+    });
+%}
+
+### Counts: readers get none
+GET {{baseUrl}}/api/sections
+Authorization: Bearer {{readerToken}}
+
+> {%
+    client.test("articleCounts null", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.sections.every(s => s.articleCounts === null), JSON.stringify(response.body.sections));
+    });
 %}
 
 ### A section with articles is not deleted

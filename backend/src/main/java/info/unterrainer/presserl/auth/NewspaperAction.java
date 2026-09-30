@@ -6,10 +6,12 @@ package info.unterrainer.presserl.auth;
  */
 public enum NewspaperAction {
     WRITE_ARTICLES,
+    USE_MEDIA,
     MANAGE_SECTIONS,
     ASSIGN_SECTION_ROLES,
     MANAGE_ISSUES,
     ADMINISTER_ACCOUNTS,
     CONFIGURE_NEWSPAPER,
-    CONFIGURE_SPELL_CHECK
+    CONFIGURE_SPELL_CHECK,
+    CONFIGURE_CORRECTIONS
 }

@@ -28,9 +28,9 @@ import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 
 /**
- * Media endpoints for writers ({@link Newsroom#isWriter()}, {@code WRITE_ARTICLES}): upload an image,
- * list the media with their usage, read them back with their renditions and edit them (under the rules
- * of {@link MediaService#mayEdit}). Everyone else gets {@code 403}. Uploads are re-encoded by
+ * Media endpoints for writers and sectionless reporters ({@link Newsroom#mayUseMedia()},
+ * {@code USE_MEDIA}): upload an image, list the media with their usage, read them back with their
+ * renditions and edit them (under the rules of {@link MediaService#mayEdit}). Everyone else gets {@code 403}. Uploads are re-encoded by
  * {@link MediaProcessor}.
  */
 @Path("/api/media")
@@ -57,7 +57,7 @@ public class MediaResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Uni<RestResponse<MediaDto>> upload(@RestForm(FileUpload.ALL) List<FileUpload> files) {
         return newsroom().flatMap(newsroom -> {
-            MediaService.requireWriter(newsroom);
+            MediaService.requireMediaUser(newsroom);
             FileUpload file = single(files);
             return service.upload(newsroom, file.uploadedFile(), file.size())
                     .map(MediaDto::of)

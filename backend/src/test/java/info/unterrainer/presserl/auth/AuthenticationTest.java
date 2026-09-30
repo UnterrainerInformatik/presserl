@@ -6,19 +6,41 @@ import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
 
+import javax.sql.DataSource;
+
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.admin.client.Keycloak;
 
 import info.unterrainer.presserl.TestSupport;
+import info.unterrainer.presserl.bootstrap.KeycloakAdminProducer.KeycloakRealm;
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.http.ContentType;
 import io.smallrye.jwt.build.Jwt;
+import jakarta.inject.Inject;
 
 @QuarkusTest
 class AuthenticationTest {
 
+    @Inject
+    DataSource dataSource;
+
+    @Inject
+    Keycloak keycloak;
+
+    @Inject
+    KeycloakRealm keycloakRealm;
+
     @BeforeEach
     void ready() {
         TestSupport.awaitReady();
+        TestSupport.deleteSections(dataSource);
+    }
+
+    @AfterEach
+    void cleanUp() {
+        TestSupport.deleteSections(dataSource);
     }
 
     @Test
@@ -55,8 +77,10 @@ class AuthenticationTest {
                 .body("username", equalTo("publisher"))
                 .body("displayName", equalTo("publisher"))
                 .body("roles", contains("PUBLISHER"))
-                .body("allowedActions", contains("WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES",
-                        "MANAGE_ISSUES", "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER", "CONFIGURE_SPELL_CHECK"));
+                .body("sectionlessReporter", equalTo(false))
+                .body("allowedActions", contains("WRITE_ARTICLES", "USE_MEDIA", "MANAGE_SECTIONS",
+                        "ASSIGN_SECTION_ROLES", "MANAGE_ISSUES", "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER",
+                        "CONFIGURE_SPELL_CHECK", "CONFIGURE_CORRECTIONS"));
     }
 
     @Test
@@ -64,8 +88,8 @@ class AuthenticationTest {
         given().auth().oauth2(TestSupport.token("chief", "chief")).get("/api/me").then()
                 .statusCode(200)
                 .body("roles", contains("EDITOR_IN_CHIEF"))
-                .body("allowedActions", contains("WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES",
-                        "MANAGE_ISSUES", "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER"));
+                .body("allowedActions", contains("WRITE_ARTICLES", "USE_MEDIA", "MANAGE_SECTIONS",
+                        "ASSIGN_SECTION_ROLES", "MANAGE_ISSUES", "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER"));
     }
 
     @Test
@@ -76,7 +100,22 @@ class AuthenticationTest {
                 .body("displayName", equalTo("No Groups"))
                 .body("roles", empty())
                 .body("sectionRoles", empty())
+                .body("sectionlessReporter", equalTo(false))
                 .body("allowedActions", empty());
+    }
+
+    @Test
+    void sectionlessReporterUsesMediaOnly() {
+        String id = keycloak.realm(keycloakRealm.name()).users().searchByUsername("nogroups", true).getFirst().getId();
+        given().auth().oauth2(TestSupport.token("publisher", "publisher")).contentType(ContentType.JSON)
+                .body("{\"roles\": [], \"sectionRoles\": [], \"sectionlessReporter\": true}")
+                .put("/api/accounts/%s/roles".formatted(id)).then().statusCode(200);
+
+        given().auth().oauth2(TestSupport.token("nogroups", "nogroups")).get("/api/me").then()
+                .statusCode(200)
+                .body("sectionRoles", empty())
+                .body("sectionlessReporter", equalTo(true))
+                .body("allowedActions", contains("USE_MEDIA"));
     }
 
     @Test

@@ -168,6 +168,74 @@ Content-Type: image/jpeg
     });
 %}
 
+### Account id of nogroups
+GET {{baseUrl}}/api/accounts
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.global.set("nogroupsId", response.body.accounts.find(a => a.username === "nogroups").id);
+%}
+
+### nogroups becomes a sectionless reporter (the marker alone)
+PUT {{baseUrl}}/api/accounts/{{nogroupsId}}/roles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "roles": [], "sectionRoles": [], "sectionlessReporter": true }
+
+> {%
+    client.test("200 with the marker", () => client.assert(response.body.sectionlessReporter === true, JSON.stringify(response.body)));
+%}
+
+### Token for the sectionless reporter
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{nogroupsUsername}}&password={{nogroupsPassword}}
+
+> {%
+    client.global.set("photographerToken", response.body.access_token);
+%}
+
+### The sectionless reporter uploads a photo
+POST {{baseUrl}}/api/media
+Authorization: Bearer {{photographerToken}}
+Content-Type: multipart/form-data; boundary=PresserlBoundary
+
+--PresserlBoundary
+Content-Disposition: form-data; name="file"; filename="photo-gps.jpg"
+Content-Type: image/jpeg
+
+< ./media/photo-gps.jpg
+--PresserlBoundary--
+
+> {%
+    client.test("201 uploaded by nogroups", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        client.assert(response.body.uploadedBy.username === "nogroups", JSON.stringify(response.body.uploadedBy));
+    });
+    client.global.set("photographerMediaId", response.body.id);
+%}
+
+### The sectionless reporter lists the media and may edit the own unused upload
+GET {{baseUrl}}/api/media/{{photographerMediaId}}/usage
+Authorization: Bearer {{photographerToken}}
+
+> {%
+    client.test("200, mayEdit, unused", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.mayEdit === true && response.body.articles.length === 0, JSON.stringify(response.body));
+    });
+%}
+
+### The sectionless reporter does not write articles
+GET {{baseUrl}}/api/articles
+Authorization: Bearer {{photographerToken}}
+
+> {%
+    client.test("403", () => client.assert(response.status === 403, "status " + response.status));
+%}
+
 ### Readers may not upload
 POST {{baseUrl}}/api/media
 Authorization: Bearer {{readerToken}}

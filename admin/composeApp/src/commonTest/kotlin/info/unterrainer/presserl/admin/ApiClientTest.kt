@@ -106,9 +106,10 @@ class ApiClientTest {
 
     @Test
     fun updateNewspaperSettingsPutsValuesAndExplicitNulls() = runTest {
-        assertEquals("m", api.updateNewspaperSettings(mapOf("reader.text-size" to null)).settings.getValue("reader.text-size")
+        assertEquals("m", api.updateNewspaperSettings(mapOf("reader.text-size" to JsonNull)).settings.getValue("reader.text-size")
             .let { (it as JsonPrimitive).content })
-        api.updateNewspaperSettings(mapOf("reader.text-size" to "l"))
+        api.updateNewspaperSettings(mapOf("reader.text-size" to JsonPrimitive("l")))
+        api.updateNewspaperSettings(mapOf("article.corrections" to JsonPrimitive(false)))
 
         assertEquals(
             listOf(
@@ -116,6 +117,8 @@ class ApiClientTest {
                     buildJsonObject { put("reader.text-size", JsonNull) }),
                 Recorded(HttpMethod.Put, "https://news.example.org/api/newspaper/settings", "Bearer token-123",
                     buildJsonObject { put("reader.text-size", "l") }),
+                Recorded(HttpMethod.Put, "https://news.example.org/api/newspaper/settings", "Bearer token-123",
+                    buildJsonObject { put("article.corrections", false) }),
             ),
             requests,
         )
@@ -771,6 +774,43 @@ class ApiClientTest {
                 Recorded(HttpMethod.Delete, "https://news.example.org/api/issues/4", "Bearer token-123", null),
             ),
             requests,
+        )
+    }
+
+    @Test
+    fun listArticlesSorted() = runTest {
+        api.articles(mine = true, sort = "newest")
+        api.articles(sort = "section")
+        assertEquals(
+            listOf(
+                "https://news.example.org/api/articles?mine=true&sort=newest",
+                "https://news.example.org/api/articles?sort=section",
+            ),
+            requests.map { it.url },
+        )
+    }
+
+    @Test
+    fun approveAndRejectCarryTheVersion() = runTest {
+        api.approveArticle(42, version = 7)
+        api.rejectArticle(42, "Too short", version = 8)
+        assertEquals(Json.parseToJsonElement("""{"version": 7}"""), requests[0].body)
+        assertEquals(Json.parseToJsonElement("""{"note": "Too short", "version": 8}"""), requests[1].body)
+    }
+
+    @Test
+    fun accountRequestsCarryTheMarkerOnlyWhenGiven() = runTest {
+        api.createAccount(CreateAccountRequest("Pia", "", "pia", emptyList(), sectionlessReporter = true))
+        api.editRoles("9a1e", EditRolesRequest(listOf("READER"), emptyList()))
+        api.editRoles("9a1e", EditRolesRequest(emptyList(), emptyList(), sectionlessReporter = false))
+        assertEquals(
+            Json.parseToJsonElement("""{"firstName": "Pia", "lastName": "", "username": "pia", "roles": [], "sectionlessReporter": true}"""),
+            requests[0].body,
+        )
+        assertEquals(Json.parseToJsonElement("""{"roles": ["READER"], "sectionRoles": []}"""), requests[1].body)
+        assertEquals(
+            Json.parseToJsonElement("""{"roles": [], "sectionRoles": [], "sectionlessReporter": false}"""),
+            requests[2].body,
         )
     }
 

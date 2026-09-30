@@ -9,12 +9,14 @@ import info.unterrainer.presserl.issue.IssueRefDto;
 import info.unterrainer.presserl.section.Newsroom;
 
 /**
- * An article with the content of its latest revision ({@code revision}).
+ * An article with the content of its latest revision ({@code revision}); {@code lastEditor} is that
+ * revision's author.
  */
 public record ArticleDto(
         long id,
         ArticleStatus status,
         AuthorDto author,
+        AuthorDto lastEditor,
         SectionRefDto section,
         IssueRefDto issue,
         int revision,
@@ -36,13 +38,15 @@ public record ArticleDto(
 
     /**
      * @param staffing  from {@link StaffingService#forArticles} for this article
+     * @param rules     from {@link ArticleService#rules}
      * @param leadImage from {@link ArticleService#leadImage} for the revision
      */
-    public static ArticleDto of(ArticleView view, Newsroom newsroom, Staffing staffing, LeadImageDto leadImage) {
+    public static ArticleDto of(ArticleView view, Newsroom newsroom, Staffing staffing, ArticleRules rules,
+            LeadImageDto leadImage) {
         ArticleEntity a = view.article();
         ArticleRevisionEntity r = view.revision();
-        return new ArticleDto(a.id, a.status, AuthorDto.of(a), SectionRefDto.of(view.section()), IssueRefDto.of(view.issue()), r.number, a.liveRevision,
+        return new ArticleDto(a.id, a.status, AuthorDto.of(a), AuthorDto.of(r), SectionRefDto.of(view.section()), IssueRefDto.of(view.issue()), r.number, a.liveRevision,
                 ArticlePolicy.hasUnpublishedChanges(a, r.number), a.pendingLevel, a.locked, a.version, a.createdAt, a.updatedAt, a.publishedAt,
-                r.kicker, r.headline, r.subheadline, r.lead, r.body, leadImage, ArticlePolicy.allowedActions(newsroom, a, r.number, staffing));
+                r.kicker, r.headline, r.subheadline, r.lead, r.body, leadImage, ArticlePolicy.allowedActions(newsroom, a, r.number, staffing, rules));
     }
 }

@@ -28,7 +28,7 @@ class NewspaperConfigTest {
         EffectiveSettings settings = EffectiveSettings.resolve(config(Map.of()), "10M", null);
 
         assertThat(settings).isEqualTo(new EffectiveSettings("My Newspaper", "", Visibility.PUBLIC, true, "General",
-                EditorLevel.STANDARD, TextSize.M, "10M", SpellCheckHelp.SUGGESTIONS, Set.of()));
+                EditorLevel.STANDARD, TextSize.M, "10M", SpellCheckHelp.SUGGESTIONS, true, Set.of()));
         assertThat(settings.overridesMap()).isEmpty();
     }
 
@@ -143,7 +143,8 @@ class NewspaperConfigTest {
                 Map.entry("editor.level", "standard"),
                 Map.entry("reader.text-size", "m"),
                 Map.entry("media.max-size", "10M"),
-                Map.entry("spell-check.help", "suggestions"));
+                Map.entry("spell-check.help", "suggestions"),
+                Map.entry("article.corrections", true));
     }
 
     @Test
@@ -172,5 +173,35 @@ class NewspaperConfigTest {
         assertThatThrownBy(() -> config(Map.of("PRESSERL_SPELL_CHECK_HELP", "hints")))
                 .hasStackTraceContaining("PRESSERL_SPELL_CHECK_HELP")
                 .hasStackTraceContaining("Allowed values: suggestions, messages, marks");
+    }
+
+    @Test
+    void deploymentSwitchesCorrectionsOff() {
+        EffectiveSettings settings = EffectiveSettings.resolve(
+                config(Map.of("PRESSERL_ARTICLE_CORRECTIONS", "false")), "10M", new NewspaperEntity());
+
+        assertThat(settings.articleCorrections()).isFalse();
+        assertThat(settings.overridesMap()).isEmpty();
+    }
+
+    @Test
+    void databaseOverrideWinsForCorrections() {
+        NewspaperEntity row = new NewspaperEntity();
+        row.settings = new HashMap<>(Map.of("article.corrections", true));
+
+        EffectiveSettings settings = EffectiveSettings.resolve(
+                config(Map.of("PRESSERL_ARTICLE_CORRECTIONS", "false")), "10M", row);
+
+        assertThat(settings.articleCorrections()).isTrue();
+        assertThat(settings.overridesMap()).containsExactly(Map.entry("article.corrections", true));
+    }
+
+    @Test
+    void unknownCorrectionsValueFailsNamingVariableAndAllowedValues() {
+        assertThatThrownBy(() -> config(Map.of("PRESSERL_ARTICLE_CORRECTIONS", "maybe")))
+                .hasStackTraceContaining("PRESSERL_ARTICLE_CORRECTIONS")
+                .hasStackTraceContaining("Allowed values: true, false");
+        assertThatThrownBy(() -> config(Map.of("PRESSERL_ARTICLE_CORRECTIONS", "yes")))
+                .hasStackTraceContaining("PRESSERL_ARTICLE_CORRECTIONS");
     }
 }

@@ -1,6 +1,7 @@
 package info.unterrainer.presserl.section;
 
 import java.net.URI;
+import java.util.Map;
 
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.resteasy.reactive.RestResponse;
@@ -47,7 +48,8 @@ public class SectionResource {
 
     @GET
     public Uni<SectionListDto> list() {
-        return newsroom().flatMap(newsroom -> service.list().map(sections -> SectionListDto.of(sections, newsroom)));
+        return newsroom().flatMap(newsroom -> service.list().flatMap(sections -> counts(newsroom)
+                .map(counts -> SectionListDto.of(sections, newsroom, counts))));
     }
 
     @POST
@@ -56,7 +58,7 @@ public class SectionResource {
         return manager().flatMap(newsroom -> service.create(SectionRequestValidator.section(json, false))
                 .map(section -> RestResponse.ResponseBuilder
                         .<SectionDto>created(URI.create("/api/sections/" + section.id))
-                        .entity(SectionDto.of(section, newsroom))
+                        .entity(SectionDto.of(section, newsroom, Map.of()))
                         .build()));
     }
 
@@ -65,7 +67,7 @@ public class SectionResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<SectionDto> update(@PathParam("id") long id, JsonNode json) {
         return manager().flatMap(newsroom -> service.update(id, SectionRequestValidator.section(json, true))
-                .map(section -> SectionDto.of(section, newsroom)));
+                .flatMap(section -> counts(newsroom).map(counts -> SectionDto.of(section, newsroom, counts))));
     }
 
     @PUT
@@ -73,13 +75,13 @@ public class SectionResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<SectionListDto> reorder(JsonNode json) {
         return manager().flatMap(newsroom -> service.reorder(SectionRequestValidator.order(json))
-                .map(sections -> SectionListDto.of(sections, newsroom)));
+                .flatMap(sections -> counts(newsroom).map(counts -> SectionListDto.of(sections, newsroom, counts))));
     }
 
     @DELETE
     @Path("/{id}")
     public Uni<Void> delete(@PathParam("id") long id) {
-        return manager().flatMap(newsroom -> service.delete(id, newsroom.user().username()));
+        return manager().flatMap(newsroom -> service.delete(id, newsroom.user()));
     }
 
     @GET
@@ -115,5 +117,12 @@ public class SectionResource {
                 throw new ForbiddenException();
             }
         });
+    }
+
+    /**
+     * The article counts for writers; none (answered as {@code null}) for everyone else.
+     */
+    private Uni<Map<Long, ArticleCountsDto>> counts(Newsroom newsroom) {
+        return newsroom.isWriter() ? service.articleCounts() : Uni.createFrom().item(Map.of());
     }
 }

@@ -48,6 +48,7 @@ class NewAccountModelTest {
     private fun TestScope.model(
         assignable: List<String> = listOf("PUBLISHER", "EDITOR_IN_CHIEF", "READER"),
         sections: List<SectionDto> = emptyList(),
+        mayAssignSectionlessReporter: Boolean = false,
     ) =
         NewAccountModel(
             backgroundScope,
@@ -55,6 +56,7 @@ class NewAccountModelTest {
             sections,
             suggest = { firstName -> suggested += firstName; suggest(firstName) },
             create = { request -> sent += request; create(request) },
+            mayAssignSectionlessReporter = mayAssignSectionlessReporter,
         )
 
     @Test
@@ -328,5 +330,47 @@ class NewAccountModelTest {
     private companion object {
         val SPORT = SectionDto(1, "Sport", "sport", "green", 0, listOf("SECTION_EDITOR", "REPORTER"))
         val KULTUR_READ_ONLY = SectionDto(2, "Kultur", "kultur", "red", 2, emptyList())
+    }
+
+    @Test
+    fun editorInChiefCreatesAPhotographer() = runTest {
+        val model = model(listOf("EDITOR_IN_CHIEF", "READER"), mayAssignSectionlessReporter = true)
+        model.firstName("Pia")
+        model.username("pia")
+        assertFalse(model.state.value.canCreate)
+
+        model.sectionlessReporter(true)
+        assertTrue(model.state.value.canCreate)
+        model.submit {}
+        runCurrent()
+
+        assertEquals(CreateAccountRequest("Pia", "", "pia", emptyList(), emptyList(), sectionlessReporter = true), sent.single())
+    }
+
+    @Test
+    fun sectionEditorIsNotOfferedTheMarker() = runTest {
+        val model = model(emptyList(), listOf(SPORT))
+        model.firstName("Max")
+        model.username("max")
+        model.sectionlessReporter(true)
+        assertFalse(model.state.value.sectionlessReporter)
+
+        model.sectionRole(SPORT.id, "REPORTER")
+        model.submit {}
+        runCurrent()
+
+        assertNull(sent.single().sectionlessReporter)
+    }
+
+    @Test
+    fun theMarkerIsSentWhenOfferedEvenIfNotChosen() = runTest {
+        val model = model(listOf("READER"), mayAssignSectionlessReporter = true)
+        model.firstName("Lena")
+        model.username("lena")
+        model.role("READER", true)
+        model.submit {}
+        runCurrent()
+
+        assertEquals(false, sent.single().sectionlessReporter)
     }
 }

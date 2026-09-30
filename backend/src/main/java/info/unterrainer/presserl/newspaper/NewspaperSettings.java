@@ -35,7 +35,7 @@ public class NewspaperSettings {
      * @return the effective settings after the change
      */
     @WithTransaction
-    public Uni<EffectiveSettings> update(Map<String, String> changes) {
+    public Uni<EffectiveSettings> update(Map<String, Object> changes) {
         return NewspaperEntity.<NewspaperEntity>findById(NewspaperEntity.SINGLETON_ID).map(row -> {
             // a new map, so Hibernate sees the JSON column as changed
             Map<String, Object> settings = new HashMap<>(row.settings == null ? Map.of() : row.settings);

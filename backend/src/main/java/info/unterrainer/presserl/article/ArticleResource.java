@@ -7,7 +7,9 @@ import java.util.List;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.resteasy.reactive.RestResponse;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import info.unterrainer.presserl.auth.CurrentUser;
 import info.unterrainer.presserl.section.Newsroom;
@@ -50,21 +52,26 @@ public class ArticleResource {
     @Inject
     StaffingService staffing;
 
+    @Inject
+    ObjectMapper mapper;
+
     /**
      * {@code awaitingMe} keeps only the articles the user may approve now: the query narrows to
      * pending articles of other authors, {@link ArticlePolicy} decides via {@code APPROVE}.
+     * {@code sort} is one of {@link ArticleSort}, {@code changed} when absent.
      */
     @GET
     public Uni<List<ArticleSummaryDto>> list(@QueryParam("status") String status, @QueryParam("mine") boolean mine,
-            @QueryParam("pending") boolean pending, @QueryParam("awaitingMe") boolean awaitingMe) {
+            @QueryParam("pending") boolean pending, @QueryParam("awaitingMe") boolean awaitingMe,
+            @QueryParam("sort") String sort) {
         return writer().flatMap(newsroom -> service.list(newsroom, status(status), mine, pending || awaitingMe,
-                awaitingMe)
-                .flatMap(views -> staffing.forArticles(newsroom, views.stream().map(ArticleView::article).toList())
-                        .map(staffed -> views.stream()
-                                .map(view -> ArticleSummaryDto.of(view, newsroom, staffed))
+                awaitingMe, sort(sort))
+                .flatMap(views -> staffing.forArticles(views.stream().map(ArticleView::article).toList())
+                        .flatMap(staffed -> service.rules().map(rules -> views.stream()
+                                .map(view -> ArticleSummaryDto.of(view, newsroom, staffed, rules))
                                 .filter(summary -> !awaitingMe
                                         || summary.allowedActions().contains(ArticleAction.APPROVE))
-                                .toList())));
+                                .toList()))));
     }
 
     @POST
@@ -114,23 +121,30 @@ public class ArticleResource {
         return writer().flatMap(newsroom -> dto(newsroom, service.submit(newsroom, id)));
     }
 
+    /**
+     * The optional body ({@code {"version": 7}}) is read as text, so a request without body or
+     * content type is accepted as before; it is validated before the policy.
+     */
     @POST
     @Path("/{id}/approve")
-    public Uni<ArticleDto> approve(@PathParam("id") long id) {
-        return writer().flatMap(newsroom -> dto(newsroom, service.approve(newsroom, id)));
+    public Uni<ArticleDto> approve(@PathParam("id") long id, String body) {
+        return writer().flatMap(newsroom -> {
+            Long version = RejectRequestValidator.approveVersion(json(body));
+            return dto(newsroom, service.approve(newsroom, id, version));
+        });
     }
 
     /**
-     * The body ({@code {"note": "..."}}) is validated before the policy, so a malformed body is
-     * {@code 400} for everyone.
+     * The body ({@code {"note": "...", "version": 7}}, version optional) is validated before the
+     * policy, so a malformed body is {@code 400} for everyone.
      */
     @POST
     @Path("/{id}/reject")
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<ArticleDto> reject(@PathParam("id") long id, JsonNode json) {
         return writer().flatMap(newsroom -> {
-            String note = RejectRequestValidator.validate(json);
-            return dto(newsroom, service.reject(newsroom, id, note));
+            RejectRequestValidator.Request request = RejectRequestValidator.validate(json);
+            return dto(newsroom, service.reject(newsroom, id, request.note(), request.version()));
         });
     }
 
@@ -175,12 +189,13 @@ public class ArticleResource {
     }
 
     /**
-     * Maps the article with the staffing its {@code allowedActions} need and its lead image.
+     * Maps the article with the staffing and rules its {@code allowedActions} need and its lead image.
      */
     private Uni<ArticleDto> dto(Newsroom newsroom, Uni<ArticleView> view) {
-        return view.flatMap(v -> staffing.forArticles(newsroom, List.of(v.article()))
-                .flatMap(staffed -> service.leadImage(v.revision())
-                        .map(leadImage -> ArticleDto.of(v, newsroom, staffed, leadImage))));
+        return view.flatMap(v -> staffing.forArticles(List.of(v.article()))
+                .flatMap(staffed -> service.rules()
+                        .flatMap(rules -> service.leadImage(v.revision())
+                                .map(leadImage -> ArticleDto.of(v, newsroom, staffed, rules, leadImage)))));
     }
 
     /**
@@ -192,6 +207,30 @@ public class ArticleResource {
                 throw new ForbiddenException();
             }
         });
+    }
+
+    /**
+     * An absent or empty body is no body.
+     *
+     * @throws ArticleException {@code 400} for a body that is not JSON
+     */
+    private JsonNode json(String body) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            return mapper.readTree(body);
+        } catch (JsonProcessingException e) {
+            throw ArticleException.invalid(null, "request body must be JSON");
+        }
+    }
+
+    private static ArticleSort sort(String value) {
+        if (value == null || value.isEmpty()) {
+            return ArticleSort.CHANGED;
+        }
+        return ArticleSort.parse(value).orElseThrow(() -> ArticleException.invalid("sort", "unknown sort '" + value
+                + "'; allowed: changed, newest, section"));
     }
 
     private static ArticleStatus status(String value) {

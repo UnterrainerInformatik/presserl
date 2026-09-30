@@ -1,5 +1,9 @@
 package info.unterrainer.presserl.admin
 
+import info.unterrainer.presserl.admin.api.RevisionSummaryDto
+import info.unterrainer.presserl.admin.api.RevisionDto
+import info.unterrainer.presserl.admin.api.IssueCountDto
+import info.unterrainer.presserl.admin.api.ArticleCountsDto
 import info.unterrainer.presserl.admin.api.AccountDto
 import info.unterrainer.presserl.admin.api.AccountListDto
 import info.unterrainer.presserl.admin.api.ArticleSummaryDto
@@ -460,5 +464,74 @@ class DtoTest {
         assertEquals(2, media.version)
         assertEquals(2, page.items.single().version)
         assertNull(page.next)
+    }
+
+    @Test
+    fun articleWithLastEditor() {
+        val dto = json.decodeFromString<ArticleDto>(
+            ARTICLE.replace("\"section\":", "\"lastEditor\": { \"username\": \"chief\", \"displayName\": \"Lena\" }, \"section\":"),
+        )
+
+        assertEquals(AuthorDto("chief", "Lena"), dto.lastEditor)
+        assertNull(json.decodeFromString<ArticleDto>(ARTICLE).lastEditor)
+    }
+
+    @Test
+    fun summaryWithCreatedAt() {
+        val dto = json.decodeFromString<ArticleSummaryDto>(
+            """{ "id": 9, "status": "DRAFT", "author": { "username": "chief", "displayName": "Chief" }, "headline": "Goal",
+                "kicker": "", "revision": 1, "hasUnpublishedChanges": false, "createdAt": "2026-09-30T10:00:00Z",
+                "updatedAt": "2026-09-30T11:00:00Z", "allowedActions": [] }""",
+        )
+
+        assertEquals("2026-09-30T10:00:00Z", dto.createdAt)
+    }
+
+    @Test
+    fun revisionsWithAuthor() {
+        val summary = json.decodeFromString<RevisionSummaryDto>(
+            """{ "number": 2, "headline": "H", "author": { "username": "chief", "displayName": "Lena" }, "createdAt": "t",
+                "updatedAt": "t", "publishedAt": null, "live": false }""",
+        )
+        val revision = json.decodeFromString<RevisionDto>(
+            """{ "number": 2, "headline": "H", "author": { "username": "chief", "displayName": "Lena" }, "createdAt": "t",
+                "updatedAt": "t", "live": false, "kicker": "", "subheadline": "", "lead": "", "body": { "version": 1, "blocks": [] } }""",
+        )
+
+        assertEquals(AuthorDto("chief", "Lena"), summary.author)
+        assertEquals(AuthorDto("chief", "Lena"), revision.author)
+    }
+
+    @Test
+    fun sectionWithArticleCounts() {
+        val dto = json.decodeFromString<SectionDto>(
+            """{ "id": 1, "name": "Sport", "slug": "sport", "color": "green", "position": 0, "assignableRoles": [],
+                "canWrite": true, "articleCounts": { "live": 2, "total": 4,
+                "issues": [{ "issueId": 12, "number": 2, "count": 2 }, { "issueId": 11, "number": 1, "count": 1 }] } }""",
+        )
+
+        assertEquals(ArticleCountsDto(2, 4, listOf(IssueCountDto(12, 2, 2), IssueCountDto(11, 1, 1))), dto.articleCounts)
+        assertNull(json.decodeFromString<SectionDto>(
+            """{ "id": 1, "name": "Sport", "slug": "sport", "color": "green", "position": 0, "assignableRoles": [],
+                "articleCounts": null }""",
+        ).articleCounts)
+    }
+
+    @Test
+    fun sectionlessReporterInMeAndAccounts() {
+        val me = json.decodeFromString<MeDto>(
+            """{ "username": "pia", "displayName": "Pia", "roles": [], "sectionRoles": [], "sectionlessReporter": true,
+                "allowedActions": ["USE_MEDIA"] }""",
+        )
+        val list = json.decodeFromString<AccountListDto>(
+            """{ "assignableRoles": ["EDITOR_IN_CHIEF", "READER"], "mayAssignSectionlessReporter": true, "accounts": [
+                { "id": "p", "username": "pia", "firstName": "Pia", "lastName": "", "roles": [], "sectionRoles": [],
+                  "sectionlessReporter": true, "enabled": true } ] }""",
+        )
+
+        assertTrue(me.sectionlessReporter)
+        assertTrue(list.mayAssignSectionlessReporter)
+        assertTrue(list.accounts.single().sectionlessReporter)
+        assertFalse(json.decodeFromString<MeDto>("""{ "username": "u", "displayName": "U", "roles": [] }""").sectionlessReporter)
     }
 }
