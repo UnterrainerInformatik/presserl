@@ -64,5 +64,5 @@
 - [x] 8.1 Local run with Playwright: issue 2 not live → new approved article absent from `/`, admin shows "wartet auf Ausgabe 2"; publish issue 2 → article on `/`
 - [x] 8.2 Local run with Playwright: set weights in the admin app, check the front page order; click section tags to filter and back
 - [x] 8.3 Local run with Playwright: open `/`, click the footer link, check the legal notice page in light and dark mode
-- [ ] 8.4 After deployment: `https://alexpresse.net/legal-notice` shows the text
+- [x] 8.4 After deployment: `https://alexpresse.net/legal-notice` shows the text
 - [x] 8.5 Archive step: tell Gerald that alexpresse.net and staging hide the articles of their not-live issue until he switches it live
