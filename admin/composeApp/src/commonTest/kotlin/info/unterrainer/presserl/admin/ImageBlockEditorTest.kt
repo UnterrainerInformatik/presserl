@@ -2,6 +2,8 @@ package info.unterrainer.presserl.admin
 
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.ArticleDto
+import info.unterrainer.presserl.admin.api.AuthorDto
+import info.unterrainer.presserl.admin.api.MediaListItemDto
 import info.unterrainer.presserl.admin.api.RevisionDto
 import info.unterrainer.presserl.admin.api.json
 import info.unterrainer.presserl.admin.article.Block
@@ -14,11 +16,9 @@ import info.unterrainer.presserl.admin.ui.editor.EditorBlock
 import info.unterrainer.presserl.admin.ui.editor.EditorIntent
 import info.unterrainer.presserl.admin.ui.editor.EditorModel
 import info.unterrainer.presserl.admin.ui.editor.IdSource
+import info.unterrainer.presserl.admin.ui.editor.ImageTarget
 import info.unterrainer.presserl.admin.ui.editor.SaveState
-import info.unterrainer.presserl.admin.ui.editor.UploadError
-import info.unterrainer.presserl.admin.ui.editor.UploadTarget
 import info.unterrainer.presserl.admin.ui.editor.draftOf
-import info.unterrainer.presserl.admin.ui.media.PickedFile
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockEngineConfig
@@ -40,16 +40,14 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Image blocks in the editor model: insert by upload, replace, caption, undo, move, remove, errors, read-only. */
+/** Image blocks in the editor model: insert by pick, replace, caption, undo, move, remove, errors, read-only. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ImageBlockEditorTest {
 
     private var now = 0L
     private val ids = IdSource()
-    private val file = PickedFile("finish.jpg", byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte()))
     private val model = EditorModel(draftOf(json.decodeFromString<ArticleDto>(ARTICLE), ids), ids, clock = { now })
 
     /** Ids of the example's blocks: paragraph, subhead, quote, list. */
@@ -61,75 +59,49 @@ class ImageBlockEditorTest {
         model.dispatch(intent)
     }
 
+    /** A media of the newspaper as the media picker hands it over. */
+    private fun picked(id: Long) =
+        MediaListItemDto(id, 0, "image/jpeg", 1600, 1067, 298114, AuthorDto("papa", "Papa"), "2026-09-27T14:03:11.402Z")
+
     private fun types() = model.draft.body().blocks.map { it::class.simpleName }
 
     private fun image(index: Int) = model.draft.blocks[index] as EditorBlock.Image
 
-    /** Answers uploads with [status] (`201` answers media [mediaId]); records the upload requests. */
-    private class MediaServer(val status: HttpStatusCode = HttpStatusCode.Created, val mediaId: Long = 17) {
-        val uploads = mutableListOf<String>()
-        val api = ApiClient(
-            HttpClient(MockEngine { request ->
-                uploads += request.url.encodedPath
-                if (status == HttpStatusCode.Created) {
-                    respond("""{ "id": $mediaId, "contentType": "image/jpeg", "width": 1600, "height": 1067, "size": 298114,
-                        "uploadedBy": { "username": "papa", "displayName": "Papa" }, "uploadedAt": "2026-09-27T14:03:11.402Z",
-                        "renditions": { "thumbnail": { "width": 480, "height": 320, "size": 31877 } } }""",
-                        status, headersOf(HttpHeaders.ContentType, "application/json"))
-                } else {
-                    respond("""{ "errors": [{ "field": "file", "message": "refused" }] }""", status,
-                        headersOf(HttpHeaders.ContentType, "application/json"))
-                }
-            }),
-            "https://news.example.org",
-        ) { "token" }
-    }
-
     @Test
-    fun uploadInsertsAnImageBlockWhereTheMenuWasOpened() = runTest {
-        val server = MediaServer()
+    fun pickInsertsAnImageBlockWhereTheMenuWasOpened() {
+        model.useImage(ImageTarget.NewBlock(paragraph), picked(17))
 
-        model.pickAndUpload(UploadTarget.NewBlock(paragraph), { file }, server.api::uploadMedia)
-
-        assertEquals(listOf("/api/media"), server.uploads)
         assertEquals(listOf("Paragraph", "Image", "Subhead", "Quote", "BulletList"), types())
         assertEquals(Block.Image(17), model.draft.body().blocks[1])
-        assertFalse(model.uploading)
-        assertNull(model.uploadFailure)
         assertTrue(model.canUndo)
     }
 
     @Test
-    fun uploadAtTheStart() = runTest {
-        model.uploadImage(UploadTarget.NewBlock(null), file, MediaServer(mediaId = 18).api::uploadMedia)
+    fun pickAtTheStart() {
+        model.useImage(ImageTarget.NewBlock(null), picked(18))
 
         assertEquals(Block.Image(18), model.draft.body().blocks.first())
     }
 
     @Test
-    fun cancellingThePickerInsertsNothing() = runTest {
-        val server = MediaServer()
-        val before = model.draft
+    fun undoRemovesAnInsertedImage() {
+        val before = model.draft.body()
+        model.useImage(ImageTarget.NewBlock(paragraph), picked(17))
 
-        model.pickAndUpload(UploadTarget.NewBlock(paragraph), { null }, server.api::uploadMedia)
+        dispatch(EditorIntent.Undo)
 
-        assertEquals(before, model.draft)
-        assertEquals(emptyList(), server.uploads)
+        assertEquals(before, model.draft.body())
         assertFalse(model.canUndo)
     }
 
     @Test
-    fun refusedUploadInsertsNothingAndIsExplainedAtTheMenu() = runTest {
-        val before = model.draft
-        val target = UploadTarget.NewBlock(paragraph)
+    fun theSameMediaAsLeadImageAndInABlock() {
+        model.useImage(ImageTarget.LeadImage, picked(17))
+        model.useImage(ImageTarget.NewBlock(paragraph), picked(17))
 
-        model.pickAndUpload(target, { file }, MediaServer(HttpStatusCode.UnsupportedMediaType).api::uploadMedia)
-
-        assertEquals(before, model.draft)
-        assertEquals(UploadError.Unsupported, model.uploadErrorAt(target))
-        assertNull(model.uploadErrorAt(UploadTarget.LeadImage))
-        assertNull(model.uploadErrorAt(UploadTarget.NewBlock(subhead)))
-        assertFalse(model.uploading)
+        val content = model.draft.toContent()
+        assertEquals(17, content.leadImage?.mediaId)
+        assertEquals(Block.Image(17), model.draft.body().blocks[1])
     }
 
     @Test
@@ -141,26 +113,15 @@ class ImageBlockEditorTest {
     }
 
     @Test
-    fun replacingKeepsTheCaption() = runTest {
+    fun replacingKeepsTheCaption() {
         dispatch(EditorIntent.AddImageBlock(paragraph, 17))
         val block = image(1).id
         dispatch(EditorIntent.SetImageCaption(block, "Our class"))
 
-        model.uploadImage(UploadTarget.Block(block), file, MediaServer(mediaId = 18).api::uploadMedia)
+        model.useImage(ImageTarget.Block(block), picked(18))
 
         assertEquals(Block.Image(18, "Our class"), model.draft.body().blocks[1])
         assertEquals(block, image(1).id)
-    }
-
-    @Test
-    fun failedReplacementKeepsTheImageAndIsExplainedAtTheBlock() = runTest {
-        dispatch(EditorIntent.AddImageBlock(paragraph, 17))
-        val target = UploadTarget.Block(image(1).id)
-
-        model.uploadImage(target, file, MediaServer(HttpStatusCode.PayloadTooLarge).api::uploadMedia)
-
-        assertEquals(17, image(1).mediaId)
-        assertEquals(UploadError.TooLarge, model.uploadErrorAt(target))
     }
 
     @Test
@@ -250,7 +211,7 @@ class ImageBlockEditorTest {
         val saver = Autosaver(backgroundScope, model.draft.toContent(), version = 5,
             save = { content, version -> api.updateArticle(42, content, version) })
 
-        model.uploadImage(UploadTarget.NewBlock(paragraph), file, MediaServer(mediaId = 17).api::uploadMedia)
+        model.useImage(ImageTarget.NewBlock(paragraph), picked(17))
         dispatch(EditorIntent.SetImageCaption(image(1).id, "The finish line"))
         saver.changed(model.draft.toContent())
         advanceTimeBy(2_000)

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -20,7 +19,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -92,7 +90,6 @@ import info.unterrainer.presserl.admin.resources.field_lead_image
 import info.unterrainer.presserl.admin.resources.lead_image_choose
 import info.unterrainer.presserl.admin.resources.lead_image_remove
 import info.unterrainer.presserl.admin.resources.lead_image_replace
-import info.unterrainer.presserl.admin.resources.lead_image_uploading
 import info.unterrainer.presserl.admin.resources.field_section
 import info.unterrainer.presserl.admin.resources.field_subheadline
 import info.unterrainer.presserl.admin.resources.leave
@@ -141,11 +138,10 @@ import info.unterrainer.presserl.admin.ui.decisionText
 import info.unterrainer.presserl.admin.ui.describe
 import info.unterrainer.presserl.admin.ui.formatTimestamp
 import info.unterrainer.presserl.admin.ui.media.LeadImagePreview
+import info.unterrainer.presserl.admin.ui.media.MediaPickerDialog
 import info.unterrainer.presserl.admin.ui.media.MediaPreview
 import info.unterrainer.presserl.admin.ui.media.PictureIcon
 import info.unterrainer.presserl.admin.ui.media.Thumbnails
-import info.unterrainer.presserl.admin.ui.media.uploadErrorText
-import info.unterrainer.presserl.admin.ui.media.pickImageFile
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
 import info.unterrainer.presserl.admin.ui.spell.CheckField
 import info.unterrainer.presserl.admin.ui.spell.SpellChecker
@@ -167,7 +163,7 @@ import kotlin.time.TimeSource
 /**
  * The article editor at level `standard`. [readerUrl] gives the reader page of an article;
  * [onBack], [onRevisions] and [onShowChanges] (the comparison of a revision with its predecessor) are called once
- * pending changes are saved. [maxUploadSize] is the newspaper's `media.max-size`, named when an image is too large.
+ * pending changes are saved.
  * [username] is the logged-in user's, to tell a correction of someone else's article.
  */
 @Composable
@@ -177,7 +173,6 @@ fun EditorScreen(
     readerUrl: (Long) -> String,
     onBack: () -> Unit,
     onRevisions: () -> Unit,
-    maxUploadSize: String? = null,
     spellCheck: Boolean = false,
     username: String = "",
     onShowChanges: (revision: Int) -> Unit = {},
@@ -196,7 +191,7 @@ fun EditorScreen(
             }
             loaded == null -> Text(stringResource(Res.string.loading))
             else -> Editor(
-                api, loaded, readerUrl, maxUploadSize, spellCheck, username, onBack, onRevisions, onShowChanges,
+                api, loaded, readerUrl, spellCheck, username, onBack, onRevisions, onShowChanges,
                 onReload = { loads++ },
             )
         }
@@ -208,7 +203,6 @@ private fun Editor(
     api: ApiClient,
     loaded: ArticleDto,
     readerUrl: (Long) -> String,
-    maxUploadSize: String?,
     spellCheck: Boolean,
     username: String,
     onBack: () -> Unit,
@@ -406,11 +400,22 @@ private fun Editor(
                     }
                     FieldHelp(HelpPart.SECTION, help)
                 }
-                val images = ImageSlot(thumbnails, maxUploadSize, onChoose = { target ->
-                    scope.launch { model.pickAndUpload(target, ::pickImageFile, api::uploadMedia) }
-                })
+                // Where the open media picker hands its image; null while it is closed
+                var picking by remember { mutableStateOf<ImageTarget?>(null) }
+                val images = ImageSlot(thumbnails, onChoose = { picking = it })
                 SpellNotice(checker)
                 EditableArticle(model, errors, images, help, checker, enabled = saveState != SaveState.Conflict)
+                picking?.let { target ->
+                    MediaPickerDialog(
+                        api,
+                        thumbnails,
+                        onPick = { media ->
+                            picking = null
+                            if (saveState != SaveState.Conflict) model.useImage(target, media)
+                        },
+                        onDismiss = { picking = null },
+                    )
+                }
             } else {
                 article.section?.let { SectionLabel(it.name, it.color) }
                 ArticleView(model.draft, thumbnails)
@@ -658,10 +663,10 @@ private fun SectionChooser(model: EditorModel, current: SectionRefDto?, sections
 }
 
 /**
- * What the image fields (lead image, image blocks, "Add block") need besides the model; [onChoose] opens the file
- * picker and uploads the chosen file for the target.
+ * What the image fields (lead image, image blocks, "Add block") need besides the model; [onChoose] opens the media
+ * picker for the target.
  */
-private class ImageSlot(val thumbnails: Thumbnails, val maxUploadSize: String?, val onChoose: (UploadTarget) -> Unit)
+private class ImageSlot(val thumbnails: Thumbnails, val onChoose: (ImageTarget) -> Unit)
 
 @Composable
 private fun EditableArticle(
@@ -710,8 +715,8 @@ private fun EditableArticle(
 }
 
 /**
- * The lead image: a big choose button (symbol and word) that uploads the chosen file, the preview, the caption,
- * replace and remove. Upload refusals are explained in plain words; the previous image stays.
+ * The lead image: a big choose button (symbol and word) that opens the media picker, the preview, the caption,
+ * replace and remove. Closing the picker without a choice keeps the previous image.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -746,8 +751,8 @@ private fun LeadImageField(model: EditorModel, slot: ImageSlot, error: String?, 
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             val choose = if (image == null) Res.string.lead_image_choose else Res.string.lead_image_replace
             Button(
-                onClick = { slot.onChoose(UploadTarget.LeadImage) },
-                enabled = enabled && !model.uploading,
+                onClick = { slot.onChoose(ImageTarget.LeadImage) },
+                enabled = enabled,
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
             ) {
                 PictureIcon()
@@ -755,65 +760,35 @@ private fun LeadImageField(model: EditorModel, slot: ImageSlot, error: String?, 
                 Text(stringResource(choose), style = MaterialTheme.typography.titleSmall)
             }
             if (image != null) {
-                OutlinedButton(onClick = { model.dispatch(EditorIntent.RemoveLeadImage) }, enabled = enabled && !model.uploading) {
+                OutlinedButton(onClick = { model.dispatch(EditorIntent.RemoveLeadImage) }, enabled = enabled) {
                     IconLabel(Icons.Close, stringResource(Res.string.lead_image_remove))
                 }
             }
-            UploadBusy(model, UploadTarget.LeadImage)
         }
-        UploadErrorText(model, UploadTarget.LeadImage, slot.maxUploadSize)
-    }
-}
-
-/** The busy indicator while an upload started at [target] runs. */
-@Composable
-private fun UploadBusy(model: EditorModel, target: UploadTarget) {
-    if (model.uploadingAt == target) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            Text(stringResource(Res.string.lead_image_uploading), style = MaterialTheme.typography.bodyMedium)
-        }
-    }
-}
-
-/** Why the last upload started at [target] failed, in plain words; nothing if it did not. */
-@Composable
-private fun UploadErrorText(model: EditorModel, target: UploadTarget, maxUploadSize: String?) {
-    model.uploadErrorAt(target)?.let { uploadError ->
-        Text(uploadErrorText(uploadError, maxUploadSize), color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodyMedium)
     }
 }
 
 /**
- * "+ Add block" after [afterId] (`null`: at the start). "Image" opens the file picker and inserts an image block
- * once the upload succeeded; its busy indicator and upload errors show here.
+ * "+ Add block" after [afterId] (`null`: at the start). "Image" opens the media picker and inserts an image block
+ * with the picked media.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AddBlockButton(afterId: Long?, model: EditorModel, images: ImageSlot, enabled: Boolean) {
     var open by remember { mutableStateOf(false) }
-    val target = UploadTarget.NewBlock(afterId)
-    Column {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-            Box {
-                TextButton(onClick = { open = true }, enabled = enabled) { Text("+ " + stringResource(Res.string.add_block)) }
-                DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                    BlockType.entries.forEach { type ->
-                        DropdownMenuItem(
-                            text = { Text(stringResource(BLOCK_LABELS.getValue(type))) },
-                            enabled = type != BlockType.IMAGE || !model.uploading,
-                            onClick = {
-                                open = false
-                                if (type == BlockType.IMAGE) images.onChoose(target) else model.dispatch(EditorIntent.AddBlock(afterId, type))
-                            },
-                        )
-                    }
-                }
+    Box {
+        TextButton(onClick = { open = true }, enabled = enabled) { Text("+ " + stringResource(Res.string.add_block)) }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            BlockType.entries.forEach { type ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(BLOCK_LABELS.getValue(type))) },
+                    onClick = {
+                        open = false
+                        if (type == BlockType.IMAGE) images.onChoose(ImageTarget.NewBlock(afterId))
+                        else model.dispatch(EditorIntent.AddBlock(afterId, type))
+                    },
+                )
             }
-            UploadBusy(model, target)
         }
-        UploadErrorText(model, target, images.maxUploadSize)
     }
 }
 
@@ -914,11 +889,7 @@ private fun BlockCard(
     }
 }
 
-/**
- * An image block's preview, caption field and replace button with the upload's busy indicator and errors; a failed
- * replacement keeps the image.
- */
-@OptIn(ExperimentalLayoutApi::class)
+/** An image block's preview, caption field and replace button, which opens the media picker and keeps the caption. */
 @Composable
 private fun ImageBlockFields(
     model: EditorModel,
@@ -929,7 +900,6 @@ private fun ImageBlockFields(
     checker: SpellChecker,
     enabled: Boolean,
 ) {
-    val target = UploadTarget.Block(block.id)
     MediaPreview(block.mediaId, 0, 0, block.caption, images.thumbnails)
     SpellCheckedTextField(
         value = block.caption,
@@ -946,15 +916,11 @@ private fun ImageBlockFields(
         enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
     )
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-        OutlinedButton(onClick = { images.onChoose(target) }, enabled = enabled && !model.uploading) {
-            PictureIcon()
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(Res.string.lead_image_replace))
-        }
-        UploadBusy(model, target)
+    OutlinedButton(onClick = { images.onChoose(ImageTarget.Block(block.id)) }, enabled = enabled) {
+        PictureIcon()
+        Spacer(Modifier.width(8.dp))
+        Text(stringResource(Res.string.lead_image_replace))
     }
-    UploadErrorText(model, target, images.maxUploadSize)
 }
 
 /**

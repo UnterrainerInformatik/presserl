@@ -3,6 +3,7 @@ package info.unterrainer.presserl.admin.ui.media
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.MediaDto
 import info.unterrainer.presserl.admin.api.MediaFilter
 import info.unterrainer.presserl.admin.api.MediaListItemDto
@@ -93,6 +94,9 @@ class MediaGridModel(private val load: suspend (filter: MediaFilter, before: Lon
         }
     }
 }
+
+/** A grid over the newspaper's media ([MEDIA_PAGE_SIZE] per page), starting without filters. */
+fun mediaGridOf(api: ApiClient): MediaGridModel = MediaGridModel { filter, before -> api.listMedia(MEDIA_PAGE_SIZE, before, filter) }
 
 /** Where an article uses the image, as the media detail names it. */
 enum class UsagePlace {

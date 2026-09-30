@@ -20,15 +20,6 @@ private const val ACCEPT = "image/jpeg,image/png,image/webp"
 private fun arrayBuffer(file: File): Promise<ArrayBuffer> = js("file.arrayBuffer()")
 
 /**
- * A hidden `<input type="file">`, opened programmatically; `change` delivers the file, `cancel` (closing the
- * dialog without a choice) delivers `null`. The input is removed afterwards.
- */
-actual suspend fun pickImageFile(): PickedFile? {
-    val file = pick { it.accept = ACCEPT }?.firstOrNull() ?: return null
-    return PickedFile(file.name, read(file))
-}
-
-/**
  * For [camera] any image type with `capture="environment"`: mobile browsers open the rear camera, desktop browsers
  * ignore `capture` and show the picker. Otherwise several files may be chosen. The browser `File`s stay handles until
  * [PickableFile.read].

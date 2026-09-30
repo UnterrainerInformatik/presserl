@@ -1,6 +1,7 @@
 package info.unterrainer.presserl.admin
 
 import androidx.compose.ui.graphics.ImageBitmap
+import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.AuthorDto
 import info.unterrainer.presserl.admin.api.MediaDto
 import info.unterrainer.presserl.admin.api.MediaFilter
@@ -11,12 +12,20 @@ import info.unterrainer.presserl.admin.api.MediaUseDto
 import info.unterrainer.presserl.admin.api.json
 import info.unterrainer.presserl.admin.ui.media.EditImpact
 import info.unterrainer.presserl.admin.ui.media.MediaGridModel
+import info.unterrainer.presserl.admin.ui.media.MediaSearch
 import info.unterrainer.presserl.admin.ui.media.Thumbnails
 import info.unterrainer.presserl.admin.ui.media.UsagePlace
 import info.unterrainer.presserl.admin.ui.media.editImpact
 import info.unterrainer.presserl.admin.ui.media.formatBytes
+import info.unterrainer.presserl.admin.ui.media.mediaGridOf
 import info.unterrainer.presserl.admin.ui.media.mayEdit
 import info.unterrainer.presserl.admin.ui.media.usagePlaces
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -54,6 +63,34 @@ class MediaBrowserModelTest {
 
         grid.loadMore()
         assertEquals(listOf(null, 16L), requested)
+    }
+
+    @Test
+    fun pickerGridStartsUnfilteredAndPagesWithNext() = runTest {
+        val requested = mutableListOf<String>()
+        val api = ApiClient(
+            HttpClient(MockEngine { request ->
+                requested += request.url.encodedPathAndQuery
+                val page = if (request.url.parameters["before"] == null) MediaPage(listOf(item(3), item(2)), next = 2)
+                else MediaPage(listOf(item(1)), null)
+                respond(json.encodeToString(page), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+            }),
+            "https://news.example.org",
+        ) { "token" }
+        // an earlier opening searched; a new one starts without filters
+        mediaGridOf(api).setFilter(MediaFilter(tags = listOf("Sportfest"), unused = true))
+        requested.clear()
+        val search = MediaSearch(mediaGridOf(api))
+        assertEquals(MediaFilter(), search.grid.filter)
+        assertEquals("", search.query)
+        assertEquals(emptyList(), search.tags.tags)
+
+        search.grid.loadMore()
+        search.grid.loadMore()
+
+        assertEquals(listOf("/api/media?limit=60", "/api/media?limit=60&before=2"), requested)
+        assertEquals(listOf(3L, 2L, 1L), search.grid.items.map { it.id })
+        assertFalse(search.grid.hasMore)
     }
 
     @Test

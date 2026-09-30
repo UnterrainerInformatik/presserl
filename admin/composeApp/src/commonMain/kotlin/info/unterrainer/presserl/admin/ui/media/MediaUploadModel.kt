@@ -4,8 +4,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import info.unterrainer.presserl.admin.api.MediaDto
-import info.unterrainer.presserl.admin.ui.editor.UploadError
-import info.unterrainer.presserl.admin.ui.editor.uploadErrorOf
 import kotlinx.coroutines.CancellationException
 
 /** Signature of `ApiClient.uploadMedia`. */

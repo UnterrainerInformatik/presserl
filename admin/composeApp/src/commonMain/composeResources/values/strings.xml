@@ -43,7 +43,6 @@
     <string name="lead_image_choose">Bild auswählen</string>
     <string name="lead_image_replace">Anderes Bild</string>
     <string name="lead_image_remove">Bild entfernen</string>
-    <string name="lead_image_uploading">Bild wird hochgeladen …</string>
     <string name="lead_image_no_preview">Keine Vorschau</string>
     <string name="upload_too_large">Das Bild ist zu groß. Es darf höchstens %1$s haben.</string>
     <string name="upload_too_large_unknown">Das Bild ist zu groß.</string>
@@ -347,6 +346,9 @@
     <string name="media_upload_retry">Erneut versuchen</string>
     <string name="media_upload_discard_title">Hochladen abbrechen?</string>
     <string name="media_upload_discard_text">Noch nicht hochgeladen: %1$d. Diese Bilder werden verworfen.</string>
+    <string name="media_picker_title">Bild auswählen</string>
+    <string name="media_picker_close">Schließen</string>
+    <string name="media_picker_none">Hier gibt es noch keine Bilder. Bilder fügst du unter „Bilder“ hinzu.</string>
     <string name="media_details_title">Beschreibung und Schlagwörter</string>
     <string name="media_description">Beschreibung</string>
     <string name="media_description_none">Keine Beschreibung</string>

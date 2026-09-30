@@ -70,7 +70,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.MediaDto
-import info.unterrainer.presserl.admin.api.MediaFilter
 import info.unterrainer.presserl.admin.api.MediaListItemDto
 import info.unterrainer.presserl.admin.api.MediaTagDto
 import info.unterrainer.presserl.admin.api.MediaUsageDto
@@ -113,10 +112,7 @@ import info.unterrainer.presserl.admin.resources.media_error_invalid
 import info.unterrainer.presserl.admin.resources.media_error_other
 import info.unterrainer.presserl.admin.resources.media_error_unreachable
 import info.unterrainer.presserl.admin.resources.media_filter_clear
-import info.unterrainer.presserl.admin.resources.media_filter_mine
 import info.unterrainer.presserl.admin.resources.media_filter_tags
-import info.unterrainer.presserl.admin.resources.media_filter_text
-import info.unterrainer.presserl.admin.resources.media_filter_unused
 import info.unterrainer.presserl.admin.resources.media_load_more
 import info.unterrainer.presserl.admin.resources.media_none
 import info.unterrainer.presserl.admin.resources.media_none_matching
@@ -164,7 +160,6 @@ import info.unterrainer.presserl.admin.ui.section.ColorMarker
 import info.unterrainer.presserl.admin.ui.statusText
 import info.unterrainer.presserl.admin.ui.waitingText
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -186,31 +181,12 @@ fun MediaGridScreen(
     onOpen: (Long) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val state = rememberLazyGridState()
     var upload by remember { mutableStateOf<MediaUploadModel?>(null) }
-    val searchTags = remember(grid) { TagChips(grid.filter.tags, MAX_FILTER_TAGS) }
-    var query by remember(grid) { mutableStateOf(grid.filter.q) }
-    LaunchedEffect(grid) { if (!grid.loaded) grid.loadMore() }
-    LaunchedEffect(grid, state) {
-        snapshotFlow { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index to state.layoutInfo.totalItemsCount }
-            .distinctUntilChanged()
-            .collect { (last, total) -> if (last != null && total > 0 && last >= total - 1 && grid.loaded) grid.loadMore() }
-    }
-    // reloads only after a short pause in typing
-    LaunchedEffect(grid, query) {
-        if (query == grid.filter.q) return@LaunchedEffect
-        delay(SEARCH_DEBOUNCE_MILLIS)
-        grid.setFilter(grid.filter.copy(q = query))
-    }
+    val search = rememberMediaSearch(grid)
     val choose = { camera: Boolean ->
         scope.launch {
             chooseForUpload({ pickImageFiles(camera) }, api::uploadMedia) { grid.prepend(it.asListItem()) }?.let { upload = it }
         }
-    }
-    val clearFilters = {
-        searchTags.set(emptyList())
-        query = ""
-        scope.launch { grid.setFilter(MediaFilter()) }
     }
     val suggest: suspend (String) -> List<MediaTagDto> = { api.mediaTags(it) }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -218,70 +194,59 @@ fun MediaGridScreen(
             Button(onClick = { choose(false) }) { Text(stringResource(Res.string.media_upload)) }
             OutlinedButton(onClick = { choose(true) }) { Text(stringResource(Res.string.media_take_photo)) }
         }
-        TagInput(
-            searchTags,
-            stringResource(Res.string.media_filter_tags),
-            suggest,
-            onChange = { tags -> scope.launch { grid.setFilter(grid.filter.copy(tags = tags)) } },
-        )
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            label = { Text(stringResource(Res.string.media_filter_text)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            FilterChip(
-                selected = grid.filter.unused,
-                onClick = { scope.launch { grid.setFilter(grid.filter.copy(unused = !grid.filter.unused)) } },
-                label = { Text(stringResource(Res.string.media_filter_unused)) },
-            )
-            FilterChip(
-                selected = grid.filter.mine,
-                onClick = { scope.launch { grid.setFilter(grid.filter.copy(mine = !grid.filter.mine)) } },
-                label = { Text(stringResource(Res.string.media_filter_mine)) },
-            )
-            if (grid.filter.active || query.isNotBlank()) {
-                TextButton(onClick = { clearFilters() }) { Text(stringResource(Res.string.media_filter_clear)) }
-            }
+        MediaSearchBar(search, suggest)
+        MediaGridList(search, thumbnails, stringResource(Res.string.media_none)) { onOpen(it.id) }
+    }
+    upload?.let { model -> UploadDialog(model, maxUploadSize, suggest, onClose = { upload = null }) }
+}
+
+/**
+ * The tiles of [search]'s grid with loading, load error (with retry), [emptyText] for a newspaper without images and
+ * "nothing matches" (with "Clear filters") for filters without hits; the first page loads when shown, further pages
+ * when the user scrolls to the end. [onClick] receives the clicked media.
+ */
+@Composable
+internal fun MediaGridList(search: MediaSearch, thumbnails: Thumbnails, emptyText: String, onClick: (MediaListItemDto) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val grid = search.grid
+    val state = rememberLazyGridState()
+    LaunchedEffect(grid) { if (!grid.loaded) grid.loadMore() }
+    LaunchedEffect(grid, state) {
+        snapshotFlow { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index to state.layoutInfo.totalItemsCount }
+            .distinctUntilChanged()
+            .collect { (last, total) -> if (last != null && total > 0 && last >= total - 1 && grid.loaded) grid.loadMore() }
+    }
+    val error = grid.error
+    when {
+        !grid.loaded && error != null -> LoadFailed(error) { scope.launch { grid.reload() } }
+        !grid.loaded -> Text(stringResource(Res.string.loading))
+        grid.items.isEmpty() && grid.filter.active -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(Res.string.media_none_matching))
+            OutlinedButton(onClick = { scope.launch { search.clear() } }) { Text(stringResource(Res.string.media_filter_clear)) }
         }
-        val error = grid.error
-        when {
-            !grid.loaded && error != null -> LoadFailed(error) { scope.launch { grid.reload() } }
-            !grid.loaded -> Text(stringResource(Res.string.loading))
-            grid.items.isEmpty() && grid.filter.active -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(Res.string.media_none_matching))
-                OutlinedButton(onClick = { clearFilters() }) { Text(stringResource(Res.string.media_filter_clear)) }
-            }
-            grid.items.isEmpty() -> Text(stringResource(Res.string.media_none))
-            else -> LazyVerticalGrid(
-                GridCells.Adaptive(170.dp),
-                state = state,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                items(grid.items, key = { it.id }) { media -> MediaTile(media, thumbnails) { onOpen(media.id) } }
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        error?.let { Banner(it) }
-                        when {
-                            grid.loading -> Text(stringResource(Res.string.loading))
-                            grid.hasMore -> OutlinedButton(onClick = { scope.launch { grid.loadMore() } }) {
-                                Text(stringResource(Res.string.media_load_more))
-                            }
+        grid.items.isEmpty() -> Text(emptyText)
+        else -> LazyVerticalGrid(
+            GridCells.Adaptive(170.dp),
+            state = state,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            items(grid.items, key = { it.id }) { media -> MediaTile(media, thumbnails) { onClick(media) } }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    error?.let { Banner(it) }
+                    when {
+                        grid.loading -> Text(stringResource(Res.string.loading))
+                        grid.hasMore -> OutlinedButton(onClick = { scope.launch { grid.loadMore() } }) {
+                            Text(stringResource(Res.string.media_load_more))
                         }
                     }
                 }
             }
         }
     }
-    upload?.let { model -> UploadDialog(model, maxUploadSize, suggest, onClose = { upload = null }) }
 }
-
-/** Pause after the last keystroke in the search text before the grid reloads. */
-private const val SEARCH_DEBOUNCE_MILLIS = 400L
 
 /**
  * The chosen files with size and state, the shared tags and description, and "Upload"; closing while files are not
@@ -374,8 +339,9 @@ private fun UploadRow(model: MediaUploadModel, entry: MediaUploadModel.Entry, ma
     }
 }
 
+/** A grid tile: thumbnail (a placeholder until it is produced), uploader, upload date, usage count and up to three tags. */
 @Composable
-private fun MediaTile(media: MediaListItemDto, thumbnails: Thumbnails, onClick: () -> Unit) {
+internal fun MediaTile(media: MediaListItemDto, thumbnails: Thumbnails, onClick: () -> Unit) {
     val hasThumbnail = "thumbnail" in media.renditions
     LaunchedEffect(media.id, media.version) { if (hasThumbnail) thumbnails.fetch(media.id, media.version) }
     Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {

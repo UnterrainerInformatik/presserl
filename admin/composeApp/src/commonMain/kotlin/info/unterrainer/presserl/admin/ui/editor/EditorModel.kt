@@ -4,15 +4,12 @@ import info.unterrainer.presserl.admin.api.ArticleContent
 import info.unterrainer.presserl.admin.api.ArticleDto
 import info.unterrainer.presserl.admin.api.LeadImageDto
 import info.unterrainer.presserl.admin.api.LeadImageRequest
-import info.unterrainer.presserl.admin.api.MediaDto
+import info.unterrainer.presserl.admin.api.MediaListItemDto
 import info.unterrainer.presserl.admin.api.RevisionDto
 import info.unterrainer.presserl.admin.article.Block
 import info.unterrainer.presserl.admin.article.Body
 import info.unterrainer.presserl.admin.article.Run
 import info.unterrainer.presserl.admin.article.singleLine
-import info.unterrainer.presserl.admin.ui.media.PickedFile
-import io.ktor.client.plugins.ResponseException
-import kotlinx.coroutines.CancellationException
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -25,55 +22,25 @@ enum class HeaderField(val maxLength: Int) {
     LEAD(1000),
 }
 
-/** Block types in the order the "Add block" menu offers them; [IMAGE] is inserted only after an upload. */
+/** Block types in the order the "Add block" menu offers them; [IMAGE] is inserted only with media chosen in the picker. */
 enum class BlockType { PARAGRAPH, SUBHEAD, QUOTE, LIST, IMAGE }
 
 /** Longest caption (lead image and image blocks) in code points, as enforced by the server. */
 const val CAPTION_MAX = 300
 
-/** The lead image of the draft: an uploaded media, its caption and the stored image's size (for the layout). */
+/** The lead image of the draft: a media of the newspaper, its caption and the stored image's size (for the layout). */
 data class DraftLeadImage(val mediaId: Long, val caption: String, val width: Int, val height: Int)
 
-/** Where an upload was started, so its busy indicator and error message show there. */
-sealed interface UploadTarget {
+/** Where the media picker was opened, so the picked media is used there. */
+sealed interface ImageTarget {
     /** The lead-image field: sets or replaces the lead image. */
-    data object LeadImage : UploadTarget
+    data object LeadImage : ImageTarget
 
     /** The "Add block" menu after block [afterId] (`null`: at the start): inserts an image block there. */
-    data class NewBlock(val afterId: Long?) : UploadTarget
+    data class NewBlock(val afterId: Long?) : ImageTarget
 
     /** The replace button of image block [blockId]: replaces its image, keeps the caption. */
-    data class Block(val blockId: Long) : UploadTarget
-}
-
-/** Why an upload was refused, as the editor explains it. */
-sealed interface UploadError {
-    /** `413`: above the newspaper's `media.max-size`. */
-    data object TooLarge : UploadError
-
-    /** `415`: not a JPEG, PNG or WebP image (HEIC, GIF, other files). */
-    data object Unsupported : UploadError
-
-    /** `400`: damaged, or too many pixels. */
-    data object Damaged : UploadError
-
-    /** `503`, other server errors and network failures. */
-    data object Unreachable : UploadError
-
-    /** Any other refusal, with the server's text. */
-    data class Other(val message: String) : UploadError
-}
-
-/** Maps a failed upload to what the editor shows. */
-fun uploadErrorOf(e: Throwable): UploadError {
-    if (e !is ResponseException) return UploadError.Unreachable
-    return when (val status = e.response.status.value) {
-        413 -> UploadError.TooLarge
-        415 -> UploadError.Unsupported
-        400 -> UploadError.Damaged
-        in 500..599 -> UploadError.Unreachable
-        else -> UploadError.Other("$status ${e.response.status.description}")
-    }
+    data class Block(val blockId: Long) : ImageTarget
 }
 
 data class ListItem(val id: Long, val runs: List<Run>)
@@ -190,7 +157,7 @@ sealed interface EditorIntent {
     /** Adds an empty block after [afterId], or at the start if it is `null`; not for [BlockType.IMAGE]. */
     data class AddBlock(val afterId: Long?, val type: BlockType) : EditorIntent
 
-    /** Adds an image block with an uploaded media and an empty caption after [afterId], or at the start if it is `null`. */
+    /** Adds an image block with a picked media and an empty caption after [afterId], or at the start if it is `null`. */
     data class AddImageBlock(val afterId: Long?, val mediaId: Long) : EditorIntent
 
     /** Replaces the image of an image block; its caption is kept. Its own undo step. */
@@ -211,8 +178,7 @@ sealed interface EditorIntent {
  * Editor state outside the composables (design D3/D4): the [draft] and its undo/redo history of
  * snapshots. Typing in one field within [coalesceMillis] forms a single undo step; every structural
  * change is its own step. [clock] returns milliseconds. State is Compose snapshot state, so text
- * fields read it synchronously. [uploadingAt] and [uploadFailure] describe the running and the last
- * failed upload with where it was started; they are not part of the draft.
+ * fields read it synchronously.
  */
 class EditorModel(
     initial: Draft,
@@ -231,19 +197,6 @@ class EditorModel(
     /** Counts undo and redo steps; fields that keep their own editor state reload when it changes. */
     var restored by mutableStateOf(0)
         private set
-
-    /** Where the running upload was started; `null` while none runs. At most one upload runs at a time. */
-    var uploadingAt by mutableStateOf<UploadTarget?>(null)
-        private set
-
-    /** The last failed upload with where it was started; a new upload clears it. */
-    var uploadFailure by mutableStateOf<Pair<UploadTarget, UploadError>?>(null)
-        private set
-
-    val uploading: Boolean get() = uploadingAt != null
-
-    /** Why the last upload started at [target] failed; `null` if it did not. */
-    fun uploadErrorAt(target: UploadTarget): UploadError? = uploadFailure?.takeIf { it.first == target }?.second
 
     private val undoStack = ArrayDeque<Draft>()
     private val redoStack = ArrayDeque<Draft>()
@@ -271,7 +224,7 @@ class EditorModel(
             is EditorIntent.EditRuns -> change(draft.withRuns(intent.blockId, intent.itemId, intent.runs), typing = (intent.blockId to intent.itemId).unless(intent.ownStep))
             is EditorIntent.ToggleBold -> change(draft.withRuns(intent.blockId, intent.itemId, intent.runs))
             is EditorIntent.AddBlock -> {
-                // An image block needs its media first, see uploadImage
+                // An image block needs its media first, see useImage
                 if (intent.type == BlockType.IMAGE) return
                 insert(intent.afterId) { emptyBlock(intent.type) }
             }
@@ -309,46 +262,17 @@ class EditorModel(
         }
     }
 
-    /** Uploads [file] with [upload] and makes it the lead image, see [uploadImage]. */
-    suspend fun uploadLeadImage(file: PickedFile, upload: suspend (bytes: ByteArray, fileName: String) -> MediaDto) =
-        uploadImage(UploadTarget.LeadImage, file, upload)
-
     /**
-     * Uploads [file] with [upload] and uses it at [target]: as lead image, as a new image block or as the new image
-     * of an image block. A refused or failed upload changes nothing and sets [uploadFailure]; a new upload clears it.
-     * While an upload runs, another one is ignored.
+     * Uses [media] picked in the media picker at [target]: as lead image, as a new image block or as the new image of an
+     * image block (keeping its caption).
      */
-    suspend fun uploadImage(target: UploadTarget, file: PickedFile, upload: suspend (bytes: ByteArray, fileName: String) -> MediaDto) {
-        if (uploading) return
-        uploadingAt = target
-        uploadFailure = null
-        try {
-            val media = upload(file.bytes, file.name)
-            dispatch(
-                when (target) {
-                    UploadTarget.LeadImage -> EditorIntent.SetLeadImage(media.id, media.width, media.height)
-                    is UploadTarget.NewBlock -> EditorIntent.AddImageBlock(target.afterId, media.id)
-                    is UploadTarget.Block -> EditorIntent.SetBlockImage(target.blockId, media.id)
-                },
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            // Browser fetch failures surface as kotlin.Error, not Exception
-            uploadFailure = target to uploadErrorOf(e)
-        } finally {
-            uploadingAt = null
-        }
-    }
-
-    /** Lets the user [pick] a file and uploads it for [target], see [uploadImage]; a cancelled pick changes nothing. */
-    suspend fun pickAndUpload(
-        target: UploadTarget,
-        pick: suspend () -> PickedFile?,
-        upload: suspend (bytes: ByteArray, fileName: String) -> MediaDto,
-    ) {
-        pick()?.let { uploadImage(target, it, upload) }
-    }
+    fun useImage(target: ImageTarget, media: MediaListItemDto) = dispatch(
+        when (target) {
+            ImageTarget.LeadImage -> EditorIntent.SetLeadImage(media.id, media.width, media.height)
+            is ImageTarget.NewBlock -> EditorIntent.AddImageBlock(target.afterId, media.id)
+            is ImageTarget.Block -> EditorIntent.SetBlockImage(target.blockId, media.id)
+        },
+    )
 
     /** Inserts [block] after [afterId], or at the start if it is `null`; nothing if [afterId] is gone. */
     private fun insert(afterId: Long?, block: () -> EditorBlock) {
@@ -398,7 +322,7 @@ class EditorModel(
         BlockType.SUBHEAD -> EditorBlock.Subhead(ids.next(), "")
         BlockType.QUOTE -> EditorBlock.Quote(ids.next(), emptyList())
         BlockType.LIST -> EditorBlock.BulletList(ids.next(), listOf(ListItem(ids.next(), emptyList())))
-        BlockType.IMAGE -> error("an image block is added with its media, see uploadImage")
+        BlockType.IMAGE -> error("an image block is added with its media, see useImage")
     }
 }
 

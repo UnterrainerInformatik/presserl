@@ -43,7 +43,6 @@
     <string name="lead_image_choose">Choose image</string>
     <string name="lead_image_replace">Replace image</string>
     <string name="lead_image_remove">Remove image</string>
-    <string name="lead_image_uploading">Uploading image…</string>
     <string name="lead_image_no_preview">No preview</string>
     <string name="upload_too_large">The image is too large. It may have at most %1$s.</string>
     <string name="upload_too_large_unknown">The image is too large.</string>
@@ -347,6 +346,9 @@
     <string name="media_upload_retry">Retry</string>
     <string name="media_upload_discard_title">Stop uploading?</string>
     <string name="media_upload_discard_text">Not uploaded yet: %1$d. These images will be discarded.</string>
+    <string name="media_picker_title">Choose image</string>
+    <string name="media_picker_close">Close</string>
+    <string name="media_picker_none">No images yet. Add them in “Images”.</string>
     <string name="media_details_title">Description and tags</string>
     <string name="media_description">Description</string>
     <string name="media_description_none">No description</string>

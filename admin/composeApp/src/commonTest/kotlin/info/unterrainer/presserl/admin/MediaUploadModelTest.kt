@@ -8,7 +8,6 @@ import info.unterrainer.presserl.admin.api.MediaFilter
 import info.unterrainer.presserl.admin.api.MediaListItemDto
 import info.unterrainer.presserl.admin.api.MediaPage
 import info.unterrainer.presserl.admin.api.asListItem
-import info.unterrainer.presserl.admin.ui.editor.UploadError
 import info.unterrainer.presserl.admin.ui.media.MediaDetailsError
 import info.unterrainer.presserl.admin.ui.media.MediaDetailsModel
 import info.unterrainer.presserl.admin.ui.media.MediaGridModel
@@ -17,6 +16,7 @@ import info.unterrainer.presserl.admin.ui.media.MediaUploadModel.State
 import info.unterrainer.presserl.admin.ui.media.PickableFile
 import info.unterrainer.presserl.admin.ui.media.TagChips
 import info.unterrainer.presserl.admin.ui.media.TagProblem
+import info.unterrainer.presserl.admin.ui.media.UploadError
 import info.unterrainer.presserl.admin.ui.media.chooseForUpload
 import info.unterrainer.presserl.admin.ui.media.normalizeTag
 import io.ktor.client.HttpClient

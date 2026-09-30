@@ -64,12 +64,11 @@ import info.unterrainer.presserl.admin.ui.account.SlipPrinter
 import info.unterrainer.presserl.admin.ui.editor.EditorScreen
 import info.unterrainer.presserl.admin.ui.issue.IssueDetailScreen
 import info.unterrainer.presserl.admin.ui.issue.IssueListScreen
-import info.unterrainer.presserl.admin.ui.media.MEDIA_PAGE_SIZE
 import info.unterrainer.presserl.admin.ui.media.MediaDetailScreen
 import info.unterrainer.presserl.admin.ui.media.MediaEditScreen
-import info.unterrainer.presserl.admin.ui.media.MediaGridModel
 import info.unterrainer.presserl.admin.ui.media.MediaGridScreen
 import info.unterrainer.presserl.admin.ui.media.Thumbnails
+import info.unterrainer.presserl.admin.ui.media.mediaGridOf
 import info.unterrainer.presserl.admin.ui.newspaper.NewspaperScreen
 import info.unterrainer.presserl.admin.ui.section.SectionFormScreen
 import info.unterrainer.presserl.admin.ui.section.SectionListScreen
@@ -196,7 +195,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
     // the order of the article lists, kept while the app is open
     var sort by remember { mutableStateOf(ArticleSort.CHANGED) }
     // kept while detail and edit views are open, so the grid keeps its pages and thumbnails
-    val newMediaGrid = { MediaGridModel { filter, before -> api.listMedia(MEDIA_PAGE_SIZE, before, filter) } }
+    val newMediaGrid = { mediaGridOf(api) }
     var mediaGrid by remember { mutableStateOf(newMediaGrid()) }
     val mediaThumbnails = remember { Thumbnails { api.mediaRendition(it, "thumbnail") } }
     val push = { route: Route -> stack = stack + route }
@@ -249,7 +248,6 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                             api,
                             route.articleId,
                             readerUrl = { "$siteUrl/articles/$it" },
-                            maxUploadSize = screen.newspaper.settings[MAX_UPLOAD_SIZE]?.jsonPrimitive?.contentOrNull,
                             spellCheck = screen.spellCheck,
                             onBack = back,
                             onRevisions = { push(Route.Revisions(route.articleId)) },
