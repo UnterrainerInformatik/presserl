@@ -80,6 +80,7 @@ import info.unterrainer.presserl.admin.ui.Icons
 import info.unterrainer.presserl.admin.ui.LoadFailed
 import info.unterrainer.presserl.admin.ui.formatDate
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
+import info.unterrainer.presserl.admin.ui.issueWaitText
 import info.unterrainer.presserl.admin.ui.statusText
 import org.jetbrains.compose.resources.stringResource
 
@@ -322,7 +323,8 @@ private fun IssueArticleRow(
                     stringResource(Res.string.lead_story).takeIf { lead },
                     article.section?.name,
                     statusText(article.status),
-                    stringResource(Res.string.not_shown_to_readers).takeIf { article.status != "PUBLISHED" },
+                    issueWaitText(article.status, article.readerVisible, article.issue?.number)
+                        ?: stringResource(Res.string.not_shown_to_readers).takeIf { article.status != "PUBLISHED" },
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -346,6 +348,7 @@ private fun CandidateRow(article: ArticleSummaryDto, onClick: () -> Unit) {
             listOfNotNull(
                 article.section?.name,
                 statusText(article.status),
+                issueWaitText(article.status, article.readerVisible, article.issue?.number),
                 article.issue?.let { stringResource(Res.string.candidate_in_issue, it.number) },
             ).joinToString(" · "),
             style = MaterialTheme.typography.bodySmall,

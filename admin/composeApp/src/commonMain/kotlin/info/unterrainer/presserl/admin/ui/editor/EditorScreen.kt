@@ -152,6 +152,7 @@ import info.unterrainer.presserl.admin.ui.spell.SpellSuggestionRow
 import info.unterrainer.presserl.admin.ui.spell.findingAt
 import info.unterrainer.presserl.admin.ui.spell.spellChecker
 import info.unterrainer.presserl.admin.ui.spell.spellMarksOverlay
+import info.unterrainer.presserl.admin.ui.issueWaitText
 import info.unterrainer.presserl.admin.ui.statusText
 import info.unterrainer.presserl.admin.ui.SymbolIcon
 import info.unterrainer.presserl.admin.ui.waitingText
@@ -177,6 +178,7 @@ fun EditorScreen(
     spellCheck: Boolean = false,
     username: String = "",
     onShowChanges: (revision: Int) -> Unit = {},
+    roles: List<String> = emptyList(),
 ) {
     // A new load (after a conflict) starts with fresh editor state
     var loads by remember { mutableStateOf(0) }
@@ -194,6 +196,7 @@ fun EditorScreen(
             else -> Editor(
                 api, loaded, readerUrl, spellCheck, username, onBack, onRevisions, onShowChanges,
                 onReload = { loads++ },
+                weighting = mayWeight(roles),
             )
         }
     }
@@ -210,9 +213,12 @@ private fun Editor(
     onRevisions: () -> Unit,
     onShowChanges: (Int) -> Unit,
     onReload: () -> Unit,
+    weighting: Boolean,
 ) {
     val scope = rememberCoroutineScope()
     var article by remember { mutableStateOf(loaded) }
+    // Saved on its own, outside the draft: neither autosave nor undo and redo touch it
+    val weight = remember { FrontPageWeightModel(loaded.frontPageWeight) { api.setFrontPageWeight(loaded.id, it) } }
     val model = remember {
         val ids = IdSource()
         val start = TimeSource.Monotonic.markNow()
@@ -346,12 +352,15 @@ private fun Editor(
         FlowRow(verticalArrangement = Arrangement.Center, horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             BackButton { leave(onBack) }
             Text(
-                listOfNotNull(statusText(article.status), stringResource(Res.string.unpublished_changes).takeIf { article.hasUnpublishedChanges })
-                    .joinToString(" · "),
+                listOfNotNull(
+                    statusText(article.status),
+                    issueWaitText(article.status, article.readerVisible, article.issue?.number),
+                    stringResource(Res.string.unpublished_changes).takeIf { article.hasUnpublishedChanges },
+                ).joinToString(" · "),
                 style = MaterialTheme.typography.labelLarge,
             )
             TextButton(onClick = { leave(onRevisions) }) { Text(stringResource(Res.string.revisions)) }
-            if (article.status == "PUBLISHED") {
+            if (article.readerVisible) {
                 val uriHandler = LocalUriHandler.current
                 TextButton(onClick = { uriHandler.openUri(readerUrl(article.id)) }) { IconLabel(Icons.OpenInNew, stringResource(Res.string.view_in_reader), iconAfter = true) }
             }
@@ -402,6 +411,7 @@ private fun Editor(
                     }
                     FieldHelp(HelpPart.SECTION, help)
                 }
+                if (weighting) FrontPageWeightField(weight, onSaved = { article = it })
                 // Where the open media picker hands its image; null while it is closed
                 var picking by remember { mutableStateOf<ImageTarget?>(null) }
                 val images = ImageSlot(thumbnails, onChoose = { picking = it })
@@ -420,6 +430,7 @@ private fun Editor(
                 }
             } else {
                 article.section?.let { SectionLabel(it.name, it.color) }
+                if (weighting) FrontPageWeightField(weight, onSaved = { article = it })
                 ArticleView(model.draft, thumbnails)
             }
             if (reviews.isNotEmpty()) Reviews(reviews)

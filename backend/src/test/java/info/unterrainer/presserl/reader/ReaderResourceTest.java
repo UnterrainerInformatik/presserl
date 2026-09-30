@@ -10,10 +10,12 @@ import java.util.regex.Pattern;
 
 import javax.sql.DataSource;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import info.unterrainer.presserl.TestSupport;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.response.Response;
 import jakarta.inject.Inject;
@@ -25,6 +27,11 @@ class ReaderResourceTest {
 
     @Inject
     DataSource dataSource;
+
+    @AfterEach
+    void resetIssues() {
+        TestSupport.resetIssues(dataSource);
+    }
 
     private ReaderFixtures emptyNewspaper() {
         ReaderFixtures fixtures = new ReaderFixtures(dataSource);

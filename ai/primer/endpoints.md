@@ -376,8 +376,8 @@ publisher unlocks it (`POST /api/articles/{id}/unlock`). Taking offline by anyon
 
 ## `ArticleDto`
 
-Returned by get, create, save, publish, take-offline, unlock, submit, approve, reject and withdraw.
-Content fields are those of the latest revision (`revision`).
+Returned by get, create, save, publish, take-offline, unlock, submit, approve, reject, withdraw and
+front-page-weight. Content fields are those of the latest revision (`revision`).
 ```json
 {
   "id": 42,
@@ -386,6 +386,8 @@ Content fields are those of the latest revision (`revision`).
   "lastEditor": { "username": "chief", "displayName": "Lena" },
   "section": { "id": 4, "name": "Kultur", "slug": "kultur", "color": "blue" },
   "issue": { "id": 2, "number": 2 },
+  "readerVisible": true,
+  "frontPageWeight": 1,
   "revision": 2,
   "liveRevision": 1,
   "hasUnpublishedChanges": true,
@@ -411,6 +413,14 @@ Content fields are those of the latest revision (`revision`).
 - `section`: the article's section with its current name and palette colour.
 - `issue`: the issue the article belongs to (`IssueRefDto`: `id`, `number`), `null` for none. Also
   part of `ArticleSummaryDto`.
+- `readerVisible`: `true` exactly when readers see the article — `status` `PUBLISHED` **and** its
+  issue is published (live). A `PUBLISHED` article of a not-live issue or of no issue is `false`
+  (show it as "waits for issue N" / "in no issue"; offer "View in reader" only when `true`).
+  Computed per request, so switching an issue live or back changes it for all its articles. Also
+  part of `ArticleSummaryDto`.
+- `frontPageWeight`: the front-page weight, `1`–`999` (lower comes first on the reader's front
+  page) or `null` for none; new articles have none. Set with
+  `PUT /api/articles/{id}/front-page-weight`. Also part of `ArticleSummaryDto`.
 - `liveRevision`, `publishedAt` (first publication): `null` until the first publish.
 - `pendingLevel`: the approval level the article waits for, `null` while no submission is pending.
 - `locked`: `true` while the emergency-brake lock is set (see above), otherwise `false`.
@@ -435,7 +445,7 @@ Summaries of the articles visible to the requesting user, in the order `sort`. N
   ```json
   [ { "id": 42, "status": "DRAFT", "author": { "username": "papa", "displayName": "Papa" },
       "section": { "id": 1, "name": "Sport", "slug": "sport", "color": "green" }, "issue": null,
-      "headline": "Hello", "kicker": "", "revision": 1, "liveRevision": null,
+      "readerVisible": false, "frontPageWeight": null, "headline": "Hello", "kicker": "", "revision": 1, "liveRevision": null,
       "hasUnpublishedChanges": false, "pendingLevel": null, "locked": false, "createdAt": "2026-09-26T10:00:00Z",
       "updatedAt": "2026-09-26T10:05:00Z", "publishedAt": null,
       "allowedActions": ["EDIT", "PUBLISH", "DELETE"] } ]
@@ -518,6 +528,22 @@ a `PUBLISHER`, the article is locked (emergency brake).
   `PUBLISHER`, otherwise `false`; `liveRevision` is kept
 - **Errors:** `403`, `404`, `409` status is not `PUBLISHED`.
 - **Side effects:** status `OFFLINE`, `locked` set for a publisher; `updatedAt` and `version` change.
+
+## `PUT /api/articles/{id}/front-page-weight`
+
+Sets or clears the front-page weight. Weight is article metadata, not content: no revision, no
+approval, in every status; approval state, lock, `updatedAt` and `version` stay unchanged, so an
+open editor does not get a `409`. The weight stays when the article goes offline, comes back or
+changes section, and has an effect only while `readerVisible` is `true`.
+
+- **Auth:** writer holding `EDITOR_IN_CHIEF` or `PUBLISHER`. Deliberately **not** in
+  `allowedActions` (the one exception to "render from `allowedActions`"): show the field by the
+  roles of `GET /api/me`.
+- **Request:** `{"weight": 1}` (integer `1`–`999`) or `{"weight": null}` (clear); the field is required.
+- **Response `200`:** `ArticleDto` with the new `frontPageWeight`.
+- **Errors:** `400` missing field, non-integer or out of range (field `weight`; checked before the
+  role), `403` other writers (e.g. a section editor; error body), `404` unknown or not visible article.
+- **Side effects:** `front_page_weight` of the article only.
 
 ## `POST /api/articles/{id}/unlock`
 
@@ -980,7 +1006,7 @@ Colours are keys, not colour values; the reader theme maps them to `--presserl-s
 `SECTION_EDITOR`, `REPORTER` (`[]` for none). `canWrite`: whether the requesting user may write
 articles in this section (`PUBLISHER`/`EDITOR_IN_CHIEF` everywhere, section-role holders in their
 sections). `articleCounts`: for users with `WRITE_ARTICLES`, the articles now in the section —
-`live` (status `PUBLISHED`), `total` (any status) and per issue holding at least one of them
+`live` (visible to readers: status `PUBLISHED` in a published issue), `total` (any status) and per issue holding at least one of them
 (`issues`, highest number first; any status); `{"live": 0, "total": 0, "issues": []}` for an empty
 section, `null` for everyone else. Sections have no history: a moved article counts in its current
 section only. One grouped query per request.
@@ -1109,14 +1135,18 @@ Removes the account's role in the section.
 Issues group articles: a `number` (assigned on creation as highest + 1, `1` when none exists,
 never changed), an optional `publicationDate` (a calendar date, display only), a `published` switch
 (live for readers or not) and an ordered article list whose first article is the **lead story**.
-An article belongs to at most one issue; articles of any status may belong to one, readers only
-see the `PUBLISHED` ones.
+An article belongs to at most one issue; articles of any status may belong to one. **Readers see
+an article exactly when it is `PUBLISHED` and its issue is published** (`readerVisible`): switching
+an issue live releases its published articles on the front page, article pages, print views and
+media; unpublishing it hides them again without changing their status. A `PUBLISHED` article
+without issue is not shown.
 
 - **Newest issue collects new articles:** when an article is published for the first time
   (`POST /api/articles/{id}/publish` or the approval that publishes it) and belongs to no issue, it
   is appended to the issue with the highest number, whether or not that issue is live. No issue at
   all → it stays without issue. Later publications never move it. Blog mode = one issue that is
-  live from the start; planned issues = the highest issue is not live yet and collects.
+  live from the start (new articles are online at once); planned issues = the highest issue is not
+  live yet and collects (its articles wait until it goes live).
 - **Initial issue:** the migration creates issue `1`, not live, without date; on an existing
   installation it holds every article published before, in order of first publication. Switch it
   live (blog mode) or date and publish it after upgrading.
@@ -1543,7 +1573,31 @@ admin app calls it about a second after the user stops typing in a prose field.
 # Reader routes (not part of `/api`)
 
 Server-rendered reader pages and their helpers; no bearer token, noted here because the admin
-app and forks rely on them.
+app and forks rely on them. Every reader surface shows only articles **visible to readers**
+(`PUBLISHED` in a published issue, `readerVisible` in the API); any other article is treated like a
+draft (`404`).
+
+## `GET /` and `GET /?section=<id>`
+
+The front page: at most 30 articles visible to readers, weighted ones first (lowest
+`frontPageWeight` first), then the rest by first publication, newest first; ties by first
+publication, then higher id. The first is the lead story. `?section=<id>` keeps only that section's
+articles in the same order and layout, with a "no articles yet" note naming the section when there
+are none; a malformed, empty or unknown id gets the `404` page, other query parameters are ignored.
+Private-newspaper handling as for the article page, except that an anonymous visitor gets the
+private note instead of a redirect. Section tags (section bar, stories, article and issue pages)
+link to `/?section=<id>`; on the filtered page the active section's tags link to `/` with
+`aria-current="page"`.
+
+## `GET /legal-notice`
+
+The deployment's legal notice from `legal-notice.txt` in the theme directory (UTF-8, at most
+64 KiB, re-read on every request), rendered escaped as paragraphs (blank lines) with line breaks
+(`data-view="legal-notice"`). Public in every newspaper (no login redirect; section bar only for
+visitors who may read); `Cache-Control: private, no-store` only for a logged-in visitor. Without
+the file or with whitespace only: the `404` page. While the notice exists, every reader page except
+the print views ends with `<footer class="presserl-footer">` linking it ("Impressum" / "Legal
+notice"). The file is never served under `/theme/`.
 
 ## `POST /text-size`
 
@@ -1571,13 +1625,14 @@ current rendition under the rules below, also for a missing or outdated `v`.
   reader session (`q_session_reader`) of an entitled reader (`READER`, `EDITOR_IN_CHIEF`,
   `PUBLISHER`) is needed; `/media/*` belongs to the reader OIDC tenant. No login redirect.
 - **Response `200`:** only while media `{id}` is used — as lead image or in an image block of the
-  body — by the **live revision of at least one `PUBLISHED` article**; body = the rendition, headers `Content-Type`, `Content-Length`,
+  body — by the **live revision of at least one article visible to readers** (`PUBLISHED` in a
+  published issue); body = the rendition, headers `Content-Type`, `Content-Length`,
   `X-Content-Type-Options: nosniff`, `Cache-Control: public, max-age=3600` (public newspaper) or
   `private, max-age=3600` (private newspaper) — an image taken offline disappears from caches within
   an hour.
 - **Errors:** `404` with an **empty body** for everything else: malformed id, unknown kind (also
   `original`/`content`: the stored image is never served), unknown media, media only used in drafts,
-  in working revisions or in `OFFLINE` articles, and — for a private newspaper — anonymous visitors
+  in working revisions, in `OFFLINE` articles or in articles of a not-live issue or of no issue, and — for a private newspaper — anonymous visitors
   and visitors without a newspaper role. `503` (empty body) when the object store is unreachable.
 
 ## Issue pages and print views
@@ -1593,7 +1648,7 @@ or a logged-in visitor. Paths belong to the reader OIDC tenant (`/issues`, `/iss
 - `GET /issues/{id}` — a live issue as a newspaper page: its `PUBLISHED` articles in issue order,
   the first as lead story, and a link to its print view (`data-view="issue"`). The admin app opens
   it in a new tab.
-- `GET /print/article/{id}` — a `PUBLISHED` article on A4 with its `print` rendition
+- `GET /print/article/{id}` — an article visible to readers on A4 with its `print` rendition
   (`data-view="print-article"`); linked from the article page.
 - `GET /print/issue/{id}` — a live issue on A4: first page with masthead and lead story, then the
   other articles in columns (`data-view="print-issue"`). The admin app opens it in a new tab.

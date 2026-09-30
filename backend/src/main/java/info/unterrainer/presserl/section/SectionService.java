@@ -17,6 +17,7 @@ import org.hibernate.reactive.mutiny.Mutiny;
 import org.jboss.logging.Logger;
 
 import info.unterrainer.presserl.article.ArticleStatus;
+import info.unterrainer.presserl.article.ReaderVisibility;
 import info.unterrainer.presserl.auth.CurrentUser;
 import info.unterrainer.presserl.text.Slugs;
 import io.quarkus.hibernate.reactive.panache.Panache;
@@ -67,25 +68,26 @@ public class SectionService {
     @WithSession
     public Uni<Map<Long, ArticleCountsDto>> articleCounts() {
         return Panache.getSession().flatMap(session -> session.createSelectionQuery(
-                "select a.sectionId, a.status, a.issueId, i.number, count(a) from ArticleEntity a "
+                "select a.sectionId, a.status, a.issueId, i.number, i.published, count(a) from ArticleEntity a "
                         + "left join IssueEntity i on i.id = a.issueId "
-                        + "group by a.sectionId, a.status, a.issueId, i.number",
+                        + "group by a.sectionId, a.status, a.issueId, i.number, i.published",
                 Object[].class)
                 .getResultList())
                 .map(SectionService::fold);
     }
 
     /**
-     * Folds rows of section id, status, issue id, issue number and count into counts per section.
+     * Folds rows of section id, status, issue id, issue number, issue published and count into counts per
+     * section; {@code live} counts the articles visible to readers ({@link ReaderVisibility}).
      */
     static Map<Long, ArticleCountsDto> fold(List<Object[]> rows) {
         Map<Long, long[]> totals = new HashMap<>();
         Map<Long, Map<Long, ArticleCountsDto.IssueCount>> issues = new HashMap<>();
         for (Object[] row : rows) {
             long section = (Long) row[0];
-            long count = (Long) row[4];
+            long count = (Long) row[5];
             long[] sums = totals.computeIfAbsent(section, id -> new long[2]);
-            if (row[1] == ArticleStatus.PUBLISHED) {
+            if (ReaderVisibility.visible((ArticleStatus) row[1], (Boolean) row[4])) {
                 sums[0] += count;
             }
             sums[1] += count;

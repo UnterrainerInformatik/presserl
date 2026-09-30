@@ -12,5 +12,12 @@
 </head>
 <body>
 {#insert}{/}
+{#insert footer}
+{#if page.legalNotice}
+<footer class="presserl-footer">
+  <a href="/legal-notice">{msg:legalNotice}</a>
+</footer>
+{/if}
+{/insert}
 </body>
 </html>

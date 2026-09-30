@@ -62,6 +62,8 @@ class ApprovalChainResourceTest {
     void ready() {
         TestSupport.awaitReady();
         TestSupport.deleteSections(dataSource);
+        // the reader checks below expect published articles to be online at once
+        TestSupport.blogMode(dataSource);
         publisher = TestSupport.token("publisher", "publisher");
         chief = TestSupport.token("chief", "chief");
         reader = TestSupport.token("reader", "reader");
@@ -72,6 +74,7 @@ class ApprovalChainResourceTest {
     void cleanUp() {
         TestSupport.deleteSections(dataSource);
         TestSupport.deleteTrust(dataSource);
+        TestSupport.resetIssues(dataSource);
     }
 
     // --- helpers

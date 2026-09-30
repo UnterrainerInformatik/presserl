@@ -402,6 +402,29 @@ public class ArticleService {
     }
 
     /**
+     * Sets or clears the front-page weight. Editors-in-chief and publishers only, in every status; no
+     * revision, no change to approval state, lock or {@code version}: a targeted update, then the
+     * article is re-read.
+     *
+     * @param weight 1–999, {@code null} clears; validated by the caller
+     */
+    @WithTransaction
+    public Uni<ArticleView> setFrontPageWeight(Newsroom newsroom, long id, Integer weight) {
+        return load(newsroom, id).flatMap(view -> {
+            if (!newsroom.isAdministrator()) {
+                throw ArticleException.forbidden("only an editor-in-chief or a publisher may set the front-page weight");
+            }
+            return Panache.getSession().flatMap(session -> session
+                    .createMutationQuery("update ArticleEntity a set a.frontPageWeight = :weight where a.id = :id")
+                    .setParameter("weight", weight)
+                    .setParameter("id", id)
+                    .executeUpdate()
+                    .flatMap(updated -> session.refresh(view.article())))
+                    .replaceWith(view);
+        });
+    }
+
+    /**
      * The article's revisions, newest first.
      */
     @WithSession

@@ -12,16 +12,76 @@ import java.time.LocalDate;
 import javax.sql.DataSource;
 
 /**
- * Writes articles straight into the database so publication dates can be set exactly.
+ * Writes articles straight into the database so publication dates can be set exactly. By default every
+ * article joins the live issue ({@link #liveIssue()}), so a {@code PUBLISHED} one is visible to readers;
+ * {@link #withoutIssue} leaves new articles without issue. Tests using the default call
+ * {@code TestSupport.resetIssues} afterwards.
  */
 final class ReaderFixtures {
 
     static final String EMPTY_BODY = "{\"version\": 1, \"blocks\": []}";
 
     private final DataSource dataSource;
+    private final boolean joinLiveIssue;
 
     ReaderFixtures(DataSource dataSource) {
+        this(dataSource, true);
+    }
+
+    private ReaderFixtures(DataSource dataSource, boolean joinLiveIssue) {
         this.dataSource = dataSource;
+        this.joinLiveIssue = joinLiveIssue;
+    }
+
+    /**
+     * Fixtures whose new articles belong to no issue; the test puts them into issues itself.
+     */
+    static ReaderFixtures withoutIssue(DataSource dataSource) {
+        return new ReaderFixtures(dataSource, false);
+    }
+
+    /**
+     * The published issue with the highest number; one numbered after the highest is created and
+     * published when none is.
+     */
+    long liveIssue() {
+        String existing = "SELECT id FROM issue WHERE published ORDER BY number DESC LIMIT 1";
+        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+            try (ResultSet result = statement.executeQuery(existing)) {
+                if (result.next()) {
+                    return result.getLong(1);
+                }
+            }
+            try (ResultSet result = statement.executeQuery("SELECT coalesce(max(number), 0) + 1 FROM issue")) {
+                result.next();
+                return issue(result.getInt(1), true, null);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * Appends the article to the end of the issue.
+     */
+    void appendTo(long issueId, long articleId) {
+        execute("UPDATE article SET issue_id = " + issueId + ", issue_position = (SELECT coalesce(max(issue_position), "
+                + "-1) + 1 FROM article WHERE issue_id = " + issueId + ") WHERE id = " + articleId);
+    }
+
+    /**
+     * Sets the front-page weight, {@code null} to clear it.
+     */
+    void weight(long articleId, Integer weight) {
+        execute("UPDATE article SET front_page_weight = " + weight + " WHERE id = " + articleId);
+    }
+
+    /**
+     * Switches the issue live or back.
+     */
+    void publishIssue(long issueId, boolean published) {
+        execute("UPDATE issue SET published = " + published + ", published_at = "
+                + (published ? "now()" : "NULL") + " WHERE id = " + issueId);
     }
 
     void deleteAllArticles() {
@@ -165,10 +225,15 @@ final class ReaderFixtures {
             statement.setTimestamp(6, publishedAt == null ? null : Timestamp.from(publishedAt));
             statement.setLong(7, sectionId);
             statement.setString(8, "SUBMITTED".equals(status) ? "SECTION_EDITOR" : null);
+            long id;
             try (ResultSet result = statement.executeQuery()) {
                 result.next();
-                return result.getLong(1);
+                id = result.getLong(1);
             }
+            if (joinLiveIssue) {
+                appendTo(liveIssue(), id);
+            }
+            return id;
         } catch (SQLException e) {
             throw new IllegalStateException(e);
         }

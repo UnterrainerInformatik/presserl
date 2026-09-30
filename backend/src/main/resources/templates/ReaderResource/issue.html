@@ -5,9 +5,9 @@
   <p class="print-link"><a href="/print/issue/{issue.id}">{msg:print}</a></p>
   {#if leadStory}
   <div class="stories">
-    {#story article=leadStory cls="lead-article" /}
+    {#story article=leadStory cls="lead-article" active=page.activeSectionId /}
     {#for other in stories}
-    {#story article=other cls="article-card" /}
+    {#story article=other cls="article-card" active=page.activeSectionId /}
     {/for}
   </div>
   {#else}

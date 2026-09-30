@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -95,5 +96,37 @@ class ThemeFilesTest {
         assertThat(ThemeFiles.type("dir.css/file")).isEmpty();
         assertThat(ThemeFiles.type("script.js")).isEmpty();
         assertThat(ThemeFiles.type("page.html")).isEmpty();
+    }
+
+    @Test
+    void legalNoticeIsSplitIntoParagraphsOfLines() throws IOException {
+        Files.writeString(theme.resolve("legal-notice.txt"), "\uFEFFFirst line\nsecond line   \n\n\n  \nNext\r\n");
+
+        assertThat(files.legalNotice()).contains(List.of(List.of("First line", "second line"),
+                List.of("Next")));
+    }
+
+    @Test
+    void legalNoticeIsAbsentWhenMissingBlankTooLargeOrNotUtf8() throws IOException {
+        assertThat(files.legalNotice()).isEmpty();
+
+        Files.writeString(theme.resolve("legal-notice.txt"), " \n\t\n");
+        assertThat(files.legalNotice()).isEmpty();
+
+        Files.writeString(theme.resolve("legal-notice.txt"), "x".repeat(64 * 1024 + 1));
+        assertThat(files.legalNotice()).isEmpty();
+
+        Files.write(theme.resolve("legal-notice.txt"), new byte[] { 'o', 'k', (byte) 0xC3, (byte) 0x28 });
+        assertThat(files.legalNotice()).isEmpty();
+
+        Files.writeString(theme.resolve("legal-notice.txt"), "x".repeat(64 * 1024));
+        assertThat(files.legalNotice()).isPresent();
+    }
+
+    @Test
+    void legalNoticeIsNeverAServableThemeFile() throws IOException {
+        Files.writeString(theme.resolve("legal-notice.txt"), "Notice");
+
+        assertThat(files.resolve("legal-notice.txt")).isEmpty();
     }
 }

@@ -8,8 +8,8 @@ import info.unterrainer.presserl.newspaper.TextSize;
 import io.quarkus.qute.TemplateData;
 
 /**
- * What every reader page shows around its content: masthead, text-size switch, section bar and the
- * stylesheets.
+ * What every reader page shows around its content: masthead, text-size switch, section bar, footer and
+ * the stylesheets.
  *
  * @param lang       language of the page ({@code de} or {@code en})
  * @param viewerName display name of the logged-in visitor, {@code null} when anonymous
@@ -18,10 +18,14 @@ import io.quarkus.qute.TemplateData;
  * @param sections   the section bar, empty when the page shows no content
  * @param path       path and query of the page, where the text-size switch returns to
  * @param issueLine  the issue named in the masthead, {@code null} for none
+ * @param activeSectionId the section the front page is filtered by, {@code null} for none; its tags
+ *                   link back to {@code /}
+ * @param legalNotice whether the theme holds a legal notice, linked from the footer
  */
 @TemplateData
 public record ReaderPage(String lang, String name, String subtitle, String viewerName, String textSize,
-        boolean customCss, List<ReaderSection> sections, String path, IssueLine issueLine) {
+        boolean customCss, List<ReaderSection> sections, String path, IssueLine issueLine, Long activeSectionId,
+        boolean legalNotice) {
 
     static final List<String> TEXT_SIZES = Arrays.stream(TextSize.values()).map(TextSize::value).toList();
 
@@ -30,11 +34,18 @@ public record ReaderPage(String lang, String name, String subtitle, String viewe
     }
 
     ReaderPage withSections(List<ReaderSection> sections) {
-        return new ReaderPage(lang, name, subtitle, viewerName, textSize, customCss, sections, path, issueLine);
+        return new ReaderPage(lang, name, subtitle, viewerName, textSize, customCss, sections, path, issueLine,
+                activeSectionId, legalNotice);
     }
 
     ReaderPage withIssueLine(IssueLine issueLine) {
-        return new ReaderPage(lang, name, subtitle, viewerName, textSize, customCss, sections, path, issueLine);
+        return new ReaderPage(lang, name, subtitle, viewerName, textSize, customCss, sections, path, issueLine,
+                activeSectionId, legalNotice);
+    }
+
+    ReaderPage withActiveSection(Long activeSectionId) {
+        return new ReaderPage(lang, name, subtitle, viewerName, textSize, customCss, sections, path, issueLine,
+                activeSectionId, legalNotice);
     }
 
     /**

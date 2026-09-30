@@ -48,6 +48,10 @@ import jakarta.ws.rs.core.UriInfo;
  * {@code reader.text-size}), links the fork's {@code custom.css} when present and shows the section bar
  * whenever it shows content, except the print views.
  * <p>
+ * The front page lists the articles visible to readers (published in a live issue), weighted ones
+ * first; {@code ?section=<id>} filters it by section. {@code /legal-notice} shows the theme's legal
+ * notice to every visitor, and every page but the print views links it from the footer.
+ * <p>
  * Issues: {@code /issues} lists the published issues, {@code /issues/{id}} shows one; the front page
  * masthead names the newest published issue. Print views: {@code /print/article/{id}} and
  * {@code /print/issue/{id}}. All of them follow the same access rules as the article page.
@@ -66,11 +70,13 @@ public class ReaderResource {
     @CheckedTemplate
     static class Templates {
         static native TemplateInstance frontpage(ReaderPage page, boolean loginRequired, boolean noAccess,
-                ReaderArticle leadStory, List<ReaderArticle> stories);
+                ReaderSection activeSection, ReaderArticle leadStory, List<ReaderArticle> stories);
 
         static native TemplateInstance article(ReaderPage page, ReaderArticle article, List<Block> blocks);
 
         static native TemplateInstance notFound(ReaderPage page);
+
+        static native TemplateInstance legalNotice(ReaderPage page, List<List<String>> paragraphs);
 
         static native TemplateInstance issues(ReaderPage page, List<ReaderIssue> issues);
 
@@ -118,9 +124,14 @@ public class ReaderResource {
     @Inject
     ThemeFiles theme;
 
+    /**
+     * The front page; {@code ?section=<id>} keeps only that section's articles in the same order and
+     * layout. A malformed or unknown section id gets the 404 page, other query parameters are ignored.
+     */
     @GET
     public Uni<RestResponse<String>> frontpage(@Context HttpHeaders headers, @Context UriInfo uri,
             @CookieParam(TextSizeResource.COOKIE) String textSize) {
+        String section = sectionFilter(uri);
         Locale locale = locale(headers);
         ReaderViewer viewer = ReaderViewer.of(identity);
         return settings.effective().flatMap(s -> {
@@ -128,18 +139,29 @@ public class ReaderResource {
             boolean readable = !privateNewspaper || viewer.access() == Access.ENTITLED;
             ReaderPage page = page(locale, s, viewer, textSize, uri);
             if (!readable) {
-                return render(Templates.frontpage(page, !viewer.loggedIn(), viewer.loggedIn(), null, List.of()),
+                return render(Templates.frontpage(page, !viewer.loggedIn(), viewer.loggedIn(), null, null, List.of()),
                         locale, Status.OK, noStore(s, viewer));
             }
+            Visit visit = new Visit(locale, page, noStore(s, viewer));
             // one after the other: all queries use the request's reactive session
-            return articles.frontPage(FRONT_PAGE_LIMIT).flatMap(list -> articles.sections().flatMap(sections -> issues
-                    .current().flatMap(current -> render(
-                            Templates.frontpage(page.withSections(sections).withIssueLine(current
-                                    .map(c -> new ReaderPage.IssueLine(c.issue(), true, c.publishedCount() > 1))
-                                    .orElse(null)), false, false,
-                                    list.isEmpty() ? null : list.get(0),
-                                    list.isEmpty() ? List.of() : list.subList(1, list.size())),
-                            locale, Status.OK, noStore(s, viewer)))));
+            return articles.sections().flatMap(sections -> {
+                Optional<ReaderSection> active = section == null ? Optional.empty()
+                        : sections.stream().filter(candidate -> section.matches(ID)
+                                && candidate.id() == Long.parseLong(section)).findFirst();
+                ReaderPage withSections = page.withSections(sections)
+                        .withActiveSection(active.map(ReaderSection::id).orElse(null));
+                if (section != null && active.isEmpty()) {
+                    return notFound(visit, withSections);
+                }
+                return articles.frontPage(active.map(ReaderSection::id).orElse(null), FRONT_PAGE_LIMIT)
+                        .flatMap(list -> issues.current().flatMap(current -> render(
+                                Templates.frontpage(withSections.withIssueLine(current
+                                        .map(c -> new ReaderPage.IssueLine(c.issue(), true, c.publishedCount() > 1))
+                                        .orElse(null)), false, false, active.orElse(null),
+                                        list.isEmpty() ? null : list.get(0),
+                                        list.isEmpty() ? List.of() : list.subList(1, list.size())),
+                                locale, Status.OK, visit.noStore())));
+            });
         });
     }
 
@@ -231,6 +253,27 @@ public class ReaderResource {
     }
 
     /**
+     * The theme's legal notice; the 404 page without one. Public in every newspaper: no login redirect,
+     * and the section bar only for visitors who may read the newspaper.
+     */
+    @GET
+    @Path("legal-notice")
+    public Uni<RestResponse<String>> legalNotice(@Context HttpHeaders headers, @Context UriInfo uri,
+            @CookieParam(TextSizeResource.COOKIE) String textSize) {
+        Locale locale = locale(headers);
+        ReaderViewer viewer = ReaderViewer.of(identity);
+        return settings.effective().flatMap(s -> {
+            boolean readable = s.visibility() != Visibility.PRIVATE || viewer.access() == Access.ENTITLED;
+            // the public page's cache headers also in a private newspaper; personal only when logged in
+            Visit visit = new Visit(locale, page(locale, s, viewer, textSize, uri), viewer.loggedIn());
+            Uni<ReaderPage> page = readable ? withSections(visit) : Uni.createFrom().item(visit.page());
+            return page.flatMap(p -> theme.legalNotice()
+                    .map(paragraphs -> render(Templates.legalNotice(p, paragraphs), locale, Status.OK, visit.noStore()))
+                    .orElseGet(() -> notFound(visit, p)));
+        });
+    }
+
+    /**
      * Reached once the reader session exists: the tenant's code flow runs first for an anonymous
      * visitor ({@code /login} requires authentication), and restores {@code next} afterwards.
      */
@@ -287,6 +330,15 @@ public class ReaderResource {
         });
     }
 
+    /**
+     * The value of the {@code section} query parameter, {@code ""} when it is given without value and
+     * {@code null} when it is absent.
+     */
+    private static String sectionFilter(UriInfo uri) {
+        List<String> values = uri.getQueryParameters().get("section");
+        return values == null ? null : values.isEmpty() || values.get(0) == null ? "" : values.get(0);
+    }
+
     private Uni<Optional<ReaderArticle>> publishedArticle(String id) {
         return id.matches(ID) ? articles.article(Long.parseLong(id)) : Uni.createFrom().item(Optional.empty());
     }
@@ -319,7 +371,7 @@ public class ReaderResource {
         String path = request.getRawQuery() == null ? request.getRawPath()
                 : request.getRawPath() + "?" + request.getRawQuery();
         return new ReaderPage(locale.getLanguage(), s.name(), s.subtitle(), viewer.displayName(), textSize.value(),
-                theme.customCssPresent(), List.of(), path, null);
+                theme.customCssPresent(), List.of(), path, null, null, theme.legalNotice().isPresent());
     }
 
     private static boolean noStore(EffectiveSettings s, ReaderViewer viewer) {

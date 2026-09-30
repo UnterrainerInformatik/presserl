@@ -11,7 +11,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import info.unterrainer.presserl.article.ArticleEntity;
 import info.unterrainer.presserl.article.ArticleRevisionEntity;
-import info.unterrainer.presserl.article.ArticleStatus;
+import info.unterrainer.presserl.article.ReaderVisibility;
 import info.unterrainer.presserl.media.MediaEntity;
 import info.unterrainer.presserl.media.MediaRenditionEntity;
 import info.unterrainer.presserl.media.RenditionKind;
@@ -22,72 +22,78 @@ import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 
 /**
- * Read-only queries for the reader. Status and live-revision filter sit in the query, so only live
- * revisions of published articles can ever reach a template.
+ * Read-only queries for the reader. The visibility filter ({@link ReaderVisibility#VISIBLE}) and the
+ * live-revision join sit in the query, so only live revisions of articles visible to readers can ever
+ * reach a template.
  */
 @ApplicationScoped
 public class ReaderArticles {
 
     /**
-     * Live revisions of published articles with their section and the {@code web}, {@code thumbnail}
+     * Live revisions of articles visible to readers with their section and the {@code web}, {@code thumbnail}
      * and {@code print} renditions of their lead image and its media version (all {@code null} without
      * one).
      */
-    static final String LIVE_PUBLISHED = "select a, r, s, w, t, p, m.version from ArticleEntity a "
+    static final String LIVE_VISIBLE = "select a, r, s, w, t, p, m.version from ArticleEntity a "
             + "join ArticleRevisionEntity r on r.articleId = a.id and r.number = a.liveRevision "
             + "join SectionEntity s on s.id = a.sectionId "
             + "left join MediaRenditionEntity w on w.mediaId = r.leadImageMediaId and w.kind = 'web' "
             + "left join MediaRenditionEntity t on t.mediaId = r.leadImageMediaId and t.kind = 'thumbnail' "
             + "left join MediaRenditionEntity p on p.mediaId = r.leadImageMediaId and p.kind = 'print' "
             + "left join MediaEntity m on m.id = r.leadImageMediaId "
-            + "where a.status = :status";
+            + "where " + ReaderVisibility.VISIBLE;
 
     /**
      * A rendition of a media that is used (as lead image or in the body) by at least one live revision
-     * of a published article.
+     * of an article visible to readers.
      */
-    private static final String PUBLISHED_RENDITION = "select m from MediaRenditionEntity m "
+    private static final String VISIBLE_RENDITION = "select m from MediaRenditionEntity m "
             + "where m.mediaId = :id and m.kind = :kind and exists (select 1 from ArticleEntity a "
             + "join ArticleRevisionMediaEntity u on u.articleId = a.id and u.number = a.liveRevision "
-            + "where a.status = :status and u.mediaId = :id)";
+            + "where " + ReaderVisibility.VISIBLE + " and u.mediaId = :id)";
 
     /**
-     * The published articles, newest first publication first.
+     * The articles visible to readers in front-page order: weighted ones first, lowest weight first, then
+     * the others; ties by first publication, newest first, then by the higher id.
+     *
+     * @param sectionId only articles of this section, {@code null} for all
      */
     @WithSession
-    public Uni<List<ReaderArticle>> frontPage(int limit) {
-        return Panache.getSession().flatMap(session -> session
-                .createSelectionQuery(LIVE_PUBLISHED + " order by a.publishedAt desc, a.id desc", Object[].class)
-                .setParameter("status", ArticleStatus.PUBLISHED)
-                .setMaxResults(limit)
-                .getResultList())
+    public Uni<List<ReaderArticle>> frontPage(Long sectionId, int limit) {
+        String query = LIVE_VISIBLE + (sectionId == null ? "" : " and a.sectionId = :section")
+                + " order by a.frontPageWeight asc nulls last, a.publishedAt desc, a.id desc";
+        return Panache.getSession().flatMap(session -> {
+            var selection = session.createSelectionQuery(query, Object[].class).setMaxResults(limit);
+            if (sectionId != null) {
+                selection.setParameter("section", sectionId);
+            }
+            return selection.getResultList();
+        })
                 .map(rows -> rows.stream().map(ReaderArticles::toArticle).toList());
     }
 
     /**
-     * The article, if it exists and is published.
+     * The article, if it exists and is visible to readers.
      */
     @WithSession
     public Uni<Optional<ReaderArticle>> article(long id) {
         return Panache.getSession().flatMap(session -> session
-                .createSelectionQuery(LIVE_PUBLISHED + " and a.id = :id", Object[].class)
-                .setParameter("status", ArticleStatus.PUBLISHED)
+                .createSelectionQuery(LIVE_VISIBLE + " and a.id = :id", Object[].class)
                 .setParameter("id", id)
                 .getResultList())
                 .map(rows -> rows.stream().findFirst().map(ReaderArticles::toArticle));
     }
 
     /**
-     * The rendition, if media {@code mediaId} is used by a live revision of a published article; never
+     * The rendition, if media {@code mediaId} is used by a live revision of an article visible to readers; never
      * the stored image itself.
      */
     @WithSession
     public Uni<Optional<MediaRenditionEntity>> publishedRendition(long mediaId, RenditionKind kind) {
         return Panache.getSession().flatMap(session -> session
-                .createSelectionQuery(PUBLISHED_RENDITION, MediaRenditionEntity.class)
+                .createSelectionQuery(VISIBLE_RENDITION, MediaRenditionEntity.class)
                 .setParameter("id", mediaId)
                 .setParameter("kind", kind.value())
-                .setParameter("status", ArticleStatus.PUBLISHED)
                 .getResultList())
                 .map(rows -> rows.stream().findFirst());
     }
@@ -96,7 +102,7 @@ public class ReaderArticles {
      * The images of the image blocks of {@code bodies} by media id, with renditions and version and an
      * empty caption (the caption is the block's). Media that no longer exist or whose web and
      * thumbnail renditions are not produced yet are missing from the map. The bodies must be live
-     * revisions of published articles.
+     * revisions of articles visible to readers.
      */
     @WithSession
     public Uni<Map<Long, ReaderImage>> bodyImages(List<JsonNode> bodies) {
@@ -145,7 +151,7 @@ public class ReaderArticles {
     }
 
     /**
-     * Maps a row of {@link #LIVE_PUBLISHED}.
+     * Maps a row of {@link #LIVE_VISIBLE}.
      */
     static ReaderArticle toArticle(Object[] row) {
         ArticleRevisionEntity live = (ArticleRevisionEntity) row[1];

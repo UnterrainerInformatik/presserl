@@ -10,7 +10,8 @@ import info.unterrainer.presserl.section.Newsroom;
 
 /**
  * An article with the content of its latest revision ({@code revision}); {@code lastEditor} is that
- * revision's author.
+ * revision's author. {@code readerVisible} is computed from the status and the issue
+ * ({@link ReaderVisibility}).
  */
 public record ArticleDto(
         long id,
@@ -19,6 +20,8 @@ public record ArticleDto(
         AuthorDto lastEditor,
         SectionRefDto section,
         IssueRefDto issue,
+        boolean readerVisible,
+        Integer frontPageWeight,
         int revision,
         Integer liveRevision,
         boolean hasUnpublishedChanges,
@@ -45,7 +48,8 @@ public record ArticleDto(
             LeadImageDto leadImage) {
         ArticleEntity a = view.article();
         ArticleRevisionEntity r = view.revision();
-        return new ArticleDto(a.id, a.status, AuthorDto.of(a), AuthorDto.of(r), SectionRefDto.of(view.section()), IssueRefDto.of(view.issue()), r.number, a.liveRevision,
+        return new ArticleDto(a.id, a.status, AuthorDto.of(a), AuthorDto.of(r), SectionRefDto.of(view.section()), IssueRefDto.of(view.issue()),
+                ReaderVisibility.visible(a, view.issue()), a.frontPageWeight, r.number, a.liveRevision,
                 ArticlePolicy.hasUnpublishedChanges(a, r.number), a.pendingLevel, a.locked, a.version, a.createdAt, a.updatedAt, a.publishedAt,
                 r.kicker, r.headline, r.subheadline, r.lead, r.body, leadImage, ArticlePolicy.allowedActions(newsroom, a, r.number, staffing, rules));
     }

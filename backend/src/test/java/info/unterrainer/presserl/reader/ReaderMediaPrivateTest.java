@@ -44,6 +44,7 @@ class ReaderMediaPrivateTest {
 
     @AfterEach
     void cleanUp() {
+        TestSupport.resetIssues(dataSource);
         fixtures.deleteAllArticlesAndMedia();
     }
 

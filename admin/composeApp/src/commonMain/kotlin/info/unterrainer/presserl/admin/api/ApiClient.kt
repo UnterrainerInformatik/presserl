@@ -169,6 +169,17 @@ class ApiClient(
     suspend fun withdrawArticle(id: Long): ArticleDto =
         http.post("$baseUrl/api/articles/$id/withdraw") { bearerAuth(accessToken()) }.body()
 
+    /**
+     * Sets the front-page weight (1–999, `400` naming `weight` otherwise) or clears it with `null`; editors-in-chief
+     * and publishers only (`403`). No new revision and no new version.
+     */
+    suspend fun setFrontPageWeight(id: Long, weight: Int?): ArticleDto =
+        http.put("$baseUrl/api/articles/$id/front-page-weight") {
+            bearerAuth(accessToken())
+            contentType(ContentType.Application.Json)
+            setBody(FrontPageWeightRequest(weight))
+        }.body()
+
     /** Approvals and rejections of the article, newest first. */
     suspend fun reviews(articleId: Long): List<ReviewDto> =
         http.get("$baseUrl/api/articles/$articleId/reviews") { bearerAuth(accessToken()) }.body()

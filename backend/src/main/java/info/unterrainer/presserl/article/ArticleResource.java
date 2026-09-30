@@ -40,6 +40,10 @@ import jakarta.ws.rs.core.MediaType;
 @Produces(MediaType.APPLICATION_JSON)
 public class ArticleResource {
 
+    static final String WEIGHT = "weight";
+    static final int MIN_WEIGHT = 1;
+    static final int MAX_WEIGHT = 999;
+
     @Inject
     JsonWebToken token;
 
@@ -166,6 +170,18 @@ public class ArticleResource {
         return writer().flatMap(newsroom -> dto(newsroom, service.unlock(newsroom, id)));
     }
 
+    /**
+     * Sets ({@code {"weight": 1}}) or clears ({@code {"weight": null}}) the front-page weight; the body
+     * is validated before the role check. Deliberately not in {@code allowedActions}: the admin app
+     * offers it by role.
+     */
+    @PUT
+    @Path("/{id}/front-page-weight")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Uni<ArticleDto> setFrontPageWeight(@PathParam("id") long id, JsonNode json) {
+        return writer().flatMap(newsroom -> dto(newsroom, service.setFrontPageWeight(newsroom, id, weight(json))));
+    }
+
     @GET
     @Path("/{id}/reviews")
     public Uni<List<ReviewDto>> reviews(@PathParam("id") long id) {
@@ -223,6 +239,27 @@ public class ArticleResource {
         } catch (JsonProcessingException e) {
             throw ArticleException.invalid(null, "request body must be JSON");
         }
+    }
+
+    /**
+     * The weight of a {@code front-page-weight} body: an integer from 1 to 999 or {@code null}.
+     *
+     * @throws ArticleException {@code 400 weight} for a missing field, a non-integer or a value out of
+     *                          range
+     */
+    static Integer weight(JsonNode json) {
+        if (json == null || !json.isObject() || !json.has(WEIGHT)) {
+            throw ArticleException.invalid(WEIGHT, "weight is required: a number from 1 to 999, or null to clear it");
+        }
+        JsonNode weight = json.get(WEIGHT);
+        if (weight.isNull()) {
+            return null;
+        }
+        if (!weight.isIntegralNumber() || !weight.canConvertToInt() || weight.intValue() < MIN_WEIGHT
+                || weight.intValue() > MAX_WEIGHT) {
+            throw ArticleException.invalid(WEIGHT, "weight must be a whole number from 1 to 999, or null");
+        }
+        return weight.intValue();
     }
 
     private static ArticleSort sort(String value) {

@@ -3,7 +3,7 @@
 <main data-view="article">
   {#masthead page=page linked=true /}
   <article class="article">
-    {#sectionTag section=article.section /}
+    {#sectionTag section=article.section active=page.activeSectionId /}
     {#if article.kicker}
     <p class="kicker">{article.kicker}</p>
     {/if}

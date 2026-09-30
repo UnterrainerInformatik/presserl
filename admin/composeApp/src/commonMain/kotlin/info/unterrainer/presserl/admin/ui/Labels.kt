@@ -12,6 +12,8 @@ import info.unterrainer.presserl.admin.resources.color_teal
 import info.unterrainer.presserl.admin.resources.color_yellow
 import info.unterrainer.presserl.admin.resources.decision_approved
 import info.unterrainer.presserl.admin.resources.decision_rejected
+import info.unterrainer.presserl.admin.resources.front_page_marker
+import info.unterrainer.presserl.admin.resources.in_no_issue
 import info.unterrainer.presserl.admin.resources.role_editor_in_chief
 import info.unterrainer.presserl.admin.resources.role_publisher
 import info.unterrainer.presserl.admin.resources.role_reader
@@ -23,6 +25,7 @@ import info.unterrainer.presserl.admin.resources.status_offline
 import info.unterrainer.presserl.admin.resources.status_published
 import info.unterrainer.presserl.admin.resources.status_submitted
 import info.unterrainer.presserl.admin.resources.waiting_for_approval
+import info.unterrainer.presserl.admin.resources.waits_for_issue
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -103,3 +106,29 @@ fun decisionText(decision: String): String = decisionLabel(decision)?.let { stri
 
 @Composable
 fun colorText(color: String): String = colorLabel(color)?.let { stringResource(it) } ?: color
+
+/** Why a published article is not shown to readers although it is published: its issue is not live, or it has none. */
+sealed interface IssueWait {
+    data class ForIssue(val number: Int) : IssueWait
+    data object NoIssue : IssueWait
+}
+
+/** The [IssueWait] of a `PUBLISHED` article readers do not see; `null` for any other article. */
+fun issueWait(status: String, readerVisible: Boolean, issueNumber: Int?): IssueWait? = when {
+    status != "PUBLISHED" || readerVisible -> null
+    issueNumber != null -> IssueWait.ForIssue(issueNumber)
+    else -> IssueWait.NoIssue
+}
+
+/** "Waits for issue N" / "In no issue" for a published article readers do not see, `null` otherwise. */
+@Composable
+fun issueWaitText(status: String, readerVisible: Boolean, issueNumber: Int?): String? =
+    when (val wait = issueWait(status, readerVisible, issueNumber)) {
+        is IssueWait.ForIssue -> stringResource(Res.string.waits_for_issue, wait.number)
+        IssueWait.NoIssue -> stringResource(Res.string.in_no_issue)
+        null -> null
+    }
+
+/** "Front page N" for a weighted article, `null` without weight. */
+@Composable
+fun frontPageText(weight: Int?): String? = weight?.let { stringResource(Res.string.front_page_marker, it) }

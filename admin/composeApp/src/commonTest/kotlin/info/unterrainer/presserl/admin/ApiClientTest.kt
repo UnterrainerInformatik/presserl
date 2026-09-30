@@ -280,6 +280,24 @@ class ApiClientTest {
     }
 
     @Test
+    fun setAndClearFrontPageWeight() = runTest {
+        api.setFrontPageWeight(42, 1)
+        api.setFrontPageWeight(42, null)
+        assertEquals(
+            listOf(HttpMethod.Put to "https://news.example.org/api/articles/42/front-page-weight").let { it + it },
+            requests.map { it.method to it.url },
+        )
+        assertEquals(
+            listOf<JsonElement?>(
+                buildJsonObject { put("weight", 1) },
+                buildJsonObject { put("weight", JsonNull) },
+            ),
+            requests.map { it.body },
+        )
+        requests.forEach { assertEquals("Bearer token-123", it.authorization) }
+    }
+
+    @Test
     fun chainActions() = runTest {
         api.submitArticle(42)
         api.approveArticle(42)

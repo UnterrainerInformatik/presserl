@@ -10,8 +10,12 @@ import java.time.temporal.ChronoUnit;
 
 import javax.sql.DataSource;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import info.unterrainer.presserl.TestSupport;
+
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.response.Response;
@@ -34,6 +38,11 @@ class ReaderArticlesTest {
 
     @Inject
     DataSource dataSource;
+
+    @AfterEach
+    void resetIssues() {
+        TestSupport.resetIssues(dataSource);
+    }
 
     private ReaderFixtures fixtures;
 

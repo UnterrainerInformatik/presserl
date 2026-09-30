@@ -100,4 +100,12 @@ public interface ReaderMessagesEn extends ReaderMessages {
     @Override
     @Message("Back to the issue")
     String backToIssue();
+
+    @Override
+    @Message("There are no articles in “{name}” yet.")
+    String sectionEmptyNote(String name);
+
+    @Override
+    @Message("Legal notice")
+    String legalNotice();
 }

@@ -1,1 +1,4 @@
-<span class="section-tag" data-section-color="{section.color}">{section.name}</span>
+{! A section name with its colour marker, linked to the front page filtered by it (ReaderSection).
+   active is the id of the section the page is filtered by ({@code null} for none): that section's tag
+   links back to the unfiltered front page and is marked as current. !}
+{#if section.id == active}<a class="section-tag" href="/" aria-current="page" data-section-color="{section.color}">{section.name}</a>{#else}<a class="section-tag" href="/?section={section.id}" data-section-color="{section.color}">{section.name}</a>{/if}

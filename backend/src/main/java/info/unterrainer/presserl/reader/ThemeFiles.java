@@ -1,6 +1,7 @@
 package info.unterrainer.presserl.reader;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -9,6 +10,8 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -36,6 +39,8 @@ public class ThemeFiles {
 
     static final String PREFIX = "/theme/";
     static final String CUSTOM_CSS = "custom.css";
+    static final String LEGAL_NOTICE = "legal-notice.txt";
+    static final long LEGAL_NOTICE_MAX_BYTES = 64 * 1024;
     static final Map<String, String> TYPES = Map.ofEntries(
             Map.entry("css", "text/css;charset=UTF-8"),
             Map.entry("woff2", "font/woff2"),
@@ -79,11 +84,69 @@ public class ThemeFiles {
     }
 
     /**
+     * The theme's legal notice ({@code legal-notice.txt}, UTF-8) as paragraphs of lines, read on every
+     * call so a change shows on the next page load. Blank lines separate paragraphs; line breaks within
+     * a paragraph are kept, trailing whitespace is dropped. Empty when the file is missing, holds only
+     * whitespace, is larger than 64 KiB or cannot be read as UTF-8 (the last two logged as a warning).
+     * The file is never served under {@code /theme/}.
+     */
+    public Optional<List<List<String>>> legalNotice() {
+        Optional<Path> file = file(LEGAL_NOTICE);
+        if (file.isEmpty()) {
+            return Optional.empty();
+        }
+        String text;
+        try {
+            if (Files.size(file.get()) > LEGAL_NOTICE_MAX_BYTES) {
+                LOG.warnf("Ignoring %s: larger than %d bytes", LEGAL_NOTICE, LEGAL_NOTICE_MAX_BYTES);
+                return Optional.empty();
+            }
+            text = Files.readString(file.get(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            LOG.warnf("Ignoring %s: cannot be read as UTF-8 text (%s)", LEGAL_NOTICE, e.toString());
+            return Optional.empty();
+        }
+        List<List<String>> paragraphs = paragraphs(text);
+        return paragraphs.isEmpty() ? Optional.empty() : Optional.of(paragraphs);
+    }
+
+    /**
+     * Splits {@code text} into paragraphs at lines holding only whitespace; lines lose trailing
+     * whitespace, empty paragraphs are dropped.
+     */
+    static List<List<String>> paragraphs(String text) {
+        List<List<String>> paragraphs = new ArrayList<>();
+        List<String> current = new ArrayList<>();
+        for (String line : text.replace("\uFEFF", "").split("\\R", -1)) {
+            String kept = line.stripTrailing();
+            if (kept.isBlank()) {
+                if (!current.isEmpty()) {
+                    paragraphs.add(List.copyOf(current));
+                    current.clear();
+                }
+            } else {
+                current.add(kept);
+            }
+        }
+        if (!current.isEmpty()) {
+            paragraphs.add(List.copyOf(current));
+        }
+        return List.copyOf(paragraphs);
+    }
+
+    /**
      * The real path of {@code relative} inside the theme directory, when it is a servable file.
      */
     Optional<Path> resolve(String relative) {
-        if (relative.isEmpty() || relative.indexOf('\\') >= 0 || relative.indexOf('\0') >= 0
-                || type(relative).isEmpty()) {
+        return type(relative).isEmpty() ? Optional.empty() : file(relative);
+    }
+
+    /**
+     * The real path of {@code relative} inside the theme directory (symlinks resolved), when it is a
+     * regular file there, whatever its type.
+     */
+    private Optional<Path> file(String relative) {
+        if (relative.isEmpty() || relative.indexOf('\\') >= 0 || relative.indexOf('\0') >= 0) {
             return Optional.empty();
         }
         try {

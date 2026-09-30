@@ -70,6 +70,21 @@ Content-Type: application/json
     client.global.set("kitchenId", response.body.id);
 %}
 
+### A planned issue: it is the newest, so it collects the articles published below
+POST {{baseUrl}}/api/issues
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "publicationDate": null }
+
+> {%
+    client.test("201 not live", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        client.assert(response.body.published === false, "published");
+    });
+    client.global.set("planIssueId", response.body.id);
+%}
+
 ### reader becomes reporter of Garden
 PUT {{baseUrl}}/api/sections/{{gardenId}}/members/{{readerId}}
 Authorization: Bearer {{accessToken}}
@@ -205,10 +220,115 @@ Authorization: Bearer {{accessToken}}
         client.assert(JSON.stringify(response.body.allowedActions) === '["EDIT","TAKE_OFFLINE"]',
             "allowedActions " + JSON.stringify(response.body.allowedActions));
     });
+    client.test("waits for the planned issue", () => {
+        client.assert(response.body.issue.id === client.global.get("planIssueId"), "issue " + JSON.stringify(response.body.issue));
+        client.assert(response.body.readerVisible === false, "readerVisible " + response.body.readerVisible);
+        client.assert(response.body.frontPageWeight === null, "frontPageWeight " + response.body.frontPageWeight);
+    });
     client.global.set("version", response.body.version);
 %}
 
-### Edit after publish starts revision 2
+### Readers do not see an article of a not-live issue
+GET {{baseUrl}}/articles/{{articleId}}
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### The planned issue goes live
+POST {{baseUrl}}/api/issues/{{planIssueId}}/publish
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("200 live", () => client.assert(response.body.published === true, "published"));
+%}
+
+### Now readers see it
+GET {{baseUrl}}/articles/{{articleId}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200, "status " + response.status));
+%}
+
+### And the API says so, in the list too
+GET {{baseUrl}}/api/articles
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("readerVisible", () => {
+        const entry = response.body.find(a => a.id === client.global.get("articleId"));
+        client.assert(entry.readerVisible === true, "readerVisible " + entry.readerVisible);
+    });
+%}
+
+### Front-page weight: the editor-in-chief puts it on top, without new revision or version
+PUT {{baseUrl}}/api/articles/{{articleId}}/front-page-weight
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "weight": 1 }
+
+> {%
+    client.test("200 weight 1, same version", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.frontPageWeight === 1, "frontPageWeight " + response.body.frontPageWeight);
+        client.assert(response.body.version === client.global.get("version"), "version " + response.body.version);
+        client.assert(response.body.revision === 1, "revision " + response.body.revision);
+        client.assert(response.body.status === "PUBLISHED", "status " + response.body.status);
+    });
+%}
+
+### Front-page weight: out of range
+PUT {{baseUrl}}/api/articles/{{articleId}}/front-page-weight
+Authorization: Bearer {{chiefToken}}
+Content-Type: application/json
+
+{ "weight": 0 }
+
+> {%
+    client.test("400 naming weight", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "weight", JSON.stringify(response.body));
+    });
+%}
+
+### Front-page weight: a section editor may not set it
+PUT {{baseUrl}}/api/articles/{{articleId}}/front-page-weight
+Authorization: Bearer {{nogroupsToken}}
+Content-Type: application/json
+
+{ "weight": 2 }
+
+> {%
+    client.test("403", () => client.assert(response.status === 403, "status " + response.status));
+%}
+
+### Front-page weight: the list shows it
+GET {{baseUrl}}/api/articles
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("weight 1", () => {
+        const entry = response.body.find(a => a.id === client.global.get("articleId"));
+        client.assert(entry.frontPageWeight === 1, "frontPageWeight " + entry.frontPageWeight);
+    });
+%}
+
+### Front-page weight: the publisher clears it
+PUT {{baseUrl}}/api/articles/{{articleId}}/front-page-weight
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "weight": null }
+
+> {%
+    client.test("200 no weight", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.frontPageWeight === null, "frontPageWeight " + response.body.frontPageWeight);
+    });
+%}
+
+### Edit after publish starts revision 2 (the version is still the one from publishing)
 PUT {{baseUrl}}/api/articles/{{articleId}}
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json
@@ -1023,6 +1143,22 @@ Authorization: Bearer {{accessToken}}
 ### Body image: clean up the draft
 DELETE {{baseUrl}}/api/articles/{{bodyImageArticleId}}
 Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("204", () => client.assert(response.status === 204, "status " + response.status));
+%}
+
+### Clean up: take the planned issue back and delete it; its articles belong to no issue again
+POST {{baseUrl}}/api/issues/{{planIssueId}}/unpublish
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200, "status " + response.status));
+%}
+
+###
+DELETE {{baseUrl}}/api/issues/{{planIssueId}}
+Authorization: Bearer {{chiefToken}}
 
 > {%
     client.test("204", () => client.assert(response.status === 204, "status " + response.status));

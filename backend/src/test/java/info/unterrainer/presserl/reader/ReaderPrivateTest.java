@@ -8,6 +8,7 @@ import java.util.Map;
 
 import javax.sql.DataSource;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -36,6 +37,11 @@ class ReaderPrivateTest {
     @Inject
     DataSource dataSource;
 
+    @AfterEach
+    void resetIssues() {
+        TestSupport.resetIssues(dataSource);
+    }
+
     private long published;
 
     @BeforeEach
@@ -56,6 +62,18 @@ class ReaderPrivateTest {
                         "<a href=\"/login\">Anmelden</a>")
                 .doesNotContain("Private headline", "lead-article", "article-card", "/articles/", "/logout",
                         "section-bar", "section-tag");
+    }
+
+    @Test
+    void sectionFilterShowsOnlyThePrivateNote() {
+        for (String section : new String[] { "1", "999999", "abc" }) {
+            Response response = given().redirects().follow(false).get("/?section=" + section);
+
+            assertThat(response.statusCode()).as(section).isEqualTo(200);
+            assertThat(response.asString()).as(section)
+                    .contains("Diese Zeitung ist privat.", "<a href=\"/login\">Anmelden</a>")
+                    .doesNotContain("Private headline", "lead-article", "section-tag");
+        }
     }
 
     @Test

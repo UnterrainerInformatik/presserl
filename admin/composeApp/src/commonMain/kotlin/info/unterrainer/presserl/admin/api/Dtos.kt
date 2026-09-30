@@ -226,6 +226,8 @@ data class IssueRefDto(
  * (`SECTION_EDITOR`, `EDITOR_IN_CHIEF`, `PUBLISHER`), `null` while no submission is pending.
  * [locked] is the emergency-brake lock: a publisher took the article offline, only a publisher puts it back online.
  * [lastEditor] wrote the latest revision (the author unless someone corrected it; `null` on older servers).
+ * [readerVisible] tells whether readers see the article (published in a published issue); [frontPageWeight] is the
+ * front-page weight (1–999, lower comes first), `null` for none.
  * Timestamps are ISO-8601 strings.
  */
 @Serializable
@@ -236,6 +238,8 @@ data class ArticleDto(
     val lastEditor: AuthorDto? = null,
     val section: SectionRefDto? = null,
     val issue: IssueRefDto? = null,
+    val readerVisible: Boolean = false,
+    val frontPageWeight: Int? = null,
     val revision: Int,
     val liveRevision: Int? = null,
     val hasUnpublishedChanges: Boolean,
@@ -254,7 +258,10 @@ data class ArticleDto(
     val allowedActions: List<String>,
 )
 
-/** Entry of `GET /api/articles` and of the articles of an issue; [issue] is `null` for an article without issue. */
+/**
+ * Entry of `GET /api/articles` and of the articles of an issue; [issue] is `null` for an article without issue.
+ * [readerVisible] and [frontPageWeight] as in [ArticleDto].
+ */
 @Serializable
 data class ArticleSummaryDto(
     val id: Long,
@@ -262,6 +269,8 @@ data class ArticleSummaryDto(
     val author: AuthorDto,
     val section: SectionRefDto? = null,
     val issue: IssueRefDto? = null,
+    val readerVisible: Boolean = false,
+    val frontPageWeight: Int? = null,
     val headline: String,
     val kicker: String,
     val revision: Int,
@@ -546,6 +555,10 @@ data class IssueDetailDto(
     val newest: Boolean,
     val articles: List<ArticleSummaryDto> = emptyList(),
 )
+
+/** Request body of `PUT /api/articles/{id}/front-page-weight`; [weight] is always sent, `null` clears it. */
+@Serializable
+data class FrontPageWeightRequest(val weight: Int?)
 
 /** Request body of `POST /api/issues` and `PUT /api/issues/{id}`; [publicationDate] is always sent, `null` clears it. */
 @Serializable

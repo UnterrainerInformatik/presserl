@@ -378,4 +378,9 @@
     <string name="connect_error_scanner">Der Scanner ist auf diesem Gerät nicht verfügbar. Gib bitte die Adresse ein.</string>
     <string name="connect_credentials_rejected">Das Passwort vom Zugangszettel wurde nicht angenommen, vielleicht wurde es neu gesetzt. Melde dich hier mit deinem aktuellen Passwort an.</string>
     <string name="privacy_policy">Datenschutzerklärung</string>
+    <string name="waits_for_issue">wartet auf Ausgabe %1$d</string>
+    <string name="in_no_issue">in keiner Ausgabe</string>
+    <string name="front_page_marker">Titelseite %1$d</string>
+    <string name="front_page_label">Titelseite</string>
+    <string name="front_page_help">1 ist der Aufmacher, kleinere Zahlen stehen weiter oben. Leer: normale Reihenfolge, neueste zuerst.</string>
 </resources>

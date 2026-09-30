@@ -40,48 +40,6 @@ looked exactly as it would for a wrong address, and only `adb` checks (DNS, `nc`
 - Decide at propose time whether the error names the address it tried.
 - Extend `ConnectionModelTest` (ktor-client-mock: thrown IO exception vs. `404`).
 
-## Reader: section filter and front-page weighting
-Gerald's idea (2026-09-30), two parts:
-- **Section filter:** the section tags in the reader are clickable and filter the article list to
-  that section. At most one section is active; clicking the active tag again clears the filter and
-  shows all articles again. Decide at propose time: URL form (e.g. `/?section=<id>`) so a filtered
-  view can be linked, behaviour on issue pages and in private newspapers.
-- **Front page weighting ("Titelseite"):** articles get an integer weight; the smaller the number,
-  the higher up. Weighted articles come first, above everything else — in the current layout the
-  first is the lead story and the next three are shown below it (one lead plus three), before the
-  page starts to scroll. Unweighted articles follow as today (newest first publication first).
-  Decide at propose time: who may set the weight (editor-in-chief, publisher, section editors?),
-  whether it belongs to the newspaper or to an issue, what happens to a weight when the article
-  goes offline or leaves the issue, and how weighting and the section filter combine.
-- Relates to "Articles of a not-live issue are visible on the front page" below.
-
-## Reader: legal notice for the deployment (alexpresse.net)
-The reader needs a legal notice (Impressum/Offenlegung) under Austrian law that each deployment
-sets itself — a template in `deploy/` (e.g. a file next to the theme or `.env` values), the real
-content in the deployment repositories (`../presserl-deployment`, `../alexpresse`); a link in the
-reader (e.g. footer) to a page `/impressum` or similar. For `alexpresse.net`: Unterrainer
-Informatik, Gerald Unterrainer, Flurstraße 17, 4470 Enns — with only the legal minimum. Gerald's
-site is private and not commercial, so § 25 Mediengesetz (disclosure: name, place of residence;
-for a newspaper that goes beyond personal presentation also ownership and basic orientation /
-"Blattlinie") applies, § 5 ECG does not. Decide at propose time: whether the street is needed at
-all (§ 25 MedienG asks for the place of residence only), the "Blattlinie" text, and the same
-trade-name question as for the homepage (see "Homepage: private legal notice").
-
-## Articles of a not-live issue are visible on the front page
-Seen on alexpresse.net (2026-09-30): an issue without publication date and not live, yet its
-approved articles show on the front page. This is the specified behaviour, not a code bug:
-`reader-articles` lists every `PUBLISHED` article on `/` (and serves `/articles/{id}`), and
-`reader-issues` lets the live switch govern only `/issues/{id}`, `/issues` and the masthead's issue
-line ("The front page's article list itself SHALL stay as it is"). Approving therefore publishes at
-once; the issue only groups. Gerald expected the issue's live switch to hold its articles back.
-Decide at propose time:
-- Should an article that belongs to a not-live issue stay off the front page and answer `404` on
-  its article page (and print view) until the issue goes live? What about articles in no issue
-  (blog mode) — immediately visible as today?
-- What does the admin app show then (e.g. "published, waits for issue 2")? Section article counts
-  (`articleCounts.live`) would need the same rule.
-- Fits together with the front-page weighting / section filter idea (lead story plus three below).
-
 ## M8 — iOS (later)
 iOS target of the admin app with the same QR login as Android; App Store publishing. Blocked
 until an Apple developer account exists — not before the Android part is done.

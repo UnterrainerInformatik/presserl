@@ -78,6 +78,14 @@ public class ArticleEntity extends PanacheEntityBase {
     public boolean locked;
 
     /**
+     * Front-page weight (1–999, lower comes first), {@code null} for none. Metadata, not content: not
+     * updatable through the entity, so a content save never overwrites it, and written only by the
+     * targeted update of {@code ArticleService#setFrontPageWeight}, which leaves {@link #version} alone.
+     */
+    @Column(name = "front_page_weight", updatable = false)
+    public Integer frontPageWeight;
+
+    /**
      * First publication.
      */
     @Column(name = "published_at")

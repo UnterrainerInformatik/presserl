@@ -248,6 +248,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                             onRevisions = { push(Route.Revisions(route.articleId)) },
                             username = screen.me.username,
                             onShowChanges = { push(Route.RevisionDiff(route.articleId, it)) },
+                            roles = screen.me.roles,
                         )
                     }
                     is Route.Revisions -> RevisionsScreen(

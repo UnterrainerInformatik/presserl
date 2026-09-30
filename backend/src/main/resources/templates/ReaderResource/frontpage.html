@@ -7,11 +7,13 @@
   <p class="note">{msg:noAccessNote}</p>
   {#else if leadStory}
   <div class="stories">
-    {#story article=leadStory cls="lead-article" /}
+    {#story article=leadStory cls="lead-article" active=page.activeSectionId /}
     {#for other in stories}
-    {#story article=other cls="article-card" /}
+    {#story article=other cls="article-card" active=page.activeSectionId /}
     {/for}
   </div>
+  {#else if activeSection}
+  <p class="note">{msg:sectionEmptyNote(activeSection.name)}</p>
   {#else}
   <p class="note">{msg:emptyNote}</p>
   {/if}

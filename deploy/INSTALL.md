@@ -165,14 +165,17 @@ manage it in Keycloak.
 
 ### First article and first issue
 
+A new newspaper starts with issue 1, which is not live yet. Readers see an article only once it is
+published **and** its issue is live, so decide first: open **Issues → Issue 1** and switch on
+**Visible to readers (live)** for blog mode (one issue that keeps growing; every published article
+is online at once), or leave it off, collect articles in it, give it a publication date and switch
+it live as your first issue. Later issues are created with **New issue**; the newest issue always
+collects newly published articles.
+
 In the admin app, **Sections** holds the section *General*; add your own there. **Articles →
 New article** opens the editor: choose a section, write a headline, add a **Lead image** if you
-like, then **Publish**. The article appears on the reader's front page at once.
-
-A new newspaper starts with issue 1, which is not live yet: until it is, the reader shows no
-issue line and the issue archive (`/issues`) stays empty. Open **Issues → Issue 1** and switch on
-**Visible to readers (live)** — either as blog mode (one issue that keeps growing) or, after
-giving it a publication date, as your first issue; later issues are created with **New issue**.
+like, then **Publish**. With issue 1 live the article appears on the reader's front page at once;
+otherwise the article list shows it as "waits for issue 1".
 
 ### Private newspaper and readers
 
@@ -207,6 +210,24 @@ Own fonts go into `theme/fonts/`, images anywhere in `theme/`; reference them re
 
 The default text size of the reader (S/M/L/XL) is set by a publisher or editor-in-chief in the
 admin app under **Newspaper**; every reader can still choose their own size on the page.
+
+### Legal notice (Impressum)
+
+A website of a newspaper must say who is behind it. In Austria § 25 Mediengesetz requires every
+website, also a private, non-commercial one, to disclose its media owner (name and place of
+residence) and, for a newspaper, its basic orientation; other countries have similar rules. This
+is **your** legal duty as operator — Presserl only displays the text you give it, and this is no
+legal advice.
+
+Put the text into `theme/legal-notice.txt` (plain UTF-8 text; blank lines separate paragraphs):
+
+```sh
+cp theme/legal-notice.txt.example theme/legal-notice.txt    # then edit it
+```
+
+While the file exists, every reader page ends with a link **Impressum** / **Legal notice** to
+`https://<hostname>/legal-notice`, also for visitors of a private newspaper who are not logged in.
+Changes show on the next page load; without the file there is neither link nor page.
 
 ### Corrections by higher levels
 
@@ -266,6 +287,11 @@ Without them `docker compose` refuses to start, naming the missing variable.
 **Updating from a version without spell check:** copy the new `compose.yaml` over the old one
 before `docker compose up -d`, so the `languagetool` service starts; without it the spell check
 answers "currently unavailable" and nothing else is affected.
+
+**Updating to a version where issues decide what readers see:** readers only see published
+articles of a **live** issue from then on. If your newest issue is not live, its articles disappear
+from the reader until you switch it live in *Issues* (for blog mode, switch issue 1 live). Add a
+`theme/legal-notice.txt` as well (see *Legal notice*).
 
 **Updating from a version without issues:** the update creates issue 1, not yet live, holding
 every article published so far (nothing changes for readers). Open *Issues* in the admin app

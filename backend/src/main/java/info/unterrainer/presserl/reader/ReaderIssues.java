@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import info.unterrainer.presserl.article.ArticleStatus;
+import info.unterrainer.presserl.article.ReaderVisibility;
 import info.unterrainer.presserl.issue.IssueEntity;
 import io.quarkus.hibernate.reactive.panache.Panache;
 import io.quarkus.hibernate.reactive.panache.common.WithSession;
@@ -40,9 +40,8 @@ public class ReaderIssues {
     @WithSession
     public Uni<List<ReaderArticle>> articles(long issueId) {
         return Panache.getSession().flatMap(session -> session
-                .createSelectionQuery(ReaderArticles.LIVE_PUBLISHED + " and a.issueId = :issue "
+                .createSelectionQuery(ReaderArticles.LIVE_VISIBLE + " and a.issueId = :issue "
                         + "order by a.issuePosition, a.id", Object[].class)
-                .setParameter("status", ArticleStatus.PUBLISHED)
                 .setParameter("issue", issueId)
                 .getResultList())
                 .map(rows -> rows.stream().map(ReaderArticles::toArticle).toList());
@@ -61,9 +60,8 @@ public class ReaderIssues {
                 .flatMap(issues -> issues.isEmpty() ? Uni.createFrom().item(List.<ReaderIssue>of())
                         : session.createSelectionQuery("select a.issueId, r.headline from ArticleEntity a "
                                 + "join ArticleRevisionEntity r on r.articleId = a.id and r.number = a.liveRevision "
-                                + "where a.status = :status and a.issueId in :issues "
+                                + "where " + ReaderVisibility.VISIBLE + " and a.issueId in :issues "
                                 + "order by a.issueId, a.issuePosition, a.id", Object[].class)
-                                .setParameter("status", ArticleStatus.PUBLISHED)
                                 .setParameter("issues", issues.stream().map(issue -> issue.id).toList())
                                 .getResultList()
                                 .map(rows -> {

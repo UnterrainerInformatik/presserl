@@ -8,18 +8,20 @@
  *            --presserl-color-rule, --presserl-text-size, --presserl-letter-spacing,
  *            --presserl-measure, --presserl-grid-columns, --presserl-section-<key>
  *   views    <main data-view="frontpage | article | issues | issue | print-article | print-issue |
- *            not-found">
+ *            not-found | legal-notice">
  *   classes  .masthead .masthead__name .masthead__subtitle .masthead__issue .section-bar .section-tag
  *            .text-size-switch .lead-article .article-card .kicker .headline .subheadline .lead
  *            .byline .article .article__body .article__figure .article__caption .lead-image
  *            .lead-image__caption .note .print-link
- *            .print-toolbar .print-columns .print-section-header
+ *            .print-toolbar .print-columns .print-section-header .presserl-footer
+ * The section tag is a link; the tag of the section the front page is filtered by carries
+ * aria-current="page".
  * Within [data-view="print-issue"], --presserl-grid-columns is the number of columns after the first
  * page (default 2).
  * Tokens prefixed --presserl-_ and all other classes are internal and may change.
  *
  * Layers: fonts, tokens, text sizes, dark scheme, base typography, masthead and navigation,
- * front page, article, lead images, notes, issues, print views, printing.
+ * front page, article, lead images, notes, footer and legal notice, issues, print views, printing.
  */
 
 /* ---------------------------------------------------------------------------------------------
@@ -374,6 +376,28 @@ button:focus-visible {
   font-size: 0.85rem;
 }
 
+/* The tag is a link to the front page filtered by its section; the active section's tag links back. */
+a.section-tag {
+  color: var(--presserl-color-ink);
+  text-decoration: none;
+}
+
+a.section-tag:hover {
+  text-decoration: underline;
+}
+
+.section-bar a.section-tag {
+  /* touch target of 44 px, independent of the chosen text size */
+  min-height: 44px;
+}
+
+a.section-tag[aria-current="page"] {
+  text-decoration: underline;
+  text-decoration-thickness: 0.15em;
+  text-decoration-color: var(--presserl-_section, var(--presserl-color-ink));
+  text-underline-offset: 0.3em;
+}
+
 .section-tag::before {
   content: "";
   flex: none;
@@ -641,6 +665,31 @@ button:focus-visible {
 }
 
 /* ---------------------------------------------------------------------------------------------
+ * Footer and the legal notice
+ * ------------------------------------------------------------------------------------------- */
+
+.presserl-footer {
+  margin-top: 3rem;
+  padding: 1rem 0 0;
+  border-top: 1px solid var(--presserl-color-rule);
+  text-align: center;
+  font-size: 0.85rem;
+}
+
+.presserl-footer a {
+  color: var(--presserl-color-muted);
+}
+
+.legal-notice__title {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 1.8rem;
+}
+
+.legal-notice {
+  max-width: var(--presserl-measure);
+}
+
+/* ---------------------------------------------------------------------------------------------
  * Issues: the issue line of the masthead, the archive, print links
  * ------------------------------------------------------------------------------------------- */
 
@@ -861,7 +910,8 @@ button:focus-visible {
   .text-size-switch,
   .section-bar,
   .print-toolbar,
-  .print-link {
+  .print-link,
+  .presserl-footer {
     display: none !important;
   }
 

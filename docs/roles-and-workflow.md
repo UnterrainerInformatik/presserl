@@ -108,8 +108,9 @@ Issues are assembled by **editors-in-chief and publishers** (`MANAGE_ISSUES`); s
 - **Blog mode:** one issue that is switched live from the start and simply grows; no publication date, maybe never a second issue.
 - **Planned issues:** the newest issue (highest number) is not live yet and collects every newly published article; once it is complete it gets a publication date, is switched live, and the next issue is created.
 - A newly published article lands in the newest issue on its **first** publication only; editors-in-chief and publishers reorder, move or remove articles in the issues screen (the first one is the lead story). Republishing never moves an article.
-- An article's own status decides whether readers see it — also inside a planned issue. The issue only hides itself (issue page, archive, issue print view) while it is not live.
+- **Readers see an article when it is published and its issue is live.** A published article of a planned issue waits (the admin app shows "waits for issue N") and appears on the front page, its article page, print view and images once the issue is switched live; taking an issue back hides its articles again without changing their status. In blog mode the one issue is live, so a new article is online at once. A published article that belongs to no issue (issue deleted, removed from it) is not shown ("in no issue") until an editor-in-chief puts it into an issue.
 - Only issues that are not live can be deleted; their articles then belong to no issue.
+- **Front page order:** editors-in-chief and publishers give an article a **front-page weight** (1–999) in the editor. Weighted articles lead the front page, lowest weight first — weight 1 is the lead story, 2–4 the stories below it; all others follow newest first. The weight is not content: no revision, no approval, any status; it stays when the article goes offline and only counts while readers see the article. Section editors and reporters do not set it.
 
 ## Overrides
 

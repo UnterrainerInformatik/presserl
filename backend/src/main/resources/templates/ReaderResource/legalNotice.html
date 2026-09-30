@@ -1,0 +1,12 @@
+{#include layout/reader}
+{#title}{msg:legalNotice} – {page.name}{/title}
+<main data-view="legal-notice">
+  {#masthead page=page linked=true /}
+  <h1 class="legal-notice__title">{msg:legalNotice}</h1>
+  <div class="legal-notice">
+    {#for paragraph in paragraphs}
+    <p>{#for line in paragraph}{line}{#if line_hasNext}<br>{/if}{/for}</p>
+    {/for}
+  </div>
+</main>
+{/include}

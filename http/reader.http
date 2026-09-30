@@ -8,6 +8,18 @@ grant_type=password&client_id=presserl-http&username={{username}}&password={{pas
     client.global.set("accessToken", response.body.access_token);
 %}
 
+### A planned issue: the newest one collects the articles published below
+POST {{baseUrl}}/api/issues
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "publicationDate": null }
+
+> {%
+    client.test("201 not live", () => client.assert(response.status === 201 && response.body.published === false, "status " + response.status));
+    client.global.set("readerIssueId", response.body.id);
+%}
+
 ### Create an article with every block type and markup in the headline
 POST {{baseUrl}}/api/articles
 Authorization: Bearer {{accessToken}}
@@ -44,7 +56,37 @@ Authorization: Bearer {{accessToken}}
 
 > {%
     client.test("published", () => client.assert(response.body.status === "PUBLISHED", "status " + response.body.status));
+    client.test("waits for the planned issue", () => {
+        client.assert(response.body.issue.id === client.global.get("readerIssueId"), "issue " + JSON.stringify(response.body.issue));
+        client.assert(response.body.readerVisible === false, "readerVisible " + response.body.readerVisible);
+    });
     client.global.set("readerVersion", response.body.version);
+    client.global.set("readerSectionId", response.body.section.id);
+%}
+
+### Waiting for its issue: the article page is the 404 page
+GET {{baseUrl}}/articles/{{readerArticleId}}
+
+> {%
+    client.test("404 while the issue is not live", () => {
+        client.assert(response.status === 404, "status " + response.status);
+        client.assert(!response.body.includes("Pumpkin"), "content leaked");
+    });
+%}
+
+### Waiting for its issue: not on the front page either
+GET {{baseUrl}}/
+
+> {%
+    client.test("not listed", () => client.assert(!response.body.includes('href="/articles/' + client.global.get("readerArticleId") + '"'), "listed"));
+%}
+
+### The issue goes live: its articles appear
+POST {{baseUrl}}/api/issues/{{readerIssueId}}/publish
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200 live", () => client.assert(response.body.published === true, "published"));
 %}
 
 ### Change it without publishing
@@ -161,6 +203,34 @@ GET {{baseUrl}}/reader/reader.css
     });
 %}
 
+### Front page filtered by the article's section; its tag links back to the unfiltered front page
+GET {{baseUrl}}/?section={{readerSectionId}}
+
+> {%
+    client.test("200 with the article and the active tag", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.includes('href="/articles/' + client.global.get("readerArticleId") + '"'), "link");
+        client.assert(response.body.includes('<a class="section-tag" href="/" aria-current="page"'), "active tag");
+    });
+%}
+
+### Section tags on the unfiltered front page link to the filter
+GET {{baseUrl}}/
+
+> {%
+    client.test("tag link", () => client.assert(response.body.includes('href="/?section=' + client.global.get("readerSectionId") + '"'), "tag link"));
+%}
+
+### Malformed section filter
+GET {{baseUrl}}/?section=abc
+
+> {%
+    client.test("404 page", () => {
+        client.assert(response.status === 404, "status " + response.status);
+        client.assert(response.body.includes('data-view="not-found"'), "not-found view");
+    });
+%}
+
 ### Clean up: take the article offline, it disappears from the reader
 POST {{baseUrl}}/api/articles/{{readerArticleId}}/offline
 Authorization: Bearer {{accessToken}}
@@ -249,7 +319,7 @@ GET {{baseUrl}}/articles/{{imageArticleId}}
         const id = client.global.get("readerMediaId");
         client.assert(response.status === 200, "status " + response.status);
         client.assert(response.body.includes('<figure class="lead-image">'), "figure");
-        client.assert(response.body.includes('src="/media/' + id + '/web"'), "src");
+        client.assert(response.body.includes('src="/media/' + id + '/web?v='), "src");
         client.assert(response.body.includes('<figcaption class="lead-image__caption">Our cat &lt;b&gt;Minka&lt;/b&gt;</figcaption>'),
             "caption");
     });
@@ -262,7 +332,7 @@ GET {{baseUrl}}/print/article/{{imageArticleId}}
     client.test("print rendition", () => {
         const id = client.global.get("readerMediaId");
         client.assert(response.status === 200, "status " + response.status);
-        client.assert(response.body.includes('src="/media/' + id + '/print"'), "src");
+        client.assert(response.body.includes('src="/media/' + id + '/print?v='), "src");
         client.assert(!response.body.includes("srcset"), "srcset");
     });
 %}
@@ -434,3 +504,28 @@ GET {{baseUrl}}/reader/fonts/atkinson-hyperlegible-latin-400-normal.woff2
     });
 %}
 
+### Legal notice: the reference theme ships only legal-notice.txt.example, so there is none
+GET {{baseUrl}}/legal-notice
+
+> {%
+    client.test("404 and no footer link", () => {
+        client.assert(response.status === 404, "status " + response.status);
+        client.assert(!response.body.includes('href="/legal-notice"'), "footer link without notice");
+    });
+%}
+
+### Clean up: take the planned issue back and delete it; its articles belong to no issue again
+POST {{baseUrl}}/api/issues/{{readerIssueId}}/unpublish
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200, "status " + response.status));
+%}
+
+###
+DELETE {{baseUrl}}/api/issues/{{readerIssueId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("204", () => client.assert(response.status === 204, "status " + response.status));
+%}

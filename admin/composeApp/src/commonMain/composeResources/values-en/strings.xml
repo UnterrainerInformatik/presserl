@@ -378,4 +378,9 @@
     <string name="connect_error_scanner">The scanner is not available on this device. Please enter the address.</string>
     <string name="connect_credentials_rejected">The pass-phrase on the account slip was not accepted, perhaps the password was reset. Log in here with your current password.</string>
     <string name="privacy_policy">Privacy policy</string>
+    <string name="waits_for_issue">waits for issue %1$d</string>
+    <string name="in_no_issue">in no issue</string>
+    <string name="front_page_marker">Front page %1$d</string>
+    <string name="front_page_label">Front page</string>
+    <string name="front_page_help">1 is the lead story; smaller numbers come first. Empty: the usual order, newest first.</string>
 </resources>

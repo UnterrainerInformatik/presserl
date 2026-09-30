@@ -148,6 +148,7 @@ class SectionResourceTest {
         try {
             long issueOne = issueId(1);
             long issueTwo = newIssue(2);
+            execute("UPDATE issue SET published = true, published_at = now() WHERE id = " + issueTwo);
             execute("UPDATE article SET issue_id = %d, issue_position = 0 WHERE id IN (%d, %d)"
                     .formatted(issueTwo, first, second));
             execute("UPDATE article SET issue_id = %d, issue_position = 0 WHERE id = %d".formatted(issueOne, offline));
@@ -161,6 +162,30 @@ class SectionResourceTest {
                     .body("sections[1].articleCounts.live", equalTo(0))
                     .body("sections[1].articleCounts.total", equalTo(0))
                     .body("sections[1].articleCounts.issues", empty());
+        } finally {
+            TestSupport.resetIssues(dataSource);
+        }
+    }
+
+    @Test
+    void articlesWaitingForTheirIssueAreNotLive() {
+        TestSupport.resetIssues(dataSource);
+        long sport = create(publisher, "Sport");
+        long live = article(sport);
+        long waiting = article(sport);
+        for (long id : List.of(live, waiting)) {
+            as(publisher).post("/api/articles/%d/publish".formatted(id)).then().statusCode(200);
+        }
+        try {
+            long issueOne = issueId(1);
+            execute("UPDATE issue SET published = true, published_at = now() WHERE id = " + issueOne);
+            long issueTwo = newIssue(2);
+            execute("UPDATE article SET issue_id = %d, issue_position = 0 WHERE id = %d".formatted(issueOne, live));
+            execute("UPDATE article SET issue_id = %d, issue_position = 0 WHERE id = %d".formatted(issueTwo, waiting));
+
+            as(publisher).get("/api/sections").then().statusCode(200)
+                    .body("sections[0].articleCounts.live", equalTo(1))
+                    .body("sections[0].articleCounts.total", equalTo(2));
         } finally {
             TestSupport.resetIssues(dataSource);
         }

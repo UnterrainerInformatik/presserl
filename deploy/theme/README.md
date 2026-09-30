@@ -21,6 +21,12 @@ This directory is your newspaper's theme. The compose file mounts it read-only i
   licence allows web embedding.
 - Images (a logo, a background) can go anywhere in this directory; reference them relative to
   `custom.css`, e.g. `url("logo.svg")`.
+- **`legal-notice.txt`** is your legal notice (Impressum), plain UTF-8 text. While it exists, every
+  reader page except the print views ends with `<footer class="presserl-footer">` linking
+  `/legal-notice`, which shows the text: blank lines separate paragraphs, line breaks are kept,
+  markup is shown as text. It is never served under `/theme/`. Start from
+  `legal-notice.txt.example` and see `INSTALL.md` (*Legal notice*) for what it must contain —
+  providing it is the operator's legal duty.
 
 Only these file types are served: `css`, `woff2`, `woff`, `ttf`, `otf`, `png`, `jpg`, `jpeg`,
 `gif`, `webp`, `svg`, `ico`. Everything else answers `404`.

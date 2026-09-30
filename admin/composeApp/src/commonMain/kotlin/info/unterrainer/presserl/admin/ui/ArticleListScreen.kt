@@ -233,6 +233,8 @@ private fun ArticleRow(article: ArticleSummaryDto, onClick: () -> Unit) {
         val details = listOfNotNull(
             article.section?.name,
             statusText(article.status),
+            issueWaitText(article.status, article.readerVisible, article.issue?.number),
+            frontPageText(article.frontPageWeight),
             stringResource(Res.string.unpublished_changes).takeIf { article.hasUnpublishedChanges },
             article.pendingLevel?.let { waitingText(it) },
             stringResource(Res.string.locked).takeIf { article.locked },

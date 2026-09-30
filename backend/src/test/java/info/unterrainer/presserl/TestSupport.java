@@ -74,6 +74,18 @@ public final class TestSupport {
     }
 
     /**
+     * {@link #resetIssues} with issue 1 live (blog mode): every published article is visible to readers.
+     */
+    public static void blogMode(DataSource dataSource) {
+        resetIssues(dataSource);
+        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+            statement.executeUpdate("UPDATE issue SET published = true, published_at = now() WHERE number = 1");
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
      * Deletes every trust entry (section entries also go with their sections).
      */
     public static void deleteTrust(DataSource dataSource) {

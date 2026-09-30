@@ -77,4 +77,10 @@ public interface ReaderMessages {
 
     @Message("Zurück zur Ausgabe")
     String backToIssue();
+
+    @Message("In „{name}“ gibt es noch keine Artikel.")
+    String sectionEmptyNote(String name);
+
+    @Message("Impressum")
+    String legalNotice();
 }

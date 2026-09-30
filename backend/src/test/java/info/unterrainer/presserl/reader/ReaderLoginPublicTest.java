@@ -8,9 +8,11 @@ import java.util.Objects;
 import javax.sql.DataSource;
 
 import org.htmlunit.WebResponse;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import info.unterrainer.presserl.TestSupport;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 
@@ -28,6 +30,11 @@ class ReaderLoginPublicTest {
         ReaderFixtures fixtures = new ReaderFixtures(dataSource);
         fixtures.deleteAllArticles();
         fixtures.published("Public headline", Instant.parse("2026-09-20T12:00:00Z"));
+    }
+
+    @AfterEach
+    void resetIssues() {
+        TestSupport.resetIssues(dataSource);
     }
 
     @Test

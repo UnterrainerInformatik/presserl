@@ -15,6 +15,8 @@ public record ArticleSummaryDto(
         AuthorDto author,
         SectionRefDto section,
         IssueRefDto issue,
+        boolean readerVisible,
+        Integer frontPageWeight,
         String headline,
         String kicker,
         int revision,
@@ -35,7 +37,7 @@ public record ArticleSummaryDto(
         ArticleEntity a = view.article();
         ArticleRevisionEntity r = view.revision();
         return new ArticleSummaryDto(a.id, a.status, AuthorDto.of(a), SectionRefDto.of(view.section()), IssueRefDto.of(view.issue()),
-                r.headline, r.kicker, r.number, a.liveRevision,
+                ReaderVisibility.visible(a, view.issue()), a.frontPageWeight, r.headline, r.kicker, r.number, a.liveRevision,
                 ArticlePolicy.hasUnpublishedChanges(a, r.number), a.pendingLevel, a.locked, a.createdAt, a.updatedAt, a.publishedAt,
                 ArticlePolicy.allowedActions(newsroom, a, r.number, staffing, rules));
     }

@@ -50,6 +50,7 @@ class ReaderThemeTest {
 
     @AfterEach
     void clearOverrides() {
+        TestSupport.resetIssues(dataSource);
         execute("UPDATE newspaper SET settings = '{}' WHERE id = 1");
     }
 
@@ -175,11 +176,12 @@ class ReaderThemeTest {
 
         String bar = html.substring(html.indexOf("<nav class=\"section-bar\""), html.indexOf("</nav>"));
         assertThat(bar).contains("aria-label=\"Ressorts\"");
-        assertThat(bar.indexOf("<span class=\"section-tag\" data-section-color=\"red\">General</span>"))
+        assertThat(bar.indexOf("data-section-color=\"red\">General</a>"))
                 .isPositive()
-                .isLessThan(bar.indexOf("<span class=\"section-tag\" data-section-color=\"blue\">Sport</span>"));
+                .isLessThan(bar.indexOf("<a class=\"section-tag\" href=\"/?section=%d\" data-section-color=\"blue\">Sport</a>"
+                        .formatted(sport)));
         assertThat(html.indexOf("</header>")).isLessThan(html.indexOf("<nav class=\"section-bar\""));
-        assertThat(bar).doesNotContain("<a ");
+        assertThat(bar).doesNotContain("aria-current");
     }
 
     @Test
@@ -201,11 +203,13 @@ class ReaderThemeTest {
 
         String story = front.substring(front.indexOf("<article class=\"lead-article\">"));
         story = story.substring(0, story.indexOf("</article>"));
-        assertThat(story.indexOf("<span class=\"section-tag\" data-section-color=\"blue\">Sport</span>"))
+        String tag = "<a class=\"section-tag\" href=\"/?section=%d\" data-section-color=\"blue\">Sport</a>"
+                .formatted(sport);
+        assertThat(story.indexOf(tag))
                 .isPositive()
                 .isLessThan(story.indexOf("<h2 class=\"headline\">"));
         String page = article.substring(article.indexOf("<article class=\"article\">"));
-        assertThat(page.indexOf("<span class=\"section-tag\" data-section-color=\"blue\">Sport</span>"))
+        assertThat(page.indexOf(tag))
                 .isPositive()
                 .isLessThan(page.indexOf("<h1 class=\"headline\">Match won</h1>"));
     }
@@ -247,7 +251,7 @@ class ReaderThemeTest {
         assertThat(given().get("/articles/" + id).asString()).contains("<main data-view=\"article\">",
                 "<article class=\"article\">", "<p class=\"kicker\">Garden</p>", "<h1 class=\"headline\">Hello</h1>",
                 "<p class=\"subheadline\">Sub</p>", "<p class=\"lead\">The lead.</p>", "<p class=\"byline\">",
-                "<div class=\"article__body\">", "<span class=\"section-tag\" data-section-color=\"");
+                "<div class=\"article__body\">", "<a class=\"section-tag\" href=\"/?section=");
         assertThat(given().get("/articles/999999").asString()).contains("<main data-view=\"not-found\">");
     }
 

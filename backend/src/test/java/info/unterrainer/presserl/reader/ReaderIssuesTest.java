@@ -35,7 +35,7 @@ class ReaderIssuesTest {
     void emptyNewspaper() {
         TestSupport.awaitReady();
         TestSupport.deleteSections(dataSource);
-        fixtures = new ReaderFixtures(dataSource);
+        fixtures = ReaderFixtures.withoutIssue(dataSource);
         fixtures.deleteAllIssues();
     }
 
@@ -220,7 +220,7 @@ class ReaderIssuesTest {
     }
 
     @Test
-    void frontPageArticleListIsUnchanged() {
+    void frontPageListsOnlyArticlesOfLiveIssues() {
         long older = published("Older");
         long newer = fixtures.published("Newer", MONDAY.plusSeconds(3600));
         long one = fixtures.issue(1, true, null);
@@ -229,7 +229,7 @@ class ReaderIssuesTest {
 
         String html = get("/").asString();
 
-        assertThat(html).contains("Without issue");
-        assertThat(html.indexOf("Newer")).isLessThan(html.indexOf("Older"));
+        assertThat(html).doesNotContain("Without issue");
+        assertThat(html.indexOf("Newer")).isPositive().isLessThan(html.indexOf("Older"));
     }
 }
