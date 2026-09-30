@@ -1,11 +1,4 @@
-# reader-media Specification
-
-## Purpose
-
-Delivers images to readers: renditions of the lead images of published articles, under the same
-visibility rules as the article pages, without ever exposing unpublished media or the master.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Reader route for lead images
 The system SHALL serve `GET /media/{id}/{kind}` (outside `/api`, no token needed) with `kind` one
@@ -47,32 +40,6 @@ this route.
 #### Scenario: Unknown kind or id
 - **WHEN** a visitor requests `/media/{id}/original` or `/media/abc/web`
 - **THEN** the response is `404`
-
-### Requirement: Lead images of a private newspaper
-When the effective `visibility` is `private`, `GET /media/{id}/{kind}` SHALL answer `404` to anonymous
-visitors and to logged-in visitors without a newspaper role, and SHALL behave as for a public
-newspaper for entitled readers (`READER`, `EDITOR_IN_CHIEF` or `PUBLISHER`).
-
-#### Scenario: Anonymous visitor of a private newspaper
-- **WHEN** the visibility is `private` and an anonymous visitor requests the `web` rendition of a published lead image
-- **THEN** the response is `404` and contains no image
-
-#### Scenario: Entitled reader
-- **WHEN** the visibility is `private` and the logged-in reader `oma` requests the same URL
-- **THEN** the response is `200` with the image
-
-### Requirement: Reader image headers
-A delivered rendition SHALL carry `Content-Type`, `Content-Length`, `X-Content-Type-Options: nosniff`
-and `Cache-Control: public, max-age=3600` for a public newspaper or `private, max-age=3600` for a
-private one, so that an image of an article taken offline disappears from caches within an hour.
-
-#### Scenario: Caching in a public newspaper
-- **WHEN** a visitor of a public newspaper receives a lead image
-- **THEN** the response carries `Cache-Control: public, max-age=3600` and `X-Content-Type-Options: nosniff`
-
-#### Scenario: Caching in a private newspaper
-- **WHEN** an entitled reader of a private newspaper receives a lead image
-- **THEN** the response carries `Cache-Control: private, max-age=3600`
 
 ### Requirement: Lead-image URLs carry the media version
 Every reader page (front page, article page, issue page, print views) SHALL reference a rendition
