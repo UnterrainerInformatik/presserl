@@ -1,28 +1,30 @@
-# approval-chain Specification
+## ADDED Requirements
 
-## Purpose
+### Requirement: Contributors of an article
+The contributors of an article SHALL be the distinct authors of its revisions numbered above its
+live revision, or of all its revisions when it was never published. When that set is empty (an
+offline article without unpublished changes), the article's author SHALL be its only contributor.
+A contributor's level SHALL be determined like the author's level, from that person's current
+roles: `PUBLISHER`, else `EDITOR_IN_CHIEF`, else `SECTION_EDITOR` of the article's section, else
+`REPORTER`.
 
-Decides which approval levels an article must pass before it goes online, and lets authors submit
-and withdraw and approvers approve or reject, so that a newsroom of several people publishes only
-what the responsible roles have checked.
+#### Scenario: Only the author wrote
+- **WHEN** `reader` wrote every revision of their never-published article
+- **THEN** the contributors are `reader`
 
-## Requirements
+#### Scenario: A correction adds a contributor
+- **WHEN** `reader`'s never-published article in `Sport` has revision `1` by `reader` and revision `2` by `nogroups`, the section editor of `Sport`
+- **THEN** the contributors are `reader` and `nogroups`
 
-### Requirement: Approval levels and the author's level
-The approval levels SHALL be, bottom to top, `SECTION_EDITOR` (of the article's section),
-`EDITOR_IN_CHIEF` and `PUBLISHER`. The author's level for an article SHALL be the highest of:
-`PUBLISHER` if the author holds `PUBLISHER`, `EDITOR_IN_CHIEF` if they hold `EDITOR_IN_CHIEF`,
-`SECTION_EDITOR` if they are `SECTION_EDITOR` of the article's section, otherwise `REPORTER`
-(below all levels). The author's level SHALL be determined from the author's roles at the moment
-they submit.
+#### Scenario: Published revisions do not count
+- **WHEN** revision `2` by `chief` is live and revision `3` by `reader` is not
+- **THEN** the contributors are `reader`
 
-#### Scenario: Reporter's level
-- **WHEN** `reader` is `REPORTER` in `Sport`, holds no newspaper-wide writer role and submits an article in `Sport`
-- **THEN** their level is `REPORTER` and the levels considered are `SECTION_EDITOR`, `EDITOR_IN_CHIEF` and `PUBLISHER`
+#### Scenario: Offline without changes
+- **WHEN** `reader`'s article is offline and its latest revision is its live revision
+- **THEN** the contributors are `reader`
 
-#### Scenario: Section editor writing in a foreign section
-- **WHEN** a user is `SECTION_EDITOR` in `Sport` and `REPORTER` in `Kultur` and submits an article in `Kultur`
-- **THEN** their level is `REPORTER` and the `SECTION_EDITOR` level of `Kultur` is considered
+## MODIFIED Requirements
 
 ### Requirement: The chain of an article
 The chain of an article SHALL be the union of the chains of its contributors. The chain of one
@@ -246,97 +248,3 @@ keep its status and live revision. Revisions SHALL NOT change.
 #### Scenario: Stale rejection
 - **WHEN** the reviewer loaded the article at version `5`, a correction raised it to `6`, and the reviewer rejects with `{"note": "Too short", "version": 5}`
 - **THEN** the response is `409` and the article still waits
-
-### Requirement: Withdrawing a submission
-`POST /api/articles/{id}/withdraw` SHALL let the author end their pending submission at any time,
-even after losing their section role. A `SUBMITTED` article SHALL return to `DRAFT`; a `PUBLISHED`
-or `OFFLINE` article SHALL keep its status. Any other user SHALL receive `403`; an article without
-a pending submission SHALL be answered with `409`. Withdrawing SHALL NOT create a review entry.
-
-#### Scenario: Author withdraws
-- **WHEN** the author withdraws their article that waits for `EDITOR_IN_CHIEF`
-- **THEN** the response is `200` with `status` `DRAFT` and `pendingLevel` `null`
-
-#### Scenario: Approver cannot withdraw
-- **WHEN** a section editor withdraws a reporter's submitted article
-- **THEN** the response is `403`
-
-### Requirement: Pending level in article representations
-Article and article summary representations SHALL carry `pendingLevel`: the level the article
-waits for (`SECTION_EDITOR`, `EDITOR_IN_CHIEF` or `PUBLISHER`), or `null` when no submission is
-pending.
-
-#### Scenario: Draft
-- **WHEN** a writer fetches a draft that was never submitted
-- **THEN** `pendingLevel` is `null`
-
-### Requirement: Reviews are recorded
-Every approval and rejection SHALL be recorded with the decision (`APPROVED` or `REJECTED`), the
-level the article waited for, the revision number, the reviewer's username and display name, the
-note (`null` for approvals) and the time. `GET /api/articles/{id}/reviews` SHALL return these
-entries newest first to every writer who sees the article, and SHALL answer `404` for an article
-the user does not see. Deleting an article SHALL delete its reviews.
-
-#### Scenario: Author reads the rejection note
-- **WHEN** an article was approved by `nogroups` and then rejected by `chief` with the note `Too short`, and the author calls `GET /api/articles/{id}/reviews`
-- **THEN** the response lists the rejection by `chief` with the note `Too short` and level `EDITOR_IN_CHIEF`, followed by the approval by `nogroups` with level `SECTION_EDITOR`
-
-#### Scenario: Reviews of an invisible article
-- **WHEN** a reporter calls `GET /api/articles/{id}/reviews` on another reporter's article
-- **THEN** the response is `404`
-
-### Requirement: The server decides, clients render
-Whether a user may submit, publish, approve, reject or withdraw SHALL be reported only through
-`allowedActions`; the chain SHALL be computed by the server for each response from the current
-roles, section roles, staffing and trust. The `SUBMIT` action SHALL NOT be offered when the chain
-is empty, and `PUBLISH` SHALL NOT be offered when it is not.
-
-#### Scenario: Solo newspaper
-- **WHEN** the only account is the bootstrap publisher, who fetches their draft
-- **THEN** `allowedActions` contains `PUBLISH` and not `SUBMIT`
-
-#### Scenario: Staffing changes
-- **WHEN** `reader`, `REPORTER` in `Kultur`, fetches their draft while `Kultur` has no section editor, and then `nogroups` becomes `SECTION_EDITOR` in `Kultur` and `reader` submits
-- **THEN** the article waits for `SECTION_EDITOR`
-
-#### Scenario: Trust changes
-- **WHEN** `chief`, not a publisher, fetches their draft and gets `SUBMIT`, then the publisher sets trust for `chief` and `chief` fetches the draft again
-- **THEN** `allowedActions` contains `PUBLISH` and not `SUBMIT`
-
-### Requirement: Trust does not move pending submissions
-Setting or clearing trust SHALL NOT change the `pendingLevel` or status of any article. An article
-that waits for a level when that level starts to trust its author SHALL keep waiting for it and can
-be approved, rejected or withdrawn as before; trust takes effect the next time the chain is
-computed (submit, the publish check, an approval).
-
-#### Scenario: Pending article keeps waiting
-- **WHEN** `chief`'s article waits for `PUBLISHER` and the publisher then sets trust for `chief`
-- **THEN** the article still waits for `PUBLISHER` and the publisher can approve it
-
-#### Scenario: Next submission uses trust
-- **WHEN** after that `chief` withdraws the submission and fetches the article
-- **THEN** `allowedActions` contains `PUBLISH` and not `SUBMIT`
-
-### Requirement: Contributors of an article
-The contributors of an article SHALL be the distinct authors of its revisions numbered above its
-live revision, or of all its revisions when it was never published. When that set is empty (an
-offline article without unpublished changes), the article's author SHALL be its only contributor.
-A contributor's level SHALL be determined like the author's level, from that person's current
-roles: `PUBLISHER`, else `EDITOR_IN_CHIEF`, else `SECTION_EDITOR` of the article's section, else
-`REPORTER`.
-
-#### Scenario: Only the author wrote
-- **WHEN** `reader` wrote every revision of their never-published article
-- **THEN** the contributors are `reader`
-
-#### Scenario: A correction adds a contributor
-- **WHEN** `reader`'s never-published article in `Sport` has revision `1` by `reader` and revision `2` by `nogroups`, the section editor of `Sport`
-- **THEN** the contributors are `reader` and `nogroups`
-
-#### Scenario: Published revisions do not count
-- **WHEN** revision `2` by `chief` is live and revision `3` by `reader` is not
-- **THEN** the contributors are `reader`
-
-#### Scenario: Offline without changes
-- **WHEN** `reader`'s article is offline and its latest revision is its live revision
-- **THEN** the contributors are `reader`

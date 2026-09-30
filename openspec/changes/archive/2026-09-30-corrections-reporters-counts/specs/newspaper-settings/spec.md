@@ -1,11 +1,4 @@
-# newspaper-settings Specification
-
-## Purpose
-
-Resolves the newspaper's effective settings from the configuration layers (code default,
-deployment environment, newspaper overrides in the database) and exposes them to clients.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Layered resolution of newspaper settings
 The system SHALL resolve each newspaper setting from three layers: the code default, the deployment
@@ -47,31 +40,6 @@ The settings resolved and their code defaults are:
 #### Scenario: Deployment switches corrections off
 - **WHEN** `PRESSERL_ARTICLE_CORRECTIONS=false` is set and no database override exists
 - **THEN** the effective `article.corrections` is `false`
-
-### Requirement: Invalid enumerated settings are rejected at startup
-The system SHALL refuse to start when a deployment variable for an enumerated setting holds a
-value outside its allowed set, and SHALL name the offending variable and the allowed values in the
-error message. The allowed sets are:
-
-| Setting | Allowed values |
-|---|---|
-| `visibility` | `public`, `private` |
-| `editor.level` | `starter`, `standard`, `profi` |
-| `reader.text-size` | `s`, `m`, `l`, `xl` |
-| `spell-check.help` | `suggestions`, `messages`, `marks` |
-| `article.corrections` | `true`, `false` |
-
-#### Scenario: Unknown visibility value
-- **WHEN** the backend starts with `PRESSERL_NEWSPAPER_VISIBILITY=secret`
-- **THEN** startup fails with an error naming `PRESSERL_NEWSPAPER_VISIBILITY` and the values `public`, `private`
-
-#### Scenario: Unknown spell-check help value
-- **WHEN** the backend starts with `PRESSERL_SPELL_CHECK_HELP=hints`
-- **THEN** startup fails with an error naming `PRESSERL_SPELL_CHECK_HELP` and the values `suggestions`, `messages`, `marks`
-
-#### Scenario: Unknown corrections value
-- **WHEN** the backend starts with `PRESSERL_ARTICLE_CORRECTIONS=maybe`
-- **THEN** startup fails with an error naming `PRESSERL_ARTICLE_CORRECTIONS` and the values `true`, `false`
 
 ### Requirement: Newspaper endpoint returns effective settings
 The system SHALL expose `GET /api/newspaper` without authentication and return, as
@@ -161,3 +129,28 @@ These requests SHALL be refused, with nothing stored:
 #### Scenario: Corrections value is not a boolean
 - **WHEN** the publisher puts `{"article.corrections": "no"}`
 - **THEN** the response is `400` with an error for the field `article.corrections`
+
+### Requirement: Invalid enumerated settings are rejected at startup
+The system SHALL refuse to start when a deployment variable for an enumerated setting holds a
+value outside its allowed set, and SHALL name the offending variable and the allowed values in the
+error message. The allowed sets are:
+
+| Setting | Allowed values |
+|---|---|
+| `visibility` | `public`, `private` |
+| `editor.level` | `starter`, `standard`, `profi` |
+| `reader.text-size` | `s`, `m`, `l`, `xl` |
+| `spell-check.help` | `suggestions`, `messages`, `marks` |
+| `article.corrections` | `true`, `false` |
+
+#### Scenario: Unknown visibility value
+- **WHEN** the backend starts with `PRESSERL_NEWSPAPER_VISIBILITY=secret`
+- **THEN** startup fails with an error naming `PRESSERL_NEWSPAPER_VISIBILITY` and the values `public`, `private`
+
+#### Scenario: Unknown spell-check help value
+- **WHEN** the backend starts with `PRESSERL_SPELL_CHECK_HELP=hints`
+- **THEN** startup fails with an error naming `PRESSERL_SPELL_CHECK_HELP` and the values `suggestions`, `messages`, `marks`
+
+#### Scenario: Unknown corrections value
+- **WHEN** the backend starts with `PRESSERL_ARTICLE_CORRECTIONS=maybe`
+- **THEN** startup fails with an error naming `PRESSERL_ARTICLE_CORRECTIONS` and the values `true`, `false`

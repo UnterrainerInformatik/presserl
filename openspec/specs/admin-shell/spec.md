@@ -36,12 +36,15 @@ by the admin build). `'unsafe-inline'` SHALL NOT be allowed.
 
 ### Requirement: Login with authorization code and PKCE
 The admin app SHALL obtain the OIDC configuration from `GET /api/client-config`, redirect an
-unauthenticated user to the issuer with the authorization code flow and PKCE (`S256`), exchange
-the code for tokens, and keep tokens only in memory. After login it SHALL show a header with the
-newspaper name, the user's display name and roles as returned by `GET /api/me`, and SHALL open
-the article list below it when `allowedActions` of `GET /api/me` contains `WRITE_ARTICLES`;
-otherwise it SHALL show a notice that the account holds no role for writing articles, together
-with the logout.
+unauthenticated user to the issuer with the authorization code flow and PKCE (`S256`), exchange the
+code for tokens, and keep tokens only in memory. After login it SHALL show a header with the
+newspaper name, the user's display name and roles as returned by `GET /api/me` (including
+"Redakteur (ohne Ressort)" when `sectionlessReporter` is true). Below the header it SHALL open:
+
+- the article list when `allowedActions` contains `WRITE_ARTICLES`;
+- otherwise the "Images" view when it contains `USE_MEDIA`;
+- otherwise a notice that the account holds no role for writing articles, together with the
+  logout.
 
 #### Scenario: Publisher logs in
 - **WHEN** the bootstrapped publisher opens `/admin/`, is sent to Keycloak and enters valid credentials
@@ -50,6 +53,10 @@ with the logout.
 #### Scenario: Reader logs in
 - **WHEN** `reader`, who holds only `READER` and no section role, logs in to the admin app
 - **THEN** the header shows their display name and the role `READER`, no navigation entries, and instead of an article list the notice that the account holds no role for writing articles; no request to `/api/articles` is made
+
+#### Scenario: Sectionless reporter logs in
+- **WHEN** a user whose `allowedActions` are `["USE_MEDIA"]` logs in
+- **THEN** the app opens the "Images" view, the header shows "Redakteur (ohne Ressort)" and no navigation entries, and no request to `/api/articles` is made
 
 #### Scenario: Login cancelled or failed
 - **WHEN** Keycloak redirects back with an `error` parameter
@@ -214,27 +221,39 @@ status names SHALL be shown with their localized labels.
 
 ### Requirement: Header entries follow allowed actions, including images
 The admin app SHALL decide which header entries it offers from `allowedActions` of `GET /api/me`
-only, never from `roles` or `sectionRoles`: "Articles" with `WRITE_ARTICLES`, "Images" with
-`WRITE_ARTICLES`, "Sections" with `MANAGE_SECTIONS` or `ASSIGN_SECTION_ROLES`, "Issues" with
-`MANAGE_ISSUES`, "Accounts" with `ADMINISTER_ACCOUNTS`, "Newspaper" with `CONFIGURE_NEWSPAPER`, in
-this order. When fewer than two entries remain, the header SHALL show no entries. Values of
-`allowedActions` the app does not know SHALL be ignored. The entries are only visibility; the
-server enforces access.
+only, never from `roles`, `sectionRoles` or `sectionlessReporter`. The entries, in this order, are:
+
+| Entry | Offered with |
+|---|---|
+| "Articles" | `WRITE_ARTICLES` |
+| "Images" | `USE_MEDIA` |
+| "Sections" | `MANAGE_SECTIONS` or `ASSIGN_SECTION_ROLES` |
+| "Issues" | `MANAGE_ISSUES` |
+| "Accounts" | `ADMINISTER_ACCOUNTS` |
+| "Newspaper" | `CONFIGURE_NEWSPAPER` |
+
+When fewer than two entries remain, the header SHALL show no entries. Values of `allowedActions`
+the app does not know SHALL be ignored. The entries are only visibility; the server enforces
+access.
 
 #### Scenario: Publisher sees every entry
-- **WHEN** a user whose `allowedActions` are `["WRITE_ARTICLES", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "MANAGE_ISSUES", "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER"]` is logged in
+- **WHEN** a user whose `allowedActions` are `["WRITE_ARTICLES", "USE_MEDIA", "MANAGE_SECTIONS", "ASSIGN_SECTION_ROLES", "MANAGE_ISSUES", "ADMINISTER_ACCOUNTS", "CONFIGURE_NEWSPAPER"]` is logged in
 - **THEN** the header shows "Articles", "Images", "Sections", "Issues", "Accounts" and "Newspaper"
 
 #### Scenario: Section editor has no issues entry
-- **WHEN** a user whose `allowedActions` are `["WRITE_ARTICLES", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS"]` is logged in
+- **WHEN** a user whose `allowedActions` are `["WRITE_ARTICLES", "USE_MEDIA", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS"]` is logged in
 - **THEN** the header shows "Articles", "Images", "Sections" and "Accounts" and no "Issues"
 
 #### Scenario: Reporter sees articles and images
-- **WHEN** a user whose `allowedActions` are `["WRITE_ARTICLES"]` is logged in
+- **WHEN** a user whose `allowedActions` are `["WRITE_ARTICLES", "USE_MEDIA"]` is logged in
 - **THEN** the header shows "Articles" and "Images" and the article list is shown
 
+#### Scenario: Sectionless reporter gets no entries
+- **WHEN** a user whose `allowedActions` are `["USE_MEDIA"]` is logged in
+- **THEN** the header shows no entries and the "Images" view is shown
+
 #### Scenario: Unknown actions are ignored
-- **WHEN** `GET /api/me` answers `allowedActions` `["WRITE_ARTICLES", "REVIEW"]`
+- **WHEN** `GET /api/me` answers `allowedActions` `["WRITE_ARTICLES", "USE_MEDIA", "REVIEW"]`
 - **THEN** the app starts normally and the header shows "Articles" and "Images"
 
 ### Requirement: Keyboard use survives leaving a text field
@@ -288,3 +307,38 @@ name is unchanged.
 - **WHEN** the move, remove, undo, redo, back and open-in-reader buttons are read by assistive
   technology
 - **THEN** each button's name is its localized label, without a symbol character
+
+### Requirement: Admin app follows the system colour scheme
+The admin app SHALL use a dark colour scheme when the operating system or browser prefers a dark
+colour scheme, and a light colour scheme otherwise. When the preference changes while the app is
+open, the app SHALL switch without a reload and without losing unsaved input. Text, controls,
+dialogs, banners and spell-check marks SHALL stay readable in both schemes. The admin app SHALL
+NOT offer its own switch; the system preference is the only input. The start-up loading indicator
+and the start-up notices SHALL follow the same preference, so that a user with a dark preference
+does not see a white page before the app draws. Content that must stay light regardless of the
+scheme SHALL do so: the QR code on the account slip SHALL stay black on white, and the printed
+account slip SHALL stay black on white.
+
+#### Scenario: Dark system preference
+- **WHEN** a user whose system prefers a dark colour scheme opens `/admin/` and logs in
+- **THEN** the app shows a dark background with light text
+
+#### Scenario: Light system preference
+- **WHEN** a user whose system prefers a light colour scheme, or states no preference, opens `/admin/`
+- **THEN** the app shows a light background with dark text, as before
+
+#### Scenario: Preference changes while the app is open
+- **WHEN** the user is editing an article and switches the system from light to dark
+- **THEN** the app turns dark without a reload and the editor keeps the unsaved text
+
+#### Scenario: Start-up screens in dark
+- **WHEN** a user whose system prefers a dark colour scheme opens `/admin/` and the loading indicator or a start-up notice is shown
+- **THEN** it is shown light-on-dark instead of on a white page
+
+#### Scenario: QR code stays scannable
+- **WHEN** a user with a dark preference creates an account and the account slip with its QR code is shown
+- **THEN** the QR code is drawn black on white with its quiet zone
+
+#### Scenario: Printed slip stays black on white
+- **WHEN** a user with a dark preference prints the account slip
+- **THEN** the printed page is black text on white
