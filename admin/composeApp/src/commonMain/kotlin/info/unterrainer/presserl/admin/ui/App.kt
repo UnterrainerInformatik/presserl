@@ -181,15 +181,7 @@ private fun Message(content: @Composable () -> Unit) {
 @Composable
 private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, slipPrinter: SlipPrinter, onLogout: () -> Unit) {
     // empty without a writing role or images: the notice is shown instead of a route
-    var stack by remember {
-        mutableStateOf(
-            when (screen.start) {
-                NavEntry.ARTICLES -> listOf<Route>(Route.ArticleList(ListTab.MINE))
-                NavEntry.IMAGES -> listOf<Route>(Route.Media)
-                else -> emptyList()
-            },
-        )
-    }
+    var stack by remember { mutableStateOf(startStack(screen.start)) }
     // the last review-queue response, kept while the editor is open (design D3/D4)
     var queue by remember { mutableStateOf<List<ArticleSummaryDto>?>(null) }
     // the order of the article lists, kept while the app is open
@@ -200,6 +192,9 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
     val mediaThumbnails = remember { Thumbnails { api.mediaRendition(it, "thumbnail") } }
     val push = { route: Route -> stack = stack + route }
     val back = { stack = stack.dropLast(1) }
+    // screens with their own leave action (editor, image details and edit) register an inner handler
+    val afterBack = stackAfterBack(stack, screen.start)
+    SystemBackHandler(enabled = afterBack != null) { afterBack?.let { stack = it } }
 
     Column(Modifier.fillMaxSize()) {
         Header(

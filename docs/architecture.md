@@ -8,7 +8,7 @@
 |---|---|
 | Backend | Quarkus (current LTS), **Quarkus REST** (reactive), **Hibernate Reactive with Panache**, reactive PostgreSQL client, `quarkus-oidc` (bearer tokens for `/api`, code flow + session cookie for the reader), Flyway (runs at startup via an additional JDBC datasource — Flyway is not reactive), SmallRye OpenAPI, Keycloak Admin API client |
 | Reader | Server-rendered HTML from **Qute** templates inside the backend — front page, sections, articles, print views; design tokens and fork theme |
-| Administration app | **Compose Multiplatform** (Kotlin, Gradle), **Wasm web target** first, Android/iOS later from the same code base; OIDC auth code + PKCE via a small in-house browser flow behind an `AuthClient` interface (M0 spike: the KMP OIDC library's web flow is popup-only) |
+| Administration app | **Compose Multiplatform** (Kotlin, Gradle): **Wasm web target** served by the backend, **Android** app (`admin/androidApp`, see [Android app](#android-app)), iOS later from the same code base; OIDC auth code + PKCE behind an `AuthClient` interface — a small in-house browser flow on the web (M0 spike: the KMP OIDC library's web flow is popup-only), a web view the app owns on Android |
 | Database | **PostgreSQL** |
 | Media store | **RustFS** (S3-compatible, Apache-2.0) in the reference deployment, reached only by the backend through the plain S3 API (Quarkiverse `quarkus-amazon-s3`, URL-connection client, path-style); any S3-compatible store works by configuration. Images are decoded and re-encoded with ImageIO + TwelveMonkeys (JPEG, WebP), EXIF orientation read with `metadata-extractor` |
 | Spell check | **LanguageTool** (LGPL, image `erikvl87/languagetool`, no n-gram data) in the reference deployment, reached only by the backend: `POST /api/spell-check` forwards to its `/v2/check` (Quarkus REST client, 5 s timeouts) and keeps spelling, casing, grammar, punctuation and typography findings. The admin app draws the marks itself — Compose renders on a canvas, so the browser's spell check never sees the text: a `VisualTransformation` for plain fields, an overlay over the rich-text editor. Optional: when off or down, the endpoint answers `503` and nothing else is affected |
@@ -27,6 +27,8 @@ Why the split: the reader needs a real DOM for print (`@page`), CSS theming, acc
 presserl/                     # monorepo (upstream)
 ├── backend/                  # Quarkus (Maven): API + Qute reader
 ├── admin/                    # Compose Multiplatform (Gradle): administration app
+│   ├── composeApp/           # all screens (commonMain), web (wasmJsMain) and Android (androidMain) parts
+│   └── androidApp/           # Android application: activity, manifest, icon, signing, version
 ├── deploy/                   # reference deployment and templates
 │   ├── INSTALL.md            # step-by-step installation guide
 │   ├── compose.yaml
@@ -214,6 +216,47 @@ requested path) for every id. Visitors with `READER`,
 ```
 GET    /admin/                            static Compose Wasm bundle (same origin)
 ```
+
+### Android app
+
+One app (`info.unterrainer.presserl`) serves every presserl installation; the server is chosen at run
+time, nothing about an installation is built in. The screens are the web app's (`commonMain`); Android
+adds only platform pieces (`androidMain`) and the connect flow in front of the app.
+
+- **Module layout.** `admin/composeApp` is a Kotlin Multiplatform library with an Android library
+  target (`com.android.kotlin.multiplatform.library`, AGP 9); `admin/androidApp` is the application
+  module. Both Android parts are configured only when an Android SDK is found (`ANDROID_HOME`,
+  `ANDROID_SDK_ROOT` or `sdk.dir` in `admin/local.properties`), so the image and CI build the web app
+  exactly as before; `.dockerignore` keeps `local.properties` out of the image build.
+- **Connecting.** Without a remembered server the start screen offers *Scan account slip* (Google
+  Play services code scanner: no camera permission, decoded on the device) and an address field.
+  The slip's QR code (`<base>/qr?u=<username>#pw=<pass-phrase>`) and an entered address are accepted
+  only when `GET <base>/api/client-config` answers with an OIDC configuration; release builds accept
+  `https` only.
+- **Login in a web view.** The issuer's login page runs in a web view the app owns (auth code + PKCE,
+  public client `presserl-admin`). The redirect URI is the web app's `<base>/admin/`, which the realm
+  already allows; the app intercepts it and never loads it, so the operator's Keycloak needs no change.
+  JavaScript is on for the issuer's pages only, without file or content access or a JavaScript
+  interface; links to other hosts open in the browser. Logout loads the end-session endpoint in the
+  web view and clears its cookies.
+- **Autofill from the slip.** After a scan the app fills Keycloak's `#username`/`#password` (values as
+  JSON string literals) and clicks `#kc-login` exactly once. A password page after that submission
+  means the pass-phrase was refused (e.g. after a password reset): the app deletes the stored
+  credentials and leaves the page for typing with a notice; one attempt per scan keeps the
+  brute-force protection from locking the account. A login theme without these element ids is not
+  filled in — the user types.
+- **Stored credentials.** The server address stays in the app's preferences until logout; slip
+  credentials are stored only after they led to a login, AES-GCM-encrypted with a key held in the
+  Android Keystore. Backups and device transfers exclude the app's data. A login by address stores
+  no credentials and lasts as long as the Keycloak session. Tokens are kept in memory only.
+- **Platform pieces.** System back runs the screen's own back or cancel action (editor saves, image
+  screens ask about unsaved changes); photos come from the system photo picker or the camera app via
+  a `FileProvider` (no storage or camera permission); the account slip prints through the system print
+  dialog from an off-screen web view.
+- **Release.** `./gradlew :androidApp:bundleRelease` builds an R8-minified App Bundle signed with the
+  upload key from `ai/secrets/android-upload.properties` (git-ignored); without that file only debug
+  builds are signed. Debug builds additionally accept `http` for `localhost`/`10.0.2.2` and the intent
+  extra `qr`, which feeds a payload into the scan path.
 
 ### REST API sketch
 

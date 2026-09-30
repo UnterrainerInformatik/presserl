@@ -1,6 +1,5 @@
 package info.unterrainer.presserl.admin
 
-import androidx.compose.ui.graphics.ImageBitmap
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.ArticleDto
 import info.unterrainer.presserl.admin.api.AuthorDto
@@ -188,7 +187,7 @@ class LeadImageEditorTest {
     @Test
     fun thumbnailsAreFetchedOncePerMedia() = runTest {
         val fetched = mutableListOf<Long>()
-        val image = ImageBitmap(3, 2)
+        val image = FakeImageBitmap(3, 2)
         val thumbnails = Thumbnails(decode = { if (it.isEmpty()) null else image }) { id ->
             fetched += id
             if (id == 99L) error("404") else byteArrayOf(1)

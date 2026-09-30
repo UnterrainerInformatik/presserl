@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -203,14 +204,10 @@ private fun SectionRow(
     onDelete: () -> Unit,
     onMove: (delta: Int) -> Unit,
 ) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 44.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        val open = if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier
+    val open = if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier
+    val name = @Composable { modifier: Modifier ->
         Row(
-            Modifier.weight(1f).heightIn(min = 44.dp).then(open).padding(vertical = 12.dp, horizontal = 4.dp),
+            modifier.heightIn(min = 44.dp).then(open).padding(vertical = 12.dp, horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -227,14 +224,35 @@ private fun SectionRow(
                 }
             }
         }
-        if (canManage) {
-            TextButton(onClick = { onMove(-1) }, enabled = enabled && !first) { IconLabel(Icons.Up, stringResource(Res.string.move_up)) }
-            TextButton(onClick = { onMove(1) }, enabled = enabled && !last) { IconLabel(Icons.Down, stringResource(Res.string.move_down)) }
-            OutlinedButton(onClick = onEdit) { Text(stringResource(Res.string.edit)) }
-            OutlinedButton(onClick = onDelete, enabled = enabled) { Text(stringResource(Res.string.delete)) }
+    }
+    val actions = @Composable {
+        TextButton(onClick = { onMove(-1) }, enabled = enabled && !first) { IconLabel(Icons.Up, stringResource(Res.string.move_up)) }
+        TextButton(onClick = { onMove(1) }, enabled = enabled && !last) { IconLabel(Icons.Down, stringResource(Res.string.move_down)) }
+        OutlinedButton(onClick = onEdit) { Text(stringResource(Res.string.edit)) }
+        OutlinedButton(onClick = onDelete, enabled = enabled) { Text(stringResource(Res.string.delete)) }
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (!canManage || maxWidth >= NARROW_SECTION_ROW) {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 44.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                name(Modifier.weight(1f))
+                if (canManage) actions()
+            }
+        } else {
+            // on phones the buttons go below the name, which would otherwise be squeezed to a single letter
+            Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                name(Modifier.fillMaxWidth())
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { actions() }
+            }
         }
     }
 }
+
+/** Below this width a managed section row puts its buttons below the name. */
+private val NARROW_SECTION_ROW = 600.dp
 
 /** "New section" ([section] `null`) or "Edit"; [onSaved] follows a successful save. */
 @Composable

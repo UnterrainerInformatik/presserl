@@ -365,4 +365,17 @@
     <string name="spell_ignore">Ignorieren</string>
     <string name="spell_ignore_label">„%1$s“ nicht mehr als Fehler markieren</string>
     <string name="spell_replace_label">„%1$s“ durch „%2$s“ ersetzen</string>
+    <string name="connect_intro">Scanne den QR-Code auf deinem Zugangszettel, dann bist du bei deiner Zeitung angemeldet.</string>
+    <string name="connect_scan">Zugangszettel scannen</string>
+    <string name="connect_or_address">Oder gib die Adresse deiner Zeitung ein:</string>
+    <string name="connect_address_label">Adresse der Zeitung</string>
+    <string name="connect_address_example">z. B. zeitung.example.org</string>
+    <string name="connect_address_submit">Verbinden</string>
+    <string name="connect_checking">Zeitung wird gesucht …</string>
+    <string name="connect_error_no_presserl">Unter dieser Adresse wurde keine presserl-Zeitung gefunden.</string>
+    <string name="connect_error_http">Bitte gib eine Adresse mit https:// ein.</string>
+    <string name="connect_error_not_a_slip">Dieser Code ist kein presserl-Zugangszettel.</string>
+    <string name="connect_error_scanner">Der Scanner ist auf diesem Gerät nicht verfügbar. Gib bitte die Adresse ein.</string>
+    <string name="connect_credentials_rejected">Das Passwort vom Zugangszettel wurde nicht angenommen, vielleicht wurde es neu gesetzt. Melde dich hier mit deinem aktuellen Passwort an.</string>
+    <string name="privacy_policy">Datenschutzerklärung</string>
 </resources>

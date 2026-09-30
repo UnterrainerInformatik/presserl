@@ -16,8 +16,10 @@
 - [Deployment repos](project_deployment_repo.md) — ../presserl-deployment = staging (auto-deployed); ../alexpresse = first public fork alexpresse.net (merge upstream + push); ask before every push
 - [Deployment via docker compose](project_deployment_docker_compose.md) — Compose ships presserl + postgres + rustfs (media); proxy (Traefik/Caddy) and Keycloak are external
 - [Machine JDK setup](reference_machine_jdk.md) — Default JDK is 21 (Lombok-safe); backend targets release 21; JDK 26 installed but not default
-- [Build and test commands](reference_build_and_test.md) — Verified dev/test/image/.http/e2e commands for backend and admin
+- [Machine Android SDK](reference_machine_android_sdk.md) — Android Studio's SDK at /home/psilo/Android/Sdk; add components there, never a second SDK
+- [Build and test commands](reference_build_and_test.md) — Verified dev/test/image/.http/e2e commands for backend and admin (web + Android, emulator)
 - [Diagrams always PlantUML](feedback_diagrams_plantuml.md) — .puml + rendered SVG; render via plantuml.unterrainer.info with -L and charset=utf-8
 - [Click through UI checks myself](feedback_ui_tests_myself.md) — Manual-check tasks: drive the apps headless (Playwright) myself, don't hand click steps to Gerald
 - [Stop own servers](feedback_stop_own_servers.md) — Stop every server/daemon/container I started and verify with ps/ss/docker
 - [CI runners](reference_ci_runners.md) — babylon5 (fast, label `babylon5`) vs dev1 (3–4× slower); presserl pinned to babylon5 + persistent builder `presserl` (reset cmds, cap)
+- [Prefer the A54 over the emulator](feedback_prefer_a54_over_emulator.md) — Gerald's Samsung A54 via adb is always fine for Android checks; faster, less RAM

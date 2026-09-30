@@ -40,6 +40,6 @@ Presserl is a self-hosted, multi-user newspaper platform that looks like a real 
 | M5 | Images | upload, re-encoding, EXIF/GPS stripping, renditions, lead images, media view with crop and pixelation |
 | M6 | Print | issues, print views |
 | M7 | First fork | *Alex-Presse* live at `alexpresse.net` (`../alexpresse`, a fork of the staging repository `presserl-deployment`) with its own theme; installation guide verified end to end |
-| M8 | Mobile & QR | QR code on the slip (address + credentials, implemented), Android/iOS targets reading it, store publishing (Google Play Families policy, Apple developer account) |
+| M8 | Mobile & QR | QR code on the slip (address + credentials, implemented), Android app logging in by scanning it (implemented), Google Play publishing (Families policy), iOS target and App Store (Apple developer account) |
 
 M1 deliberately delivers a usable solo newspaper — someone can start writing from then on while the rest grows around it. Accounts and approval come before *Look* because the family use case (parents approve the child's articles) is the first real deployment.

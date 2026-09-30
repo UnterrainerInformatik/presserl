@@ -152,6 +152,7 @@ import info.unterrainer.presserl.admin.resources.media_used_by_one
 import info.unterrainer.presserl.admin.resources.no_headline
 import info.unterrainer.presserl.admin.resources.remove
 import info.unterrainer.presserl.admin.ui.BackButton
+import info.unterrainer.presserl.admin.ui.SystemBackHandler
 import info.unterrainer.presserl.admin.ui.Banner
 import info.unterrainer.presserl.admin.ui.LoadFailed
 import info.unterrainer.presserl.admin.ui.attempt
@@ -434,6 +435,7 @@ fun MediaDetailScreen(
         preview = loadRendition(api, mediaId, listOf("web"))
     }
     val leave = { if (details?.dirty == true) confirmLeave = true else onBack() }
+    SystemBackHandler { leave() }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             BackButton { leave() }
@@ -613,6 +615,7 @@ fun MediaEditScreen(
         bitmap = loadRendition(api, media.id, listOf("print", "web"))
     }
     val leave = { if (model.dirty && !saving) confirmLeave = true else onBack() }
+    SystemBackHandler { leave() }
     val reload = {
         scope.launch {
             val fresh = attempt({}) { api.media(media.id) } ?: return@launch

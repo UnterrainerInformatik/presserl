@@ -1,6 +1,5 @@
 package info.unterrainer.presserl.admin
 
-import androidx.compose.ui.graphics.ImageBitmap
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.AuthorDto
 import info.unterrainer.presserl.admin.api.MediaDto
@@ -239,7 +238,7 @@ class MediaBrowserModelTest {
     @Test
     fun savedEditFetchesTheThumbnailAgain() = runTest {
         val fetched = mutableListOf<Long>()
-        val thumbnails = Thumbnails(decode = { ImageBitmap(2, 2) }) { id -> fetched += id; byteArrayOf(1) }
+        val thumbnails = Thumbnails(decode = { FakeImageBitmap(2, 2) }) { id -> fetched += id; byteArrayOf(1) }
 
         thumbnails.fetch(17, version = 0)
         thumbnails.fetch(17, version = 0)

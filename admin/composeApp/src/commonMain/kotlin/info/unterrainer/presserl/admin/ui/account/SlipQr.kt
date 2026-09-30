@@ -1,6 +1,9 @@
 package info.unterrainer.presserl.admin.ui.account
 
 import io.github.alexzhirkevich.qrose.QroseEncoders
+import io.ktor.http.URLProtocol
+import io.ktor.http.decodeURLPart
+import io.ktor.http.parseUrl
 import io.github.alexzhirkevich.qrose.matrix.QR
 import io.github.alexzhirkevich.qrose.matrix.qr.QrErrorCorrection
 
@@ -10,8 +13,36 @@ import io.github.alexzhirkevich.qrose.matrix.qr.QrErrorCorrection
  */
 object SlipQr {
 
+    /** The username rule of account creation. */
+    private val USERNAME = Regex("^[a-z0-9]+(-[a-z0-9]+)*$")
+
+    private const val PATH = "/qr"
+    private const val FRAGMENT_PREFIX = "pw="
+
     fun payload(siteUrl: String, username: String, password: String): String =
         "${siteUrl.trimEnd('/')}/qr?u=$username#pw=$password"
+
+    /**
+     * The inverse of [payload]: the server address, username and pass-phrase of a scanned slip, or `null` when [text]
+     * is not a slip code. The address must use `https`, or `http` when [allowHttp] (debug builds).
+     */
+    fun parse(text: String, allowHttp: Boolean = false): SlipCredentials? {
+        val url = parseUrl(text.trim()) ?: return null
+        val schemeAllowed = url.protocol == URLProtocol.HTTPS || (allowHttp && url.protocol == URLProtocol.HTTP)
+        if (!schemeAllowed || url.host.isEmpty() || url.user != null) return null
+        if (!url.encodedPath.endsWith(PATH)) return null
+        val username = url.parameters.getAll("u")?.singleOrNull()?.takeIf(USERNAME::matches) ?: return null
+        val passPhrase = url.encodedFragment.takeIf { it.startsWith(FRAGMENT_PREFIX) }
+            ?.removePrefix(FRAGMENT_PREFIX)?.decodeURLPart()?.takeIf { it.isNotEmpty() } ?: return null
+        val port = if (url.specifiedPort == 0 || url.specifiedPort == url.protocol.defaultPort) "" else ":${url.port}"
+        val base = "${url.protocol.name}://${url.host}$port${url.encodedPath.removeSuffix(PATH)}"
+        return SlipCredentials(base, username, passPhrase)
+    }
+}
+
+/** What a slip's QR code carries: the newspaper's address (without trailing slash), username and pass-phrase. */
+data class SlipCredentials(val base: String, val username: String, val passPhrase: String) {
+    override fun toString(): String = "SlipCredentials(base=$base, username=$username)"
 }
 
 /**

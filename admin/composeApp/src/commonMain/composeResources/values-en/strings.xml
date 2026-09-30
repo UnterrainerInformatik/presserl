@@ -365,4 +365,17 @@
     <string name="spell_ignore">Ignore</string>
     <string name="spell_ignore_label">Stop marking “%1$s” as a mistake</string>
     <string name="spell_replace_label">Replace “%1$s” with “%2$s”</string>
+    <string name="connect_intro">Scan the QR code on your account slip to log in to your newspaper.</string>
+    <string name="connect_scan">Scan account slip</string>
+    <string name="connect_or_address">Or enter the address of your newspaper:</string>
+    <string name="connect_address_label">Newspaper address</string>
+    <string name="connect_address_example">e.g. newspaper.example.org</string>
+    <string name="connect_address_submit">Connect</string>
+    <string name="connect_checking">Looking for the newspaper…</string>
+    <string name="connect_error_no_presserl">No presserl newspaper was found at this address.</string>
+    <string name="connect_error_http">Please enter an address starting with https://.</string>
+    <string name="connect_error_not_a_slip">This code is not a presserl account slip.</string>
+    <string name="connect_error_scanner">The scanner is not available on this device. Please enter the address.</string>
+    <string name="connect_credentials_rejected">The pass-phrase on the account slip was not accepted, perhaps the password was reset. Log in here with your current password.</string>
+    <string name="privacy_policy">Privacy policy</string>
 </resources>

@@ -64,9 +64,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
-import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
-import androidx.compose.ui.window.PopupProperties
 import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.help_image_rights
 import info.unterrainer.presserl.admin.resources.sample_image_caption
@@ -232,10 +230,9 @@ fun FieldHelp(part: HelpPart, help: FieldHelpState) {
         if (open) {
             val density = LocalDensity.current
             val gap = with(density) { 4.dp.roundToPx() }
-            Popup(
-                popupPositionProvider = remember(gap) { BelowOrAbove(gap) },
+            HelpPopup(
+                positionProvider = remember(gap) { BelowOrAbove(gap) },
                 onDismissRequest = help::dismiss,
-                properties = PopupProperties(focusable = false),
                 onKeyEvent = escape,
             ) {
                 BoxWithConstraints {

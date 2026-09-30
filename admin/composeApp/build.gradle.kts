@@ -1,3 +1,4 @@
+import com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryTarget
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 
 plugins {
@@ -48,6 +49,34 @@ kotlin {
         wasmJsMain.dependencies {
             implementation(libs.ktor.client.js)
             implementation(libs.kotlinx.browser)
+        }
+    }
+}
+
+// Android target only where an SDK exists (see settings.gradle.kts); the image builds the web app alone.
+if (gradle.extra["presserl.androidSdkPresent"] == true) {
+    apply(plugin = "com.android.kotlin.multiplatform.library")
+    kotlin {
+        extensions.configure<KotlinMultiplatformAndroidLibraryTarget>("android") {
+            namespace = "info.unterrainer.presserl.admin"
+            compileSdk = libs.versions.android.compileSdk.get().toInt()
+            minSdk = libs.versions.android.minSdk.get().toInt()
+            androidResources { enable = true }
+            withHostTest {}
+            withDeviceTest { instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+        }
+        sourceSets.getByName("androidMain").dependencies {
+            implementation(libs.ktor.client.okhttp)
+            implementation(libs.androidx.activity.compose)
+            implementation(libs.play.services.code.scanner)
+        }
+        sourceSets.getByName("androidHostTest").dependencies {
+            implementation(kotlin("test"))
+        }
+        sourceSets.getByName("androidDeviceTest").dependencies {
+            implementation(kotlin("test"))
+            implementation(libs.androidx.test.runner)
+            implementation(libs.androidx.test.ext.junit)
         }
     }
 }

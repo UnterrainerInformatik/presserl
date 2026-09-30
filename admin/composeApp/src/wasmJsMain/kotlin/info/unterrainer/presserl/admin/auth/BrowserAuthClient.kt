@@ -6,17 +6,14 @@ import info.unterrainer.presserl.admin.api.OidcDto
 import info.unterrainer.presserl.admin.api.withJson
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.get
 import io.ktor.http.URLBuilder
-import io.ktor.http.parameters
 import io.ktor.http.parseQueryString
 import kotlinx.browser.sessionStorage
 import kotlinx.browser.window
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import kotlin.js.ExperimentalWasmJsInterop
-import kotlin.time.Clock
 
 /**
  * Authorization code flow with PKCE via full-page redirects. Tokens live in memory only; the
@@ -32,9 +29,8 @@ class BrowserAuthClient(
     private val scope = MainScope()
     private lateinit var oidc: OidcDto
     private lateinit var discovery: OidcDiscovery
+    private lateinit var tokenClient: TokenClient
     private var tokens: Tokens? = null
-
-    private class Tokens(val access: String, val refresh: String?, val idToken: String?, val expiresAt: Double)
 
     /** This page without query or fragment; registered as redirect URI in the realm. */
     private val redirectUri: String
@@ -43,6 +39,7 @@ class BrowserAuthClient(
     override suspend fun start(): AuthState {
         oidc = oidcConfig()
         discovery = http.get(oidc.issuer.trimEnd('/') + "/.well-known/openid-configuration").body()
+        tokenClient = TokenClient(http, oidc.clientId, discovery.tokenEndpoint)
 
         val query = parseQueryString(window.location.search.removePrefix("?"))
         val expectedState = sessionStorage.getItem(STATE_KEY)
@@ -63,23 +60,14 @@ class BrowserAuthClient(
         if (!Pkce.stateMatches(expectedState, query["state"]) || verifier == null) {
             return AuthState.LoginFailed("The login response did not match the login request")
         }
-        tokens = requestTokens(
-            "grant_type" to "authorization_code",
-            "code" to code,
-            "redirect_uri" to redirectUri,
-            "code_verifier" to verifier,
-        )
+        tokens = tokenClient.exchangeCode(code, redirectUri, verifier)
         return AuthState.LoggedIn
     }
 
     override suspend fun accessToken(): String {
-        val current = tokens ?: error("Not logged in")
-        if (now() < current.expiresAt - REFRESH_MARGIN_MS || current.refresh == null) {
-            return current.access
-        }
-        val refreshed = requestTokens("grant_type" to "refresh_token", "refresh_token" to current.refresh)
-        tokens = refreshed
-        return refreshed.access
+        val fresh = tokenClient.fresh(tokens ?: error("Not logged in"))
+        tokens = fresh
+        return fresh.access
     }
 
     override fun login() {
@@ -117,21 +105,6 @@ class BrowserAuthClient(
         }.buildString())
     }
 
-    private suspend fun requestTokens(vararg form: Pair<String, String>): Tokens {
-        val response: TokenResponse = http.submitForm(discovery.tokenEndpoint, parameters {
-            append("client_id", oidc.clientId)
-            form.forEach { (name, value) -> append(name, value) }
-        }).body()
-        return Tokens(
-            access = response.accessToken,
-            refresh = response.refreshToken,
-            idToken = response.idToken ?: tokens?.idToken,
-            expiresAt = now() + response.expiresIn * 1000.0,
-        )
-    }
-
-    private fun now(): Double = Clock.System.now().toEpochMilliseconds().toDouble()
-
     private fun clearCallbackFromUrl() {
         window.history.replaceState(null, "", redirectUri)
     }
@@ -139,6 +112,5 @@ class BrowserAuthClient(
     private companion object {
         const val VERIFIER_KEY = "presserl.pkce.verifier"
         const val STATE_KEY = "presserl.pkce.state"
-        const val REFRESH_MARGIN_MS = 30_000.0
     }
 }

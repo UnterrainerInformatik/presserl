@@ -38,6 +38,7 @@ bin/
 .gradle/
 build/
 .kotlin/
+local.properties
 !**/gradle/wrapper/gradle-wrapper.jar
 
 # --- Deployment and local test secrets ---

@@ -129,6 +129,7 @@ import info.unterrainer.presserl.admin.resources.withdraw
 import info.unterrainer.presserl.admin.ui.ArticleView
 import info.unterrainer.presserl.admin.ui.approvalLevelText
 import info.unterrainer.presserl.admin.ui.BackButton
+import info.unterrainer.presserl.admin.ui.SystemBackHandler
 import info.unterrainer.presserl.admin.ui.Banner
 import info.unterrainer.presserl.admin.ui.IconLabel
 import info.unterrainer.presserl.admin.ui.Icons
@@ -340,6 +341,7 @@ private fun Editor(
         leadImage = actionErrors.leadImage ?: saveErrors.leadImage,
     )
 
+    SystemBackHandler { leave(onBack) }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         FlowRow(verticalArrangement = Arrangement.Center, horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             BackButton { leave(onBack) }

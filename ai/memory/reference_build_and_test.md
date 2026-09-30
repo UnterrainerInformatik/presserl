@@ -1,6 +1,6 @@
 ---
 name: reference_build_and_test
-description: Verified dev/test/build commands for backend (Maven/Quarkus), admin (Gradle/Compose Wasm), image, .http files and local e2e
+description: Verified dev/test/build commands for backend (Maven/Quarkus), admin (Gradle/Compose Wasm + Android), emulator, image, .http files and local e2e
 metadata:
   type: reference
 ---
@@ -79,5 +79,39 @@ Verified 2026-09-26 on Gerald's machine (JDK 21, Docker running) unless marked o
   `PRESSERL_DB_PORT=55432`, `PRESSERL_MEDIA_S3_ENDPOINT=http://localhost:59000`; postgres/rustfs
   publish those ports on 127.0.0.1. Normal headless Chromium needs `--use-angle=swiftshader
   --enable-unsafe-swiftshader` for WebGL. Tear down with `docker compose -p <name> down -v`.
+
+- **Android (verified 2026-09-30):** SDK `/home/psilo/Android/Sdk` ([[reference_machine_android_sdk]]),
+  `admin/local.properties` with `sdk.dir` (git-ignored; without it Gradle builds the web app only).
+  compileSdk 37 (Compose 1.12 requires it), targetSdk 36 (Play), minSdk 26, AGP 9.4.1. Package
+  manager: `$ANDROID_HOME/cmdline-tools/latest/bin/android sdk install <path>` (`sdkmanager` still
+  works, deprecated). AVD `presserl` (Pixel 7, API 36 Google Play). Start headless:
+  `$ANDROID_HOME/emulator/emulator -avd presserl -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect &`,
+  wait for `adb shell getprop sys.boot_completed` = `1`. Gerald's phone may be plugged in
+  (unauthorized) — always `adb -s emulator-5554`, and `ANDROID_SERIAL=emulator-5554` for Gradle
+  device tasks. Stop with `adb -s emulator-5554 emu kill`.
+- **Android builds/tests:** `./gradlew :androidApp:assembleDebug`
+  (`androidApp/build/outputs/apk/debug/`); `./gradlew check` also runs the common tests on the
+  JVM (`testAndroidHostTest`; `ImageBitmap(w, h)` needs the Android framework there — use
+  `FakeImageBitmap`); instrumented: `ANDROID_SERIAL=emulator-5554 ./gradlew :composeApp:connectedAndroidDeviceTest`.
+  Release: `./gradlew :androidApp:bundleRelease` (R8, signed with `ai/secrets/android-upload.properties`;
+  unsigned without it); on the emulator via bundletool (GitHub release jar) `build-apks --connected-device
+  --ks ai/secrets/android-upload.jks --ks-key-alias upload` + `install-apks` (uninstall the debug app
+  first: other signature). Release builds refuse `http`.
+  Release crash stack traces: `logcat -b crash`, then `cmdline-tools/latest/bin/retrace
+  androidApp/build/outputs/mapping/release/mapping.txt <trace>`. R8 full mode strips members that
+  only reflection uses (ML Kit registrars, fixed in `androidApp/proguard-rules.pro`); `mapping.txt`
+  omits unrenamed members — check the DEX (`unzip` the AAB's `base/dex`, `build-tools/*/dexdump`).
+- **Android against quarkus dev:** `adb reverse tcp:8080 tcp:<quarkus port>` and `adb reverse tcp:8180 tcp:8180`,
+  then the app uses `http://localhost:8080` exactly like the web app (dev realm redirect
+  `http://localhost:8080/admin/*`). Debug intent: `adb shell "am start -n
+  info.unterrainer.presserl/info.unterrainer.presserl.android.MainActivity --es qr
+  'http://localhost:8080/qr?u=publisher#pw=publisher'"` logs in like a scan. Keycloak login events:
+  enable at run time via admin API `PUT /admin/realms/presserl/events/config`.
+- **Driving the emulator:** `adb shell uiautomator dump` lists Compose texts with bounds (tap the
+  centre); `adb shell input text` fails on umlauts; Gboard autocorrects typed words; with the IME
+  open, system back first closes it. Per-app language: `adb shell cmd locale set-app-locales
+  info.unterrainer.presserl --locales de-AT` (`Locale.getDefault()` does not follow it — use the
+  resources' configuration). The code scanner's close button cancels cleanly, system back in it
+  reports `INTERNAL` (13).
 
 See [[reference_machine_jdk]].
