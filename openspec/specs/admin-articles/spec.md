@@ -286,27 +286,61 @@ an error naming `sectionId`, the editor SHALL show the message at the chooser.
 - **WHEN** the author changes the section from `Sport` to `Kultur` and chooses undo
 - **THEN** the chooser shows `Sport` again and the article is saved with `Sport`
 
-### Requirement: Lead image in the editor
-The editor SHALL offer a lead-image field at every editor level: a button to choose an image file
-from the device, which uploads it (`POST /api/media`) and sets it as the article's lead image; a
-preview of the chosen image (its `thumbnail` rendition); a single-line caption field (at most 300
-characters, no line breaks); and buttons to replace and to remove the image. While the upload runs
-the field SHALL show that it is busy. The lead image and caption SHALL be saved by the autosave
-like the other fields. An upload that fails SHALL leave the current lead image unchanged and show
-a plain message: too large (`413`, naming the maximum size), not a supported image type (`415`),
-image damaged or too big in pixels (`400`), or the server not reachable (`503` and network errors).
+### Requirement: Media picker in the editor
+The editor SHALL choose images through a media picker: a dialog over the editor that lists the
+newspaper's media (`GET /api/media`), newest first, as tiles with the `thumbnail` rendition (a
+placeholder while it is not produced yet), the uploader's display name, the upload date, the usage
+count ("not used" for `0`) and up to three tags. The picker SHALL offer the search of the
+**Images** view — tags, text, "Unused" and "Mine", combined — starting without filters every time
+it opens, and SHALL load further pages when the user scrolls to the end. Selecting a tile SHALL
+close the picker and hand the chosen media to the field that opened it; closing the picker
+(close button, Escape or outside) SHALL choose nothing and change nothing. The picker SHALL offer
+no upload and no camera. When the newspaper has no media, the picker SHALL say so and that images
+are added in the **Images** view; when active filters match nothing, it SHALL say so and offer to
+clear the filters. A list that fails to load SHALL show the error with a retry. The picker SHALL be
+available at every editor level and only while the article is editable.
+
+#### Scenario: Pick a colleague's photo
+- **WHEN** a reporter opens the picker from the lead-image field and another reporter uploaded `Sportfest` photos earlier
+- **THEN** the picker shows those photos among the newspaper's images with thumbnail, uploader, date and usage count
+
+#### Scenario: Search in the picker
+- **WHEN** the reporter types `Sportfest` as tag and switches on "Unused" in the picker
+- **THEN** only unused images tagged `Sportfest` are shown, and scrolling to the end loads further matching pages
+
+#### Scenario: Filters start empty
+- **WHEN** the reporter closes the picker with an active filter and opens it again
+- **THEN** the picker shows all images without filters
+
+#### Scenario: Close without choosing
+- **WHEN** the reporter opens the picker and presses Escape
+- **THEN** the picker closes, the article is unchanged and nothing is saved
+
+#### Scenario: Empty media library
+- **WHEN** the newspaper has no images and the reporter opens the picker
+- **THEN** the picker says there are no images yet and that they are added in the "Images" view, and offers no upload
+
+### Requirement: Lead image from the media library
+The editor SHALL offer a lead-image field at every editor level: a button to choose an image, which
+opens the media picker and sets the picked media as the article's lead image; a preview of the
+chosen image (its `thumbnail` rendition); a single-line caption field (at most 300 characters, no
+line breaks); and buttons to replace and to remove the image. Replacing SHALL open the media
+picker and keep the caption; closing the picker without a choice SHALL keep the current lead
+image. The editor SHALL NOT upload files from the device. Setting, replacing and removing the lead
+image SHALL be covered by undo and redo. The lead image and caption SHALL be saved by the autosave
+like the other fields.
 
 #### Scenario: Add a lead image
-- **WHEN** the author chooses a JPEG photo in the lead-image field and types the caption `Our cat Minka`
-- **THEN** the image is uploaded, its preview is shown and the next autosave sends `leadImage` with the new media id and the caption
+- **WHEN** the author chooses an image in the lead-image field, picks the photo `Sportfest 1` in the media picker and types the caption `Our cat Minka`
+- **THEN** its preview is shown, no upload is sent, and the next autosave sends `leadImage` with that photo's media id and the caption
 
-#### Scenario: File too large
-- **WHEN** the author chooses a file the server refuses with `413`
-- **THEN** the editor says the image is too large, names the maximum size and keeps the previous lead image
+#### Scenario: Replace keeps the caption
+- **WHEN** the author replaces the lead image with caption `Our class` by another image from the picker
+- **THEN** the field shows the new preview, keeps the caption `Our class`, and the next autosave sends the new media id
 
-#### Scenario: Unsupported file
-- **WHEN** the author chooses a HEIC file and the server answers `415`
-- **THEN** the editor says this kind of image is not supported and keeps the previous lead image
+#### Scenario: Picker closed without a choice
+- **WHEN** the author opens the picker from "Replace" and closes it without selecting an image
+- **THEN** the previous lead image stays and nothing is saved
 
 #### Scenario: Remove the lead image
 - **WHEN** the author removes the lead image
@@ -340,7 +374,7 @@ same plain language, that every person who can be recognised in the photo must b
 whether it may be shown in the newspaper (for children, their parents too); that if someone says no
 or cannot be asked, the child chooses another photo or has the faces made unrecognisable
 (pixelated), asking an adult for help; and that only photos the child took or may use are allowed.
-Editing, saving and uploading SHALL stay possible without opening any explanation.
+Editing, saving and choosing images SHALL stay possible without opening any explanation.
 
 #### Scenario: Explain the kicker
 - **WHEN** a reporter clicks the question mark next to "Dachzeile" in the German interface
@@ -382,39 +416,36 @@ Editing, saving and uploading SHALL stay possible without opening any explanatio
 - **WHEN** a screen reader reads the question mark next to "Vorspann"
 - **THEN** it announces a label naming the lead, such as "Was ist der Vorspann?"
 
-### Requirement: Image blocks in the editor
+### Requirement: Image blocks from the media library
 The editor's "Add block" menu SHALL offer "Image" next to the other block types, at every place a
-block can be added and at every editor level. Choosing it SHALL open the device's file picker; the
-chosen file SHALL be uploaded (`POST /api/media`) and, on success, an image block with the new
-media and an empty caption SHALL be inserted where the menu was opened. Cancelling the picker SHALL
-insert nothing. While the upload runs, the place of the new block SHALL show that it is busy; an
-upload that fails SHALL insert nothing and SHALL show the plain messages of the lead-image field
-(too large naming the maximum size, not a supported image type, image damaged or too big in pixels,
-server not reachable).
+block can be added and at every editor level. Choosing it SHALL open the media picker; on a pick,
+an image block with the picked media and an empty caption SHALL be inserted where the menu was
+opened. Closing the picker without a choice SHALL insert nothing. The editor SHALL NOT upload files
+from the device.
 
 An image block SHALL show a preview of its image (`thumbnail` rendition), a single-line caption
-field (at most 300 characters, no line breaks) and a button to replace the image, which uploads a
-new file and keeps the caption; a failed replacement SHALL keep the current image and show the same
-messages. Image blocks SHALL be movable and removable like the other blocks, and adding, replacing,
+field (at most 300 characters, no line breaks) and a button to replace the image, which opens the
+media picker and keeps the caption; closing the picker without a choice SHALL keep the current
+image. Image blocks SHALL be movable and removable like the other blocks, and adding, replacing,
 moving, removing and caption changes SHALL be covered by undo and redo and saved by the autosave as
 `{"type": "image", "mediaId": <id>, "caption": "..."}` (without `caption` when it is empty). When
 the server answers a save with an error naming a field of an image block, the editor SHALL show
 the message at that block. The read-only article view SHALL show image blocks as preview and caption.
 
 #### Scenario: Insert an image after a paragraph
-- **WHEN** the author opens "Add block" below the first paragraph, chooses "Image", picks a JPEG and types the caption `The finish line`
-- **THEN** the image is uploaded, an image block with its preview appears below the first paragraph, and the next autosave sends a body with `{"type": "image", "mediaId": <new id>, "caption": "The finish line"}` at that position
+- **WHEN** the author opens "Add block" below the first paragraph, chooses "Image", picks the photo `Zieleinlauf` in the media picker and types the caption `The finish line`
+- **THEN** an image block with its preview appears below the first paragraph without any upload, and the next autosave sends a body with `{"type": "image", "mediaId": <id of Zieleinlauf>, "caption": "The finish line"}` at that position
 
-#### Scenario: Cancel the file picker
-- **WHEN** the author chooses "Image" and cancels the file picker
+#### Scenario: Close the picker
+- **WHEN** the author chooses "Image" and closes the media picker without selecting an image
 - **THEN** no block is added and nothing is saved
 
-#### Scenario: Upload refused
-- **WHEN** the author chooses "Image" and picks a HEIC file the server refuses with `415`
-- **THEN** the editor says this kind of image is not supported and no block is added
+#### Scenario: Same image twice
+- **WHEN** the author picks the lead image's media again for an image block
+- **THEN** the block is inserted with that media id and both uses are saved
 
 #### Scenario: Replace the image of a block
-- **WHEN** the author replaces the image of an image block with caption `Our class` by another photo
+- **WHEN** the author replaces the image of an image block with caption `Our class` by another image from the picker
 - **THEN** the block shows the new preview, keeps the caption `Our class`, and the next autosave sends the new media id
 
 #### Scenario: Undo an inserted image
