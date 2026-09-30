@@ -25,28 +25,13 @@ Non-blocking findings of the phone-size check in android-app-qr-login (Pixel 7 e
   anything but JPEG, PNG and WebP with the usual upload error — check whether converting to JPEG
   on the device is worth it.
 
-## Admin app on phones — distinguish "unreachable" from "not a presserl server"
-Found in the real-phone check of android-app-qr-login (2026-09-30): `ConnectionModel.check`
-catches every failure of `GET <base>/api/client-config` and shows `NO_PRESSERL_SERVER` ("no
-presserl newspaper found at this address"), and it logs nothing. On the phone the cause was
-the wrong VPN: DNS returned the public address, where the proxy answers `404`. The screen
-looked exactly as it would for a wrong address, and only `adb` checks (DNS, `nc`) found the cause.
-- Show a separate error when the server cannot be reached (DNS failure, connection refused or
-  timeout, TLS error), e.g. "Server not reachable — check network/VPN", and keep
-  `NO_PRESSERL_SERVER` for a reachable server that answers without a valid client config (4xx,
-  non-JSON, missing OIDC fields).
-- Log the cause (exception class and message, HTTP status; never credentials) so `adb logcat`
-  shows it.
-- Decide at propose time whether the error names the address it tried.
-- Extend `ConnectionModelTest` (ktor-client-mock: thrown IO exception vs. `404`).
-
 ## M8 — iOS (later)
 iOS target of the admin app with the same QR login as Android; App Store publishing. Blocked
 until an Apple developer account exists — not before the Android part is done.
 
 ## Homepage: private legal notice, LeRoi's e-mail
 The company Unterrainer Informatik OG no longer exists; `unterrainer.info` (homepage repo
-`~/source/private/js/homepage`, deployed by pushing `master`) must present Gerald as a private
+`/mnt/data/source/JAVASCRIPT/homepage`, deployed by pushing `master`) must present Gerald as a private
 person. Gerald's decisions (2026-09-30):
 - **Legal notice** (`src/locales/parts/about_{de,en}.ts`, key `impressum`): only Gerald Unterrainer
   as a private person, with the name "Unterrainer Informatik" **without "OG"**; address Flurstraße 17,
@@ -55,8 +40,8 @@ person. Gerald's decisions (2026-09-30):
   Linz-Land, the shareholders (Gerald 50 %, Günter 50 %) and the company purpose. Keep only what
   Austrian law requires of a private website: the disclosure under § 25 Mediengesetz (name, place of
   residence; for a site beyond personal presentation also ownership and basic orientation). The
-  site is **not commercial, private only** (Gerald, 2026-09-30), so no § 5 ECG details. Still to
-  confirm: whether the trade name without a registered company is fine to use.
+  site is **not commercial, private only** (Gerald, 2026-09-30), so no § 5 ECG details. Gerald
+  (2026-09-30): "Unterrainer Informatik" is the name of his sole-trader business and stays.
 - **Logo:** the header image `src/assets/logo.png` reads "UNTERRAINER INFORMATIK OG" — Gerald
   wants "OG" removed there too (image file, not text).
 - **About us** (`members` in `about_{de,en}.ts`): remove LeRoi's e-mail (`leroi@unterrainer.info`)
