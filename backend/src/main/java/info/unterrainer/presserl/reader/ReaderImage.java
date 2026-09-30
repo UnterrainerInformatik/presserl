@@ -3,7 +3,7 @@ package info.unterrainer.presserl.reader;
 import info.unterrainer.presserl.media.MediaRenditionEntity;
 
 /**
- * The lead image of a live revision as the reader links it: {@code /media/{mediaId}/web},
+ * A lead image or body image of a live revision as the reader links it: {@code /media/{mediaId}/web},
  * {@code /media/{mediaId}/thumbnail} and {@code /media/{mediaId}/{printKind}} with their sizes, each
  * with {@code ?v={version}} so that an edited image gets a new URL.
  *
@@ -26,5 +26,13 @@ public record ReaderImage(long mediaId, long version, String caption, int webWid
         MediaRenditionEntity forPrint = print != null ? print : web;
         return new ReaderImage(mediaId, version, caption, web.width, web.height, thumbnail.width, thumbnail.height,
                 print != null ? "print" : "web", forPrint.width, forPrint.height);
+    }
+
+    /**
+     * The same image with another caption.
+     */
+    ReaderImage withCaption(String text) {
+        return new ReaderImage(mediaId, version, text, webWidth, webHeight, thumbWidth, thumbHeight, printKind,
+                printWidth, printHeight);
     }
 }

@@ -2,6 +2,7 @@ package info.unterrainer.presserl.reader;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.jboss.logging.Logger;
 
@@ -19,7 +20,8 @@ public final class BodyRenderer {
         PARAGRAPH,
         SUBHEAD,
         QUOTE,
-        LIST
+        LIST,
+        IMAGE
     }
 
     /**
@@ -30,24 +32,29 @@ public final class BodyRenderer {
 
     /**
      * One block. {@code text} is set for subheads, {@code runs} for paragraphs and quotes,
-     * {@code items} for lists; the other fields are empty.
+     * {@code items} for lists, {@code image} (with the block's caption) for images; the other fields
+     * are empty or {@code null}.
      */
-    public record Block(Type type, String text, List<Run> runs, List<List<Run>> items) {
+    public record Block(Type type, String text, List<Run> runs, List<List<Run>> items, ReaderImage image) {
 
         static Block paragraph(List<Run> runs) {
-            return new Block(Type.PARAGRAPH, "", runs, List.of());
+            return new Block(Type.PARAGRAPH, "", runs, List.of(), null);
         }
 
         static Block subhead(String text) {
-            return new Block(Type.SUBHEAD, text, List.of(), List.of());
+            return new Block(Type.SUBHEAD, text, List.of(), List.of(), null);
         }
 
         static Block quote(List<Run> runs) {
-            return new Block(Type.QUOTE, "", runs, List.of());
+            return new Block(Type.QUOTE, "", runs, List.of(), null);
         }
 
         static Block list(List<List<Run>> items) {
-            return new Block(Type.LIST, "", List.of(), items);
+            return new Block(Type.LIST, "", List.of(), items, null);
+        }
+
+        static Block image(ReaderImage image) {
+            return new Block(Type.IMAGE, "", List.of(), List.of(), image);
         }
     }
 
@@ -55,9 +62,17 @@ public final class BodyRenderer {
     }
 
     /**
-     * The blocks of {@code body}; unknown block types are skipped and logged.
+     * The blocks of {@code body} without images; see {@link #blocks(JsonNode, Map)}.
      */
     public static List<Block> blocks(JsonNode body) {
+        return blocks(body, Map.of());
+    }
+
+    /**
+     * The blocks of {@code body}; unknown block types are skipped and logged, image blocks whose media
+     * has no entry in {@code images} (from {@link ReaderArticles#bodyImages}) are skipped.
+     */
+    public static List<Block> blocks(JsonNode body, Map<Long, ReaderImage> images) {
         List<Block> blocks = new ArrayList<>();
         if (body == null) {
             return blocks;
@@ -74,6 +89,12 @@ public final class BodyRenderer {
                         items.add(runs(item));
                     }
                     blocks.add(Block.list(items));
+                }
+                case "image" -> {
+                    ReaderImage image = images.get(block.path("mediaId").asLong());
+                    if (image != null) {
+                        blocks.add(Block.image(image.withCaption(block.path("caption").asText(""))));
+                    }
                 }
                 default -> LOG.warnf("Skipping body block of unknown type '%s'", type);
             }

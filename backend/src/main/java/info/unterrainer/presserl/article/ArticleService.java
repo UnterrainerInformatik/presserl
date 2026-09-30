@@ -2,11 +2,17 @@ package info.unterrainer.presserl.article;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.hibernate.reactive.mutiny.Mutiny;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
+import info.unterrainer.presserl.api.FieldError;
 import info.unterrainer.presserl.auth.NewspaperRole;
 import info.unterrainer.presserl.issue.IssueEntity;
 import info.unterrainer.presserl.media.MediaEntity;
@@ -498,21 +504,41 @@ public class ArticleService {
     }
 
     /**
-     * The lead image's media must exist (any media, whoever uploaded it).
+     * The media of the lead image and of every image block of the body must exist (any media,
+     * whoever uploaded it); checked in one query.
      *
-     * @throws ArticleException {@code 400 leadImage.mediaId} for an unknown media
+     * @throws ArticleException {@code 400} naming {@code leadImage.mediaId} and every
+     *                          {@code body.blocks[i].mediaId} whose media is unknown
      */
     private static Uni<Void> requireMedia(ArticleContent content) {
-        if (content.leadImage() == null) {
+        Map<String, Long> uses = new LinkedHashMap<>();
+        if (content.leadImage() != null) {
+            uses.put(ArticleContentValidator.LEAD_IMAGE_MEDIA_ID, content.leadImage().mediaId());
+        }
+        JsonNode blocks = content.body().path("blocks");
+        for (int i = 0; i < blocks.size(); i++) {
+            JsonNode block = blocks.get(i);
+            if ("image".equals(block.path("type").asText())) {
+                uses.put("body.blocks[" + i + "].mediaId", block.get("mediaId").asLong());
+            }
+        }
+        if (uses.isEmpty()) {
             return Uni.createFrom().voidItem();
         }
-        long mediaId = content.leadImage().mediaId();
-        return MediaEntity.count("id", mediaId).invoke(count -> {
-            if (count == 0) {
-                throw ArticleException.invalid(ArticleContentValidator.LEAD_IMAGE_MEDIA_ID,
-                        "media " + mediaId + " does not exist");
-            }
-        }).replaceWithVoid();
+        Set<Long> ids = new HashSet<>(uses.values());
+        return Panache.getSession().flatMap(session -> session
+                .createSelectionQuery("select m.id from MediaEntity m where m.id in :ids", Long.class)
+                .setParameter("ids", ids)
+                .getResultList())
+                .invoke(existing -> {
+                    List<FieldError> errors = uses.entrySet().stream()
+                            .filter(use -> !existing.contains(use.getValue()))
+                            .map(use -> new FieldError(use.getKey(), "media " + use.getValue() + " does not exist"))
+                            .toList();
+                    if (!errors.isEmpty()) {
+                        throw ArticleException.invalid(errors);
+                    }
+                }).replaceWithVoid();
     }
 
     /**

@@ -15,6 +15,8 @@ import info.unterrainer.presserl.admin.resources.help_label_quote
 import info.unterrainer.presserl.admin.resources.help_label_section
 import info.unterrainer.presserl.admin.resources.help_label_subhead
 import info.unterrainer.presserl.admin.resources.help_label_subheadline
+import info.unterrainer.presserl.admin.resources.help_image
+import info.unterrainer.presserl.admin.resources.help_label_image
 import info.unterrainer.presserl.admin.resources.help_lead
 import info.unterrainer.presserl.admin.resources.help_lead_image
 import info.unterrainer.presserl.admin.resources.help_list
@@ -25,6 +27,7 @@ import info.unterrainer.presserl.admin.resources.help_subhead
 import info.unterrainer.presserl.admin.resources.help_subheadline
 import info.unterrainer.presserl.admin.resources.sample_caption
 import info.unterrainer.presserl.admin.resources.sample_headline
+import info.unterrainer.presserl.admin.resources.sample_image
 import info.unterrainer.presserl.admin.resources.sample_kicker
 import info.unterrainer.presserl.admin.resources.sample_lead
 import info.unterrainer.presserl.admin.resources.sample_lead_image
@@ -37,7 +40,11 @@ import info.unterrainer.presserl.admin.resources.sample_subheadline
 import org.jetbrains.compose.resources.StringResource
 
 /** The editor parts that have a field explanation, in the order the reader shows them. */
-enum class HelpPart { SECTION, KICKER, HEADLINE, SUBHEADLINE, LEAD_IMAGE, CAPTION, LEAD, PARAGRAPH, SUBHEAD, QUOTE, LIST }
+enum class HelpPart { SECTION, KICKER, HEADLINE, SUBHEADLINE, LEAD_IMAGE, CAPTION, LEAD, PARAGRAPH, SUBHEAD, QUOTE, LIST, IMAGE }
+
+/** Whether the part's explanation carries the image-rights note: the parts that add a photo. */
+val HelpPart.showsImageRights: Boolean
+    get() = this == HelpPart.LEAD_IMAGE || this == HelpPart.IMAGE
 
 val HeaderField.helpPart: HelpPart
     get() = when (this) {
@@ -53,6 +60,7 @@ val BlockType.helpPart: HelpPart
         BlockType.SUBHEAD -> HelpPart.SUBHEAD
         BlockType.QUOTE -> HelpPart.QUOTE
         BlockType.LIST -> HelpPart.LIST
+        BlockType.IMAGE -> HelpPart.IMAGE
     }
 
 /** One or two sentences for a reader of about ten years saying what the part is for. */
@@ -69,6 +77,7 @@ val HelpPart.explanation: StringResource
         HelpPart.SUBHEAD -> Res.string.help_subhead
         HelpPart.QUOTE -> Res.string.help_quote
         HelpPart.LIST -> Res.string.help_list
+        HelpPart.IMAGE -> Res.string.help_image
     }
 
 /** The question-mark button's accessible label, naming the part ("What is the kicker?"). */
@@ -85,9 +94,13 @@ val HelpPart.label: StringResource
         HelpPart.SUBHEAD -> Res.string.help_label_subhead
         HelpPart.QUOTE -> Res.string.help_label_quote
         HelpPart.LIST -> Res.string.help_label_list
+        HelpPart.IMAGE -> Res.string.help_label_image
     }
 
-/** The part's text in the sample article; the list's items are separated by " · ". */
+/**
+ * The part's text in the sample article; the list's items are separated by " · ", the image placeholders name the
+ * photo (the body image's caption is [Res.string.sample_image_caption]).
+ */
 val HelpPart.sample: StringResource
     get() = when (this) {
         HelpPart.SECTION -> Res.string.sample_section
@@ -101,4 +114,5 @@ val HelpPart.sample: StringResource
         HelpPart.SUBHEAD -> Res.string.sample_subhead
         HelpPart.QUOTE -> Res.string.sample_quote
         HelpPart.LIST -> Res.string.sample_list
+        HelpPart.IMAGE -> Res.string.sample_image
     }

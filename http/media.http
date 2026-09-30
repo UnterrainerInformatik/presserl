@@ -268,6 +268,54 @@ Authorization: Bearer {{accessToken}}
     });
 %}
 
+### A draft with the image in its body
+POST {{baseUrl}}/api/articles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "headline": "Photo in the text", "body": { "version": 1, "blocks": [
+  { "type": "paragraph", "content": [ { "text": "Look:" } ] },
+  { "type": "image", "mediaId": {{photoId}}, "caption": "The photo" } ] } }
+
+> {%
+    client.test("201", () => client.assert(response.status === 201, "status " + response.status));
+    client.global.set("bodyImageArticleId", response.body.id);
+%}
+
+### Usage of an image used in a body
+GET {{baseUrl}}/api/media/{{photoId}}/usage
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200 listing the draft with latest true and live false", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const use = response.body.articles.find(a => a.id === client.global.get("bodyImageArticleId"));
+        client.assert(use !== undefined, JSON.stringify(response.body));
+        client.assert(use.latest === true && use.live === false && use.older === false, JSON.stringify(use));
+        client.assert(use.status === "DRAFT", JSON.stringify(use));
+    });
+%}
+
+### The body use is counted in the list
+GET {{baseUrl}}/api/media?limit=200
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("usageCount of the photo is at least 1", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const item = response.body.items.find(i => i.id === client.global.get("photoId"));
+        client.assert(item !== undefined && item.usageCount >= 1, JSON.stringify(item));
+    });
+%}
+
+### Clean up the draft with the body image
+DELETE {{baseUrl}}/api/articles/{{bodyImageArticleId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("204", () => client.assert(response.status === 204, "status " + response.status));
+%}
+
 ### Crop outside the image (640 x 480)
 POST {{baseUrl}}/api/media/{{photoId}}/edit
 Authorization: Bearer {{accessToken}}

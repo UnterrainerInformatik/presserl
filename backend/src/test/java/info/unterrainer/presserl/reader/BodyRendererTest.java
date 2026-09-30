@@ -3,6 +3,7 @@ package info.unterrainer.presserl.reader;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -54,6 +55,34 @@ class BodyRendererTest {
                 .containsExactly(Block.list(List.of(
                         List.of(new Run(false, List.of("Water"))),
                         List.of(new Run(false, List.of("Sun"))))));
+    }
+
+    private static ReaderImage image(long mediaId) {
+        return new ReaderImage(mediaId, 2, "", 1600, 1067, 480, 320, "print", 3000, 2000);
+    }
+
+    @Test
+    void imageBlocksInOrderWithTheirCaptions() {
+        List<Block> blocks = BodyRenderer.blocks(body("{'type': 'subhead', 'text': 'Start'}, "
+                + "{'type': 'image', 'mediaId': 18, 'caption': 'The finish line'}, "
+                + "{'type': 'paragraph', 'content': [{'text': 'Then'}]}, "
+                + "{'type': 'image', 'mediaId': 18}"), Map.of(18L, image(18)));
+
+        assertThat(blocks).extracting(Block::type)
+                .containsExactly(Type.SUBHEAD, Type.IMAGE, Type.PARAGRAPH, Type.IMAGE);
+        assertThat(blocks.get(1).image()).isEqualTo(image(18).withCaption("The finish line"));
+        assertThat(blocks.get(3).image().caption()).isEmpty();
+        assertThat(blocks.get(3).image().mediaId()).isEqualTo(18);
+    }
+
+    @Test
+    void imageBlockWithoutResolvedImageIsSkipped() {
+        JsonNode body = body("{'type': 'image', 'mediaId': 17, 'caption': 'Gone'}, "
+                + "{'type': 'subhead', 'text': 'x'}, {'type': 'image', 'mediaId': 18}");
+
+        assertThat(BodyRenderer.blocks(body, Map.of(18L, image(18)))).extracting(Block::type)
+                .containsExactly(Type.SUBHEAD, Type.IMAGE);
+        assertThat(BodyRenderer.blocks(body)).extracting(Block::type).containsExactly(Type.SUBHEAD);
     }
 
     @Test

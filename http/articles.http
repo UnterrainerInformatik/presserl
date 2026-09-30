@@ -840,6 +840,82 @@ Authorization: Bearer {{accessToken}}
     client.test("204", () => client.assert(response.status === 204, "status " + response.status));
 %}
 
+### Body image: create a draft with an image block between two paragraphs
+POST {{baseUrl}}/api/articles
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "sectionId": {{gardenId}}, "headline": "The race", "body": { "version": 1, "blocks": [
+  { "type": "paragraph", "content": [ { "text": "We ran." } ] },
+  { "type": "image", "mediaId": {{leadMediaId}}, "caption": "The finish line" },
+  { "type": "image", "mediaId": {{leadMediaId}} },
+  { "type": "paragraph", "content": [ { "text": "We won." } ] } ] } }
+
+> {%
+    client.test("201 with the body as sent", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        const blocks = response.body.body.blocks;
+        client.assert(blocks[1].type === "image" && blocks[1].mediaId === client.global.get("leadMediaId"), JSON.stringify(blocks));
+        client.assert(blocks[1].caption === "The finish line", JSON.stringify(blocks[1]));
+        client.assert(!("caption" in blocks[2]), JSON.stringify(blocks[2]));
+    });
+    client.global.set("bodyImageArticleId", response.body.id);
+    client.global.set("bodyImageVersion", response.body.version);
+%}
+
+### Body image: unknown media is refused and nothing is saved
+PUT {{baseUrl}}/api/articles/{{bodyImageArticleId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "version": {{bodyImageVersion}}, "sectionId": {{gardenId}}, "headline": "Changed", "body": { "version": 1, "blocks": [
+  { "type": "paragraph", "content": [ { "text": "We ran." } ] },
+  { "type": "image", "mediaId": 999999 } ] } }
+
+> {%
+    client.test("400 naming body.blocks[1].mediaId", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        const fields = response.body.errors.map(e => e.field).join(",");
+        client.assert(fields === "body.blocks[1].mediaId", fields);
+    });
+%}
+
+### Body image: invalid caption and unknown field
+PUT {{baseUrl}}/api/articles/{{bodyImageArticleId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "version": {{bodyImageVersion}}, "sectionId": {{gardenId}}, "body": { "version": 1, "blocks": [
+  { "type": "image", "mediaId": {{leadMediaId}}, "caption": "Line\nbreak", "src": "http://evil" } ] } }
+
+> {%
+    client.test("400 naming both", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        const fields = response.body.errors.map(e => e.field).sort().join(",");
+        client.assert(fields === "body.blocks[0].caption,body.blocks[0].src", fields);
+    });
+%}
+
+### Body image: the draft is unchanged
+GET {{baseUrl}}/api/articles/{{bodyImageArticleId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("200 with the original headline and body", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.headline === "The race", response.body.headline);
+        client.assert(response.body.body.blocks.length === 4, JSON.stringify(response.body.body));
+    });
+%}
+
+### Body image: clean up the draft
+DELETE {{baseUrl}}/api/articles/{{bodyImageArticleId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("204", () => client.assert(response.status === 204, "status " + response.status));
+%}
+
 ### Reader is refused
 GET {{baseUrl}}/api/articles
 Authorization: Bearer {{readerToken}}

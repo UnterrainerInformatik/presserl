@@ -1,11 +1,18 @@
 package info.unterrainer.presserl.reader;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+
+import com.fasterxml.jackson.databind.JsonNode;
 
 import info.unterrainer.presserl.article.ArticleEntity;
 import info.unterrainer.presserl.article.ArticleRevisionEntity;
 import info.unterrainer.presserl.article.ArticleStatus;
+import info.unterrainer.presserl.media.MediaEntity;
 import info.unterrainer.presserl.media.MediaRenditionEntity;
 import info.unterrainer.presserl.media.RenditionKind;
 import info.unterrainer.presserl.section.SectionEntity;
@@ -36,13 +43,13 @@ public class ReaderArticles {
             + "where a.status = :status";
 
     /**
-     * A rendition of a media that is the lead image of at least one live revision of a published
-     * article.
+     * A rendition of a media that is used (as lead image or in the body) by at least one live revision
+     * of a published article.
      */
     private static final String PUBLISHED_RENDITION = "select m from MediaRenditionEntity m "
             + "where m.mediaId = :id and m.kind = :kind and exists (select 1 from ArticleEntity a "
-            + "join ArticleRevisionEntity r on r.articleId = a.id and r.number = a.liveRevision "
-            + "where a.status = :status and r.leadImageMediaId = :id)";
+            + "join ArticleRevisionMediaEntity u on u.articleId = a.id and u.number = a.liveRevision "
+            + "where a.status = :status and u.mediaId = :id)";
 
     /**
      * The published articles, newest first publication first.
@@ -71,8 +78,8 @@ public class ReaderArticles {
     }
 
     /**
-     * The rendition, if media {@code mediaId} is the lead image of a live revision of a published
-     * article; never the stored image itself.
+     * The rendition, if media {@code mediaId} is used by a live revision of a published article; never
+     * the stored image itself.
      */
     @WithSession
     public Uni<Optional<MediaRenditionEntity>> publishedRendition(long mediaId, RenditionKind kind) {
@@ -83,6 +90,49 @@ public class ReaderArticles {
                 .setParameter("status", ArticleStatus.PUBLISHED)
                 .getResultList())
                 .map(rows -> rows.stream().findFirst());
+    }
+
+    /**
+     * The images of the image blocks of {@code bodies} by media id, with renditions and version and an
+     * empty caption (the caption is the block's). Media that no longer exist or whose web and
+     * thumbnail renditions are not produced yet are missing from the map. The bodies must be live
+     * revisions of published articles.
+     */
+    @WithSession
+    public Uni<Map<Long, ReaderImage>> bodyImages(List<JsonNode> bodies) {
+        Set<Long> ids = new HashSet<>();
+        for (JsonNode body : bodies) {
+            for (JsonNode block : body.path("blocks")) {
+                if ("image".equals(block.path("type").asText())) {
+                    ids.add(block.path("mediaId").asLong());
+                }
+            }
+        }
+        if (ids.isEmpty()) {
+            return Uni.createFrom().item(Map.of());
+        }
+        // one after the other: both queries use the request's reactive session
+        return MediaEntity.<MediaEntity>list("id in ?1", ids).flatMap(media -> MediaRenditionEntity
+                .<MediaRenditionEntity>list("mediaId in ?1", ids)
+                .map(renditions -> {
+                    Map<Long, ReaderImage> images = new HashMap<>();
+                    for (MediaEntity m : media) {
+                        ReaderImage image = ReaderImage.of(m.id, "", m.version,
+                                rendition(renditions, m.id, RenditionKind.WEB),
+                                rendition(renditions, m.id, RenditionKind.THUMBNAIL),
+                                rendition(renditions, m.id, RenditionKind.PRINT));
+                        if (image != null) {
+                            images.put(m.id, image);
+                        }
+                    }
+                    return images;
+                }));
+    }
+
+    private static MediaRenditionEntity rendition(List<MediaRenditionEntity> renditions, long mediaId,
+            RenditionKind kind) {
+        return renditions.stream().filter(r -> r.mediaId == mediaId && r.kind.equals(kind.value())).findFirst()
+                .orElse(null);
     }
 
     /**

@@ -50,6 +50,7 @@
     <string name="block_subhead">Zwischentitel</string>
     <string name="block_quote">Zitat</string>
     <string name="block_list">Aufzählung</string>
+    <string name="block_image">Bild</string>
     <string name="help_section">Das Ressort ist die Abteilung der Zeitung, in die dein Artikel gehört – zum Beispiel Sport, Tiere oder Schule. So finden alle deinen Artikel leichter.</string>
     <string name="help_kicker">Die Dachzeile steht klein über der Schlagzeile. Sie sagt in wenigen Wörtern, wo oder worum es geht – wie ein Schild über der Tür.</string>
     <string name="help_headline">Die Schlagzeile ist die große Überschrift. Sie soll neugierig machen, damit alle deinen Artikel lesen wollen.</string>
@@ -61,6 +62,7 @@
     <string name="help_subhead">Ein Zwischentitel ist eine kleine Überschrift mitten im Text. Er teilt einen langen Artikel in Abschnitte.</string>
     <string name="help_quote">Ein Zitat sind die genauen Worte, die jemand gesagt hat. Schreib dazu, wer es gesagt hat.</string>
     <string name="help_list">In einer Aufzählung stehen mehrere Dinge untereinander, jedes mit einem Punkt davor – wie auf einem Einkaufszettel.</string>
+    <string name="help_image">Ein Bild im Text ist ein Foto mitten in deinem Artikel, genau dort, wo es passt. Schreib darunter, was man darauf sieht.</string>
     <string name="help_image_rights">Wichtig bei Fotos: Frag jede Person, die man auf dem Foto erkennt, ob es in die Zeitung darf – bei Kindern auch die Eltern. Sagt jemand Nein oder kannst du nicht fragen, nimm ein anderes Foto oder lass die Gesichter unkenntlich machen (verpixeln) – ein Erwachsener hilft dir dabei. Nimm nur Fotos, die du selbst gemacht hast oder verwenden darfst.</string>
     <string name="help_label_section">Was ist das Ressort?</string>
     <string name="help_label_kicker">Was ist die Dachzeile?</string>
@@ -73,6 +75,7 @@
     <string name="help_label_subhead">Was ist ein Zwischentitel?</string>
     <string name="help_label_quote">Was ist ein Zitat?</string>
     <string name="help_label_list">Was ist eine Aufzählung?</string>
+    <string name="help_label_image">Was ist ein Bild im Text?</string>
     <string name="sample_section">Tiere</string>
     <string name="sample_kicker">Tierheim Linz</string>
     <string name="sample_headline">Minka hat ein neues Zuhause</string>
@@ -84,6 +87,8 @@
     <string name="sample_subhead">Die ersten Tage</string>
     <string name="sample_quote">„Sie braucht einfach Zeit“, sagt die Tierpflegerin.</string>
     <string name="sample_list">Futter · Kratzbaum · Katzenklo</string>
+    <string name="sample_image">Foto: Minka schläft im Kratzbaum</string>
+    <string name="sample_image_caption">Nach einer Woche traut sich Minka nach oben.</string>
     <string name="list_item">Punkt %1$d</string>
     <string name="add_block">Einfügen</string>
     <string name="add_item">Punkt hinzufügen</string>

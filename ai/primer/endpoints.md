@@ -302,13 +302,24 @@ publisher unlocks it (`POST /api/articles/{id}/unlock`). Taking offline by anyon
     { "type": "paragraph", "content": [ { "text": "It started " }, { "text": "in May", "bold": true } ] },
     { "type": "subhead", "text": "Watering" },
     { "type": "quote", "content": [ { "text": "Every day!" } ] },
-    { "type": "list", "items": [ [ { "text": "Water" } ], [ { "text": "Sun" } ] ] }
+    { "type": "list", "items": [ [ { "text": "Water" } ], [ { "text": "Sun" } ] ] },
+    { "type": "image", "mediaId": 17, "caption": "The finish line" }
   ]
 }
 ```
 - Block types: `paragraph` (`content`: runs), `subhead` (`text`), `quote` (`content`: runs),
-  `list` (bullet list, `items`: array of run arrays, at least one item). `paragraph`/`quote`
-  content and list items may be empty arrays.
+  `list` (bullet list, `items`: array of run arrays, at least one item), `image` (`mediaId`,
+  optional `caption`). `paragraph`/`quote` content and list items may be empty arrays.
+- Image block: `mediaId` required, a positive integer naming an existing media (any media, whoever
+  uploaded it; the same media may appear several times and also as `leadImage`); `caption`
+  optional plain text (default empty, omitted by the admin when empty, stored as sent — not
+  trimmed), no control characters at all, at most 300 code points, counted towards the body's
+  text. Errors (`400`, collected with all other field errors): `body.blocks[i].mediaId` (missing,
+  not a positive integer, or `media 17 does not exist` — checked after the syntax, one entry per
+  block, nothing is stored), `body.blocks[i].caption`, other keys `body.blocks[i].<key>`
+  ("unknown field"). A body image goes live with the revision that carries it; it counts as used
+  by that revision exactly like a lead image (reader route, media usage, edit lock, and a used
+  media cannot be deleted).
 - Run: `{ "text": "...", "bold": true|false }`; `text` required and non-empty, `bold` optional
   (default `false`). `\n` is allowed inside run text (line break); `subhead` text has no control
   characters at all.
@@ -1117,8 +1128,9 @@ Every media also has three **renditions** derived from the stored image — `thu
 without metadata. They are produced during the upload; media uploaded before renditions existed get
 theirs from a background backfill shortly after the backend starts.
 Images live in an S3-compatible object store that browsers never reach. Readers only get
-renditions of published lead images through the reader route `GET /media/{id}/{kind}` (below),
-never the stored image.
+renditions of published lead images and body images (image blocks) through the reader route
+`GET /media/{id}/{kind}` (below), never the stored image. Wherever this section says a revision
+"uses" a media, it means as lead image or in an image block of its body.
 
 A media can be **edited** (cropped, areas pixelated, `POST /api/media/{id}/edit`): the edit replaces
 the stored image and all renditions under the **same id** and increments its `version`; every
@@ -1195,7 +1207,8 @@ The newspaper's media, newest upload first, paged by id.
     "next": 63 }
   ```
   Each item is a `MediaDto` plus `usageCount`: the number of distinct articles any of whose
-  revisions uses the media as lead image. `next`: the `before` value of the following page, `null`
+  revisions uses the media as lead image or in an image block of its body (an article using it
+  several times counts once). `next`: the `before` value of the following page, `null`
   on the last page.
 - **Errors:** `400` invalid `limit` (field `limit`) or `before` (not a positive integer, field
   `before`); `403`.
@@ -1224,7 +1237,8 @@ Where the media is used, and whether the caller may edit it.
                     "live": true, "latest": false, "older": false } ] }
   ```
   `mayEdit`: the editing rule of `POST /api/media/{id}/edit` for the caller. `articles`: every
-  article any of whose revisions uses the media as lead image, most recently changed first
+  article any of whose revisions uses the media as lead image or in an image block of its body
+  (the response does not tell which), most recently changed first
   (`updatedAt` desc), also articles the caller cannot see in the article list. `headline` is that
   of the latest revision; `section` is a `SectionRefDto` (colour is a palette key); `publishedAt`
   is the first publication (`null` if never). `live`: the live revision uses the media; `latest`:
@@ -1239,7 +1253,8 @@ Crops and/or pixelates the stored image. Irreversible.
 
 - **Auth:** publishers and editors-in-chief for every media; the uploader (same token `sub`) for
   their own media only while **no article's live revision** uses it and **no article waiting for
-  approval** (`pendingLevel` set) uses it in its latest revision. Everyone else `403`
+  approval** (`pendingLevel` set) uses it in its latest revision — as lead image or in an image
+  block of the body. Everyone else `403`
   (`WRITE_ARTICLES` is checked first).
 - **Body:**
   ```json
@@ -1374,17 +1389,17 @@ The reader's text-size switch (a plain HTML form, no JavaScript).
 
 ## `GET /media/{id}/{kind}`
 
-A rendition (`kind` `thumbnail` | `web` | `print`) of a lead image for readers; the reader pages
-link `web` (article page, lead story, with `thumbnail` in `srcset`), `thumbnail` (cards) and
-`print` (print views), always as `/media/{id}/{kind}?v={version}` with the media's current
+A rendition (`kind` `thumbnail` | `web` | `print`) of a lead image or body image for readers; the
+reader pages link `web` (article page and its body figures, lead story, with `thumbnail` in
+`srcset`), `thumbnail` (cards) and `print` (print views, lead images and body figures), always as `/media/{id}/{kind}?v={version}` with the media's current
 version, so an edited image gets a new URL. The query string is ignored: every URL serves the
 current rendition under the rules below, also for a missing or outdated `v`.
 
 - **Auth:** none for a public newspaper. For a private one (effective `visibility` `private`) the
   reader session (`q_session_reader`) of an entitled reader (`READER`, `EDITOR_IN_CHIEF`,
   `PUBLISHER`) is needed; `/media/*` belongs to the reader OIDC tenant. No login redirect.
-- **Response `200`:** only while media `{id}` is the lead image of the **live revision of at least
-  one `PUBLISHED` article**; body = the rendition, headers `Content-Type`, `Content-Length`,
+- **Response `200`:** only while media `{id}` is used — as lead image or in an image block of the
+  body — by the **live revision of at least one `PUBLISHED` article**; body = the rendition, headers `Content-Type`, `Content-Length`,
   `X-Content-Type-Options: nosniff`, `Cache-Control: public, max-age=3600` (public newspaper) or
   `private, max-age=3600` (private newspaper) — an image taken offline disappears from caches within
   an hour.
@@ -1412,6 +1427,11 @@ or a logged-in visitor. Paths belong to the reader OIDC tenant (`/issues`, `/iss
   other articles in columns (`data-view="print-issue"`). The admin app opens it in a new tab.
 - The front page masthead names the newest live issue (link to `/issues/{id}`) and links `/issues`
   when more than one issue is live.
+- Image blocks of a live body render on the article page as `figure.article__figure` (`web`
+  rendition with `thumbnail` in `srcset`, `loading="lazy"`, caption as `alt` and in
+  `figcaption.article__caption` when not empty) and in both print views with the `print`
+  rendition (`web` until it exists); a block whose media has no renditions yet is left out. The
+  front page and issue pages show lead images only.
 - Print views load `/reader/print.js` (static, same origin) for the screen-only "Print" button; the
   reader CSP stays `default-src 'self'`.
 

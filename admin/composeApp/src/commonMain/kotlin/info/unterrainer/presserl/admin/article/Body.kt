@@ -34,6 +34,11 @@ sealed interface Block {
     @Serializable
     @SerialName("list")
     data class BulletList(val items: List<List<Run>>) : Block
+
+    /** An uploaded media shown inside the text; [caption] is single-line plain text, empty for none. */
+    @Serializable
+    @SerialName("image")
+    data class Image(val mediaId: Long, val caption: String = "") : Block
 }
 
 /** Article body in format v1 (`{"version": 1, "blocks": [...]}`), see spec `articles`. */
@@ -51,7 +56,7 @@ data class Body(
     }
 }
 
-/** `bold: false` is the default and never sent. */
+/** `bold: false` and an empty image caption are the defaults and never sent. */
 private val bodyJson = Json {
     encodeDefaults = false
     classDiscriminator = "type"

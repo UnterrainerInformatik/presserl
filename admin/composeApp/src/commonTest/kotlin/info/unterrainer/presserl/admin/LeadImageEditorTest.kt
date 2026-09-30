@@ -13,6 +13,7 @@ import info.unterrainer.presserl.admin.ui.editor.EditorIntent
 import info.unterrainer.presserl.admin.ui.editor.EditorModel
 import info.unterrainer.presserl.admin.ui.editor.IdSource
 import info.unterrainer.presserl.admin.ui.editor.UploadError
+import info.unterrainer.presserl.admin.ui.editor.UploadTarget
 import info.unterrainer.presserl.admin.ui.editor.draftOf
 import info.unterrainer.presserl.admin.ui.editor.fieldErrors
 import info.unterrainer.presserl.admin.ui.media.PickedFile
@@ -90,7 +91,7 @@ class LeadImageEditorTest {
         assertEquals(DraftLeadImage(17, "", 1600, 1067), model.draft.leadImage)
         assertEquals(LeadImageRequest(17, ""), model.draft.toContent().leadImage)
         assertFalse(model.uploading)
-        assertNull(model.uploadError)
+        assertNull(model.uploadErrorAt(UploadTarget.LeadImage))
         assertTrue(model.canUndo)
     }
 
@@ -138,7 +139,7 @@ class LeadImageEditorTest {
 
             model.uploadLeadImage(file, MediaServer(status).api::uploadMedia)
 
-            assertEquals(error, model.uploadError, status.toString())
+            assertEquals(error, model.uploadErrorAt(UploadTarget.LeadImage), status.toString())
             assertEquals(DraftLeadImage(17, "Minka", 1600, 1067), model.draft.leadImage, status.toString())
             assertFalse(model.uploading)
         }
@@ -150,7 +151,7 @@ class LeadImageEditorTest {
 
         model.uploadLeadImage(file) { _, _ -> throw Error("Fail to fetch") }
 
-        assertEquals(UploadError.Unreachable, model.uploadError)
+        assertEquals(UploadError.Unreachable, model.uploadErrorAt(UploadTarget.LeadImage))
         assertNull(model.draft.leadImage)
     }
 
@@ -160,7 +161,7 @@ class LeadImageEditorTest {
 
         model.uploadLeadImage(file, MediaServer(HttpStatusCode.Forbidden).api::uploadMedia)
 
-        assertEquals(UploadError.Other("403 Forbidden"), model.uploadError)
+        assertEquals(UploadError.Other("403 Forbidden"), model.uploadErrorAt(UploadTarget.LeadImage))
     }
 
     @Test
@@ -170,7 +171,7 @@ class LeadImageEditorTest {
 
         model.uploadLeadImage(file, MediaServer().api::uploadMedia)
 
-        assertNull(model.uploadError)
+        assertNull(model.uploadErrorAt(UploadTarget.LeadImage))
         assertEquals(17, model.draft.leadImage?.mediaId)
     }
 

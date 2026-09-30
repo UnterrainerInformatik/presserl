@@ -28,20 +28,26 @@ import info.unterrainer.presserl.admin.resources.lead_image_no_preview
 import info.unterrainer.presserl.admin.ui.editor.DraftLeadImage
 import org.jetbrains.compose.resources.stringResource
 
-/** Widest preview of a lead image. */
+/** Widest preview of a lead image or image block. */
 val PREVIEW_MAX_WIDTH = 240.dp
 
 /**
- * The lead image's thumbnail at most [PREVIEW_MAX_WIDTH] wide, in the stored image's aspect ratio; a plain box
- * while it loads or when there is none yet.
+ * The thumbnail of media [mediaId] at most [PREVIEW_MAX_WIDTH] wide, in the aspect ratio [width] x [height] (when
+ * unknown, `0`, that of the loaded thumbnail); a plain box while it loads or when there is none. [description] is
+ * the caption, empty for none.
  */
 @Composable
-fun LeadImagePreview(image: DraftLeadImage, thumbnails: Thumbnails, modifier: Modifier = Modifier) {
-    LaunchedEffect(image.mediaId) { thumbnails.fetch(image.mediaId) }
-    val ratio = if (image.width > 0 && image.height > 0) image.width.toFloat() / image.height else 1.5f
+fun MediaPreview(mediaId: Long, width: Int, height: Int, description: String, thumbnails: Thumbnails, modifier: Modifier = Modifier) {
+    LaunchedEffect(mediaId) { thumbnails.fetch(mediaId) }
+    val thumbnail = thumbnails[mediaId]
+    val ratio = when {
+        width > 0 && height > 0 -> width.toFloat() / height
+        thumbnail is Thumbnails.Result.Loaded && thumbnail.image.height > 0 -> thumbnail.image.width.toFloat() / thumbnail.image.height
+        else -> 1.5f
+    }
     val frame = modifier.widthIn(max = PREVIEW_MAX_WIDTH).aspectRatio(ratio)
-    when (val thumbnail = thumbnails[image.mediaId]) {
-        is Thumbnails.Result.Loaded -> Image(thumbnail.image, contentDescription = image.caption.ifEmpty { null },
+    when (thumbnail) {
+        is Thumbnails.Result.Loaded -> Image(thumbnail.image, contentDescription = description.ifEmpty { null },
             modifier = frame, contentScale = ContentScale.Fit)
         else -> Box(frame.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
             if (thumbnail == Thumbnails.Result.Missing) {
@@ -51,12 +57,22 @@ fun LeadImagePreview(image: DraftLeadImage, thumbnails: Thumbnails, modifier: Mo
     }
 }
 
+/** The lead image's preview, see [MediaPreview]. */
+@Composable
+fun LeadImagePreview(image: DraftLeadImage, thumbnails: Thumbnails, modifier: Modifier = Modifier) =
+    MediaPreview(image.mediaId, image.width, image.height, image.caption, thumbnails, modifier)
+
 /** A read-only lead image: preview and caption. */
 @Composable
-fun LeadImageView(image: DraftLeadImage, thumbnails: Thumbnails) {
+fun LeadImageView(image: DraftLeadImage, thumbnails: Thumbnails) =
+    CaptionedPreview(image.mediaId, image.width, image.height, image.caption, thumbnails)
+
+/** A read-only image (lead image or image block): preview and caption; [width] and [height] as in [MediaPreview]. */
+@Composable
+fun CaptionedPreview(mediaId: Long, width: Int, height: Int, caption: String, thumbnails: Thumbnails) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        LeadImagePreview(image, thumbnails)
-        if (image.caption.isNotEmpty()) Text(image.caption, style = MaterialTheme.typography.bodySmall)
+        MediaPreview(mediaId, width, height, caption, thumbnails)
+        if (caption.isNotEmpty()) Text(caption, style = MaterialTheme.typography.bodySmall)
     }
 }
 

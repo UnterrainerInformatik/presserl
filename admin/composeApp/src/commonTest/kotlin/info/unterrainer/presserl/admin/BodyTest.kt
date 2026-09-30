@@ -51,7 +51,7 @@ class BodyTest {
                     is Block.Paragraph -> Block.Paragraph(annotatedToRuns(runsToAnnotated(block.content)))
                     is Block.Quote -> Block.Quote(annotatedToRuns(runsToAnnotated(block.content)))
                     is Block.BulletList -> Block.BulletList(block.items.map { annotatedToRuns(runsToAnnotated(it)) })
-                    is Block.Subhead -> block
+                    is Block.Subhead, is Block.Image -> block
                 }
             },
         )
@@ -78,6 +78,27 @@ class BodyTest {
             ).jsonObject,
             body.toJson(),
         )
+    }
+
+    @Test
+    fun imageBlockOmitsAnEmptyCaption() {
+        val body = Body(
+            blocks = listOf(
+                Block.Paragraph(listOf(Run("Start"))),
+                Block.Image(17, "The finish line"),
+                Block.Image(18),
+                Block.Subhead("End"),
+            ),
+        )
+        val json = Json.parseToJsonElement(
+            """{ "version": 1, "blocks": [
+                { "type": "paragraph", "content": [ { "text": "Start" } ] },
+                { "type": "image", "mediaId": 17, "caption": "The finish line" },
+                { "type": "image", "mediaId": 18 },
+                { "type": "subhead", "text": "End" } ] }""",
+        ).jsonObject
+        assertEquals(json, body.toJson())
+        assertEquals(body, Body.fromJson(json))
     }
 
     @Test

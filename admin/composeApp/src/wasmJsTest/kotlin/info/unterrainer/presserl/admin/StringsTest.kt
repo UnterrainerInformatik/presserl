@@ -55,6 +55,25 @@ private fun verifyIssueStrings(): Promise<JsAny?> = js(
 ).then(() => null)""",
 )
 
+/** Rejects unless both files define the image block's strings with the expected texts. */
+private fun verifyImageBlockStrings(): Promise<JsAny?> = js(
+    """Promise.all([
+    ['values', { block_image: 'Bild', help_label_image: 'Was ist ein Bild im Text?' }],
+    ['values-en', { block_image: 'Image', help_label_image: 'What is an image in the text?' }],
+].map(([qualifier, expected]) =>
+    fetch('/strings/' + qualifier + '/strings.xml').then(response => response.text()).then(text => {
+        const strings = new DOMParser().parseFromString(text, 'application/xml');
+        Object.entries(expected).forEach(([name, value]) => {
+            const actual = strings.querySelector('string[name="' + name + '"]')?.textContent;
+            if (actual !== value) throw new Error(qualifier + ': ' + name + ' is ' + actual);
+        });
+        ['help_image', 'sample_image', 'sample_image_caption'].forEach(name => {
+            if (!strings.querySelector('string[name="' + name + '"]')?.textContent) throw new Error(qualifier + ': ' + name + ' is missing');
+        });
+    }))
+).then(() => null)""",
+)
+
 /** German (default) and English must stay complete; a missing key would silently fall back to German. */
 class StringsTest {
 
@@ -66,4 +85,7 @@ class StringsTest {
 
     @Test
     fun issueLabelsInGermanAndEnglish(): Promise<JsAny?> = verifyIssueStrings()
+
+    @Test
+    fun imageBlockLabelsInGermanAndEnglish(): Promise<JsAny?> = verifyImageBlockStrings()
 }

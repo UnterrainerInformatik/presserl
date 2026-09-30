@@ -1,4 +1,6 @@
-{! The body of an article (BodyRenderer blocks). !}
+{! The body of an article (BodyRenderer blocks). print=true links image blocks to the print rendition
+   (the print views), print=false to the web rendition with the thumbnail in srcset, loaded lazily. An
+   image's alt is its caption. Every image URL carries ?v={version} like the lead image. !}
 <div class="article__body">
   {#for block in blocks}
   {#when block.type}
@@ -14,6 +16,19 @@
     <li>{#runs runs=item /}</li>
     {/for}
   </ul>
+  {#is IMAGE}
+  <figure class="article__figure">
+    {#if print}
+    <img src="/media/{block.image.mediaId}/{block.image.printKind}?v={block.image.version}" width="{block.image.printWidth}" height="{block.image.printHeight}" alt="{block.image.caption}">
+    {#else if block.image.webWidth > block.image.thumbWidth}
+    <img src="/media/{block.image.mediaId}/web?v={block.image.version}" srcset="/media/{block.image.mediaId}/thumbnail?v={block.image.version} {block.image.thumbWidth}w, /media/{block.image.mediaId}/web?v={block.image.version} {block.image.webWidth}w" sizes="(max-width: 48rem) 100vw, 48rem" width="{block.image.webWidth}" height="{block.image.webHeight}" alt="{block.image.caption}" loading="lazy">
+    {#else}
+    <img src="/media/{block.image.mediaId}/web?v={block.image.version}" width="{block.image.webWidth}" height="{block.image.webHeight}" alt="{block.image.caption}" loading="lazy">
+    {/if}
+    {#if block.image.caption}
+    <figcaption class="article__caption">{block.image.caption}</figcaption>
+    {/if}
+  </figure>
   {/when}
   {/for}
 </div>

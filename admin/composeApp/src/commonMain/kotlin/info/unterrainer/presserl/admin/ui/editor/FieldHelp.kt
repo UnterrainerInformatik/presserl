@@ -69,6 +69,7 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.help_image_rights
+import info.unterrainer.presserl.admin.resources.sample_image_caption
 import info.unterrainer.presserl.admin.ui.Icons
 import info.unterrainer.presserl.admin.ui.media.PictureIcon
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
@@ -164,7 +165,7 @@ private const val HOVER_CLOSE_DELAY_MS = 150L
 
 /**
  * The question-mark button of [part] (44 dp touch target, labelled "What is …?") and, while open, its explanation
- * below it (above it when there is no room): the child-level text, for the lead image the image-rights note, and
+ * below it (above it when there is no room): the child-level text, for the photo parts the image-rights note, and
  * the [SampleArticle] with [part] highlighted. The explanation never takes focus, so typing goes on.
  */
 @Composable
@@ -261,7 +262,7 @@ private fun HelpContent(part: HelpPart) {
     Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(stringResource(part.label), style = MaterialTheme.typography.titleSmall)
         Text(stringResource(part.explanation), style = MaterialTheme.typography.bodyMedium)
-        if (part == HelpPart.LEAD_IMAGE) {
+        if (part.showsImageRights) {
             Text(
                 stringResource(Res.string.help_image_rights),
                 style = MaterialTheme.typography.bodyMedium,
@@ -347,6 +348,19 @@ fun SampleArticle(highlight: HelpPart) {
                         Text(item, style = typography.bodyMedium)
                     }
                 }
+            }
+        }
+        SamplePart(HelpPart.IMAGE, highlight) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(
+                    Modifier.fillMaxWidth().height(72.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp)),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    PictureIcon(28.dp)
+                    Text(stringResource(HelpPart.IMAGE.sample), style = typography.bodySmall)
+                }
+                Text(stringResource(Res.string.sample_image_caption), style = typography.bodySmall)
             }
         }
     }

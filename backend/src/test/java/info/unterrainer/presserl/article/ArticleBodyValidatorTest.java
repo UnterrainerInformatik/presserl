@@ -63,6 +63,62 @@ class ArticleBodyValidatorTest {
     }
 
     @Test
+    void imageBlockIsValid() {
+        assertThat(fields(body("{'type': 'paragraph', 'content': [{'text': 'x'}]}, "
+                + "{'type': 'image', 'mediaId': 17, 'caption': 'The finish line'}, "
+                + "{'type': 'paragraph', 'content': [{'text': 'y'}]}"))).isEmpty();
+    }
+
+    @Test
+    void imageBlockWithoutCaptionIsValid() {
+        assertThat(fields(body("{'type': 'image', 'mediaId': 17}"))).isEmpty();
+        assertThat(fields(body("{'type': 'image', 'mediaId': 17, 'caption': ''}"))).isEmpty();
+    }
+
+    @Test
+    void imageBlockWithoutMediaIdIsNamed() {
+        assertThat(fields(body("{'type': 'subhead', 'text': 'a'}, {'type': 'subhead', 'text': 'b'}, "
+                + "{'type': 'image', 'caption': 'x'}"))).containsExactly("body.blocks[2].mediaId");
+    }
+
+    @Test
+    void invalidImageMediaIdIsNamed() {
+        assertThat(fields(body("{'type': 'image', 'mediaId': 0}, {'type': 'image', 'mediaId': -3}, "
+                + "{'type': 'image', 'mediaId': '17'}, {'type': 'image', 'mediaId': 1.5}")))
+                .containsExactly("body.blocks[0].mediaId", "body.blocks[1].mediaId", "body.blocks[2].mediaId",
+                        "body.blocks[3].mediaId");
+    }
+
+    @Test
+    void imageCaptionRules() {
+        ObjectNode body = (ObjectNode) body("{'type': 'image', 'mediaId': 17}, {'type': 'image', 'mediaId': 17}, "
+                + "{'type': 'image', 'mediaId': 17}, {'type': 'image', 'mediaId': 17, 'caption': 5}");
+        ((ObjectNode) body.at("/blocks/0")).put("caption", "one\ntwo");
+        ((ObjectNode) body.at("/blocks/1")).put("caption", "c".repeat(ArticleLimits.CAPTION_MAX + 1));
+        ((ObjectNode) body.at("/blocks/2")).put("caption", "c".repeat(ArticleLimits.CAPTION_MAX));
+        assertThat(fields(body)).containsExactly("body.blocks[0].caption", "body.blocks[1].caption",
+                "body.blocks[3].caption");
+    }
+
+    @Test
+    void unknownImageFieldIsNamed() {
+        assertThat(fields(body("{'type': 'image', 'mediaId': 17, 'src': 'http://evil'}")))
+                .containsExactly("body.blocks[0].src");
+    }
+
+    @Test
+    void imageCaptionCountsTowardsText() {
+        ObjectNode body = ArticleContentValidator.emptyBody();
+        ArrayNode blocks = (ArrayNode) body.get("blocks");
+        blocks.addObject().put("type", "subhead").put("text", "a".repeat(ArticleLimits.BODY_TEXT_MAX - 10));
+        blocks.addObject().put("type", "image").put("mediaId", 17).put("caption", "c".repeat(10));
+        assertThat(fields(body)).isEmpty();
+
+        ((ObjectNode) blocks.get(1)).put("caption", "c".repeat(11));
+        assertThat(fields(body)).containsExactly("body");
+    }
+
+    @Test
     void lineFeedInRunIsValid() {
         ObjectNode body = (ObjectNode) body("{'type': 'paragraph', 'content': [{'text': 'x'}]}");
         ((ObjectNode) body.at("/blocks/0/content/0")).put("text", "line one\nline two");

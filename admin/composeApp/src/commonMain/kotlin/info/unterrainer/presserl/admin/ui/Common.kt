@@ -31,6 +31,7 @@ import info.unterrainer.presserl.admin.resources.reload
 import info.unterrainer.presserl.admin.resources.something_went_wrong
 import info.unterrainer.presserl.admin.ui.editor.Draft
 import info.unterrainer.presserl.admin.ui.editor.EditorBlock
+import info.unterrainer.presserl.admin.ui.media.CaptionedPreview
 import info.unterrainer.presserl.admin.ui.media.LeadImageView
 import info.unterrainer.presserl.admin.ui.media.Thumbnails
 import org.jetbrains.compose.resources.stringResource
@@ -84,6 +85,7 @@ fun ArticleView(draft: Draft, thumbnails: Thumbnails) {
                         }
                     }
                 }
+                is EditorBlock.Image -> CaptionedPreview(block.mediaId, 0, 0, block.caption, thumbnails)
             }
         }
     }

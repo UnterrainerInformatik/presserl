@@ -68,6 +68,7 @@ import info.unterrainer.presserl.admin.resources.action_failed
 import info.unterrainer.presserl.admin.resources.add_block
 import info.unterrainer.presserl.admin.resources.add_item
 import info.unterrainer.presserl.admin.resources.approve
+import info.unterrainer.presserl.admin.resources.block_image
 import info.unterrainer.presserl.admin.resources.block_list
 import info.unterrainer.presserl.admin.resources.block_paragraph
 import info.unterrainer.presserl.admin.resources.block_quote
@@ -143,6 +144,7 @@ import info.unterrainer.presserl.admin.ui.decisionText
 import info.unterrainer.presserl.admin.ui.describe
 import info.unterrainer.presserl.admin.ui.formatTimestamp
 import info.unterrainer.presserl.admin.ui.media.LeadImagePreview
+import info.unterrainer.presserl.admin.ui.media.MediaPreview
 import info.unterrainer.presserl.admin.ui.media.PictureIcon
 import info.unterrainer.presserl.admin.ui.media.Thumbnails
 import info.unterrainer.presserl.admin.ui.media.formatMaxSize
@@ -360,11 +362,11 @@ private fun Editor(
                     }
                     FieldHelp(HelpPart.SECTION, help)
                 }
-                val leadImage = LeadImageSlot(thumbnails, maxUploadSize, onChoose = {
-                    scope.launch { pickImageFile()?.let { model.uploadLeadImage(it, api::uploadMedia) } }
+                val images = ImageSlot(thumbnails, maxUploadSize, onChoose = { target ->
+                    scope.launch { model.pickAndUpload(target, ::pickImageFile, api::uploadMedia) }
                 })
                 SpellNotice(checker)
-                EditableArticle(model, errors, leadImage, help, checker, enabled = saveState != SaveState.Conflict)
+                EditableArticle(model, errors, images, help, checker, enabled = saveState != SaveState.Conflict)
             } else {
                 article.section?.let { SectionLabel(it.name, it.color) }
                 ArticleView(model.draft, thumbnails)
@@ -548,6 +550,7 @@ private val BLOCK_LABELS = mapOf(
     BlockType.SUBHEAD to Res.string.block_subhead,
     BlockType.QUOTE to Res.string.block_quote,
     BlockType.LIST to Res.string.block_list,
+    BlockType.IMAGE to Res.string.block_image,
 )
 
 private val EditorBlock.type: BlockType
@@ -556,6 +559,7 @@ private val EditorBlock.type: BlockType
         is EditorBlock.Subhead -> BlockType.SUBHEAD
         is EditorBlock.Quote -> BlockType.QUOTE
         is EditorBlock.BulletList -> BlockType.LIST
+        is EditorBlock.Image -> BlockType.IMAGE
     }
 
 /** The section as a colour marker and name, for read-only articles. */
@@ -609,21 +613,24 @@ private fun SectionChooser(model: EditorModel, current: SectionRefDto?, sections
     }
 }
 
-/** What the lead-image field needs besides the model. */
-private class LeadImageSlot(val thumbnails: Thumbnails, val maxUploadSize: String?, val onChoose: () -> Unit)
+/**
+ * What the image fields (lead image, image blocks, "Add block") need besides the model; [onChoose] opens the file
+ * picker and uploads the chosen file for the target.
+ */
+private class ImageSlot(val thumbnails: Thumbnails, val maxUploadSize: String?, val onChoose: (UploadTarget) -> Unit)
 
 @Composable
 private fun EditableArticle(
     model: EditorModel,
     errors: FieldErrors,
-    leadImage: LeadImageSlot,
+    images: ImageSlot,
     help: FieldHelpState,
     checker: SpellChecker,
     enabled: Boolean,
 ) {
     HeaderField.entries.forEach { field ->
         // The reader's order: the lead image follows the headline block
-        if (field == HeaderField.LEAD) LeadImageField(model, leadImage, errors.leadImage, help, checker, enabled)
+        if (field == HeaderField.LEAD) LeadImageField(model, images, errors.leadImage, help, checker, enabled)
         val value = model.draft[field]
         val error = errors.header[field]
         SpellCheckedTextField(
@@ -647,13 +654,13 @@ private fun EditableArticle(
         )
     }
 
-    AddBlockButton(afterId = null, model, enabled)
+    AddBlockButton(afterId = null, model, images, enabled)
     if (model.draft.blocks.isEmpty()) Text(stringResource(Res.string.empty_body), style = MaterialTheme.typography.bodyMedium)
     val blocks = model.draft.blocks
     blocks.forEachIndexed { index, block ->
         key(block.id) {
-            BlockCard(model, block, first = index == 0, last = index == blocks.lastIndex, error = errors.blocks[index], help, checker, enabled)
-            AddBlockButton(afterId = block.id, model, enabled)
+            BlockCard(model, block, first = index == 0, last = index == blocks.lastIndex, error = errors.blocks[index], images, help, checker, enabled)
+            AddBlockButton(afterId = block.id, model, images, enabled)
         }
     }
 }
@@ -664,7 +671,7 @@ private fun EditableArticle(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun LeadImageField(model: EditorModel, slot: LeadImageSlot, error: String?, help: FieldHelpState, checker: SpellChecker, enabled: Boolean) {
+private fun LeadImageField(model: EditorModel, slot: ImageSlot, error: String?, help: FieldHelpState, checker: SpellChecker, enabled: Boolean) {
     val image = model.draft.leadImage
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -695,7 +702,7 @@ private fun LeadImageField(model: EditorModel, slot: LeadImageSlot, error: Strin
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             val choose = if (image == null) Res.string.lead_image_choose else Res.string.lead_image_replace
             Button(
-                onClick = slot.onChoose,
+                onClick = { slot.onChoose(UploadTarget.LeadImage) },
                 enabled = enabled && !model.uploading,
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
             ) {
@@ -708,15 +715,29 @@ private fun LeadImageField(model: EditorModel, slot: LeadImageSlot, error: Strin
                     IconLabel(Icons.Close, stringResource(Res.string.lead_image_remove))
                 }
             }
-            if (model.uploading) {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                Text(stringResource(Res.string.lead_image_uploading), style = MaterialTheme.typography.bodyMedium)
-            }
+            UploadBusy(model, UploadTarget.LeadImage)
         }
-        model.uploadError?.let { uploadError ->
-            Text(uploadErrorText(uploadError, slot.maxUploadSize), color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium)
+        UploadErrorText(model, UploadTarget.LeadImage, slot.maxUploadSize)
+    }
+}
+
+/** The busy indicator while an upload started at [target] runs. */
+@Composable
+private fun UploadBusy(model: EditorModel, target: UploadTarget) {
+    if (model.uploadingAt == target) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            Text(stringResource(Res.string.lead_image_uploading), style = MaterialTheme.typography.bodyMedium)
         }
+    }
+}
+
+/** Why the last upload started at [target] failed, in plain words; nothing if it did not. */
+@Composable
+private fun UploadErrorText(model: EditorModel, target: UploadTarget, maxUploadSize: String?) {
+    model.uploadErrorAt(target)?.let { uploadError ->
+        Text(uploadErrorText(uploadError, maxUploadSize), color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -730,22 +751,35 @@ private fun uploadErrorText(error: UploadError, maxUploadSize: String?): String 
     is UploadError.Other -> stringResource(Res.string.upload_failed, error.message)
 }
 
+/**
+ * "+ Add block" after [afterId] (`null`: at the start). "Image" opens the file picker and inserts an image block
+ * once the upload succeeded; its busy indicator and upload errors show here.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AddBlockButton(afterId: Long?, model: EditorModel, enabled: Boolean) {
+private fun AddBlockButton(afterId: Long?, model: EditorModel, images: ImageSlot, enabled: Boolean) {
     var open by remember { mutableStateOf(false) }
-    Box {
-        TextButton(onClick = { open = true }, enabled = enabled) { Text("+ " + stringResource(Res.string.add_block)) }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            BlockType.entries.forEach { type ->
-                DropdownMenuItem(
-                    text = { Text(stringResource(BLOCK_LABELS.getValue(type))) },
-                    onClick = {
-                        open = false
-                        model.dispatch(EditorIntent.AddBlock(afterId, type))
-                    },
-                )
+    val target = UploadTarget.NewBlock(afterId)
+    Column {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+            Box {
+                TextButton(onClick = { open = true }, enabled = enabled) { Text("+ " + stringResource(Res.string.add_block)) }
+                DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                    BlockType.entries.forEach { type ->
+                        DropdownMenuItem(
+                            text = { Text(stringResource(BLOCK_LABELS.getValue(type))) },
+                            enabled = type != BlockType.IMAGE || !model.uploading,
+                            onClick = {
+                                open = false
+                                if (type == BlockType.IMAGE) images.onChoose(target) else model.dispatch(EditorIntent.AddBlock(afterId, type))
+                            },
+                        )
+                    }
+                }
             }
+            UploadBusy(model, target)
         }
+        UploadErrorText(model, target, images.maxUploadSize)
     }
 }
 
@@ -760,6 +794,7 @@ private fun BlockCard(
     first: Boolean,
     last: Boolean,
     error: String?,
+    images: ImageSlot,
     help: FieldHelpState,
     checker: SpellChecker,
     enabled: Boolean,
@@ -772,7 +807,7 @@ private fun BlockCard(
                     Text(stringResource(BLOCK_LABELS.getValue(block.type)), style = MaterialTheme.typography.labelLarge)
                     FieldHelp(block.type.helpPart, help)
                 }
-                if (block !is EditorBlock.Subhead) {
+                if (block !is EditorBlock.Subhead && block !is EditorBlock.Image) {
                     val target = boldTarget
                     val isBold = target?.state?.currentSpanStyle?.fontWeight == FontWeight.Bold
                     val toggle = {
@@ -838,10 +873,43 @@ private fun BlockCard(
                         Text("+ " + stringResource(Res.string.add_item))
                     }
                 }
+                is EditorBlock.Image -> ImageBlockFields(model, block, images, error != null, help, enabled)
             }
             if (error != null) Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
     }
+}
+
+/**
+ * An image block's preview, caption field and replace button with the upload's busy indicator and errors; a failed
+ * replacement keeps the image.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ImageBlockFields(model: EditorModel, block: EditorBlock.Image, images: ImageSlot, isError: Boolean, help: FieldHelpState, enabled: Boolean) {
+    val target = UploadTarget.Block(block.id)
+    MediaPreview(block.mediaId, 0, 0, block.caption, images.thumbnails)
+    OutlinedTextField(
+        value = block.caption,
+        onValueChange = { changed ->
+            if (changed.filterNot { it == '\n' || it == '\r' } != block.caption) model.dispatch(EditorIntent.SetImageCaption(block.id, changed))
+        },
+        label = { Text(stringResource(Res.string.field_caption)) },
+        trailingIcon = { FieldHelp(HelpPart.CAPTION, help) },
+        singleLine = true,
+        isError = isError,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+        OutlinedButton(onClick = { images.onChoose(target) }, enabled = enabled && !model.uploading) {
+            PictureIcon()
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(Res.string.lead_image_replace))
+        }
+        UploadBusy(model, target)
+    }
+    UploadErrorText(model, target, images.maxUploadSize)
 }
 
 /**
@@ -920,5 +988,5 @@ private fun Draft.runsOf(blockId: Long, itemId: Long?): List<Run> = when (val bl
     is EditorBlock.Paragraph -> block.runs
     is EditorBlock.Quote -> block.runs
     is EditorBlock.BulletList -> block.items.firstOrNull { it.id == itemId }?.runs.orEmpty()
-    is EditorBlock.Subhead, null -> emptyList()
+    is EditorBlock.Subhead, is EditorBlock.Image, null -> emptyList()
 }

@@ -17,10 +17,13 @@ import info.unterrainer.presserl.api.FieldError;
  *   {"type": "paragraph", "content": [runs]},
  *   {"type": "subhead", "text": "..."},
  *   {"type": "quote", "content": [runs]},
- *   {"type": "list", "items": [[runs], ...]}]}
+ *   {"type": "list", "items": [[runs], ...]},
+ *   {"type": "image", "mediaId": 17, "caption": "..."}]}
  * run = {"text": "...", "bold": true|false}   (bold optional, text non-empty, \n allowed)
+ * image: mediaId positive integer, caption optional (at most 300 characters, no control character)
  * </pre>
- * Text is never interpreted as markup; escaping is the reader's job.
+ * Text is never interpreted as markup; escaping is the reader's job. Whether an image block's media
+ * exists is checked by {@link ArticleService}.
  */
 public final class ArticleBodyValidator {
 
@@ -30,7 +33,8 @@ public final class ArticleBodyValidator {
             "paragraph", Set.of("type", "content"),
             "subhead", Set.of("type", "text"),
             "quote", Set.of("type", "content"),
-            "list", Set.of("type", "items"));
+            "list", Set.of("type", "items"),
+            "image", Set.of("type", "mediaId", "caption"));
 
     private final List<FieldError> errors = new ArrayList<>();
     private int textLength;
@@ -97,7 +101,27 @@ public final class ArticleBodyValidator {
             case "paragraph", "quote" -> runs(required(block, "content", path), path + ".content");
             case "subhead" -> subheadText(required(block, "text", path), path + ".text");
             case "list" -> items(required(block, "items", path), path + ".items");
+            case "image" -> image(block, path);
             default -> throw new IllegalStateException(type.asText());
+        }
+    }
+
+    private void image(JsonNode block, String path) {
+        JsonNode mediaId = required(block, "mediaId", path);
+        if (mediaId != null && (!mediaId.isIntegralNumber() || !mediaId.canConvertToLong() || mediaId.asLong() <= 0)) {
+            error(path + ".mediaId", "must be a positive integer");
+        }
+        JsonNode caption = block.get("caption");
+        if (caption == null) {
+            return;
+        }
+        if (!caption.isTextual()) {
+            error(path + ".caption", "must be a string");
+            return;
+        }
+        text(caption.asText(), path + ".caption", false);
+        if (TextRules.length(caption.asText()) > ArticleLimits.CAPTION_MAX) {
+            error(path + ".caption", "must be at most " + ArticleLimits.CAPTION_MAX + " characters");
         }
     }
 

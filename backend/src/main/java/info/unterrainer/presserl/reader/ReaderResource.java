@@ -3,6 +3,7 @@ package info.unterrainer.presserl.reader;
 import java.net.URI;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 
@@ -88,8 +89,11 @@ public class ReaderResource {
     @TemplateData
     public record PrintStory(ReaderArticle article, List<Block> blocks) {
 
-        static PrintStory of(ReaderArticle article) {
-            return new PrintStory(article, BodyRenderer.blocks(article.body()));
+        /**
+         * @param images the body images from {@link ReaderArticles#bodyImages}
+         */
+        static PrintStory of(ReaderArticle article, Map<Long, ReaderImage> images) {
+            return new PrintStory(article, BodyRenderer.blocks(article.body(), images));
         }
     }
 
@@ -148,8 +152,9 @@ public class ReaderResource {
             @Context UriInfo uri, @CookieParam(TextSizeResource.COOKIE) String textSize) {
         return guarded("/articles/" + LoginTarget.segment(id), headers, uri, textSize,
                 visit -> publishedArticle(id).flatMap(article -> withSections(visit).flatMap(page -> article
-                        .map(a -> render(Templates.article(page, a, BodyRenderer.blocks(a.body())), visit.locale(),
-                                Status.OK, visit.noStore()))
+                        .map(a -> articles.bodyImages(List.of(a.body())).flatMap(images -> render(
+                                Templates.article(page, a, BodyRenderer.blocks(a.body(), images)), visit.locale(),
+                                Status.OK, visit.noStore())))
                         .orElseGet(() -> notFound(visit, page)))));
     }
 
@@ -195,8 +200,9 @@ public class ReaderResource {
         return guarded("/print/article/" + LoginTarget.segment(id), headers, uri, textSize,
                 visit -> publishedArticle(id).flatMap(article -> article.isEmpty()
                         ? withSections(visit).flatMap(page -> notFound(visit, page))
-                        : render(Templates.printArticle(visit.page(), PrintStory.of(article.get())), visit.locale(),
-                                Status.OK, visit.noStore())));
+                        : articles.bodyImages(List.of(article.get().body())).flatMap(images -> render(
+                                Templates.printArticle(visit.page(), PrintStory.of(article.get(), images)),
+                                visit.locale(), Status.OK, visit.noStore()))));
     }
 
     /**
@@ -210,15 +216,18 @@ public class ReaderResource {
         return guarded("/print/issue/" + LoginTarget.segment(id), headers, uri, textSize,
                 visit -> publishedIssue(id).flatMap(issue -> issue.isEmpty()
                         ? withSections(visit).flatMap(page -> notFound(visit, page))
-                        : issues.articles(issue.get().id()).flatMap(list -> {
-                            List<PrintStory> stories = list.stream().map(PrintStory::of).toList();
-                            return render(Templates.printIssue(
-                                    visit.page().withIssueLine(new ReaderPage.IssueLine(issue.get(), false, false)),
-                                    issue.get(),
-                                    stories.isEmpty() ? null : stories.get(0),
-                                    stories.isEmpty() ? List.of() : stories.subList(1, stories.size())),
-                                    visit.locale(), Status.OK, visit.noStore());
-                        })));
+                        : issues.articles(issue.get().id()).flatMap(list -> articles
+                                .bodyImages(list.stream().map(ReaderArticle::body).toList()).flatMap(images -> {
+                                    List<PrintStory> stories = list.stream().map(a -> PrintStory.of(a, images))
+                                            .toList();
+                                    return render(Templates.printIssue(
+                                            visit.page().withIssueLine(new ReaderPage.IssueLine(issue.get(), false,
+                                                    false)),
+                                            issue.get(),
+                                            stories.isEmpty() ? null : stories.get(0),
+                                            stories.isEmpty() ? List.of() : stories.subList(1, stories.size())),
+                                            visit.locale(), Status.OK, visit.noStore());
+                                }))));
     }
 
     /**

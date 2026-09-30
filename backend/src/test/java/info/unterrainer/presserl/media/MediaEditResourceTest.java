@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.keycloak.admin.client.Keycloak;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import info.unterrainer.presserl.TestSupport;
@@ -124,6 +125,20 @@ class MediaEditResourceTest {
     private static long article(String token, long section, String headline, long mediaId) {
         ObjectNode content = MAPPER.createObjectNode().put("headline", headline).put("sectionId", section);
         content.putObject("leadImage").put("mediaId", mediaId);
+        return as(token).contentType(ContentType.JSON).body(content.toString()).post("/api/articles").then()
+                .statusCode(201).extract().jsonPath().getLong("id");
+    }
+
+    /**
+     * An article without lead image whose body holds one image block per entry of {@code mediaIds}.
+     */
+    private static long articleWithBodyImages(String token, long section, String headline, long... mediaIds) {
+        ObjectNode content = MAPPER.createObjectNode().put("headline", headline).put("sectionId", section);
+        ArrayNode blocks = content.putObject("body").put("version", 1).putArray("blocks");
+        blocks.addObject().put("type", "paragraph").putArray("content").addObject().put("text", "Text");
+        for (long mediaId : mediaIds) {
+            blocks.addObject().put("type", "image").put("mediaId", mediaId).put("caption", "Caption");
+        }
         return as(token).contentType(ContentType.JSON).body(content.toString()).post("/api/articles").then()
                 .statusCode(201).extract().jsonPath().getLong("id");
     }
@@ -243,6 +258,15 @@ class MediaEditResourceTest {
     }
 
     @Test
+    void bodyUseIsCounted() {
+        long media = upload(publisher);
+        articleWithBodyImages(publisher, pets, "Twice in the body", media, media);
+        article(publisher, pets, "As lead image", media);
+
+        as(publisher).get("/api/media").then().statusCode(200).body("items[0].usageCount", equalTo(2));
+    }
+
+    @Test
     void listRefusesBadParameters() {
         as(publisher).get("/api/media?limit=500").then().statusCode(400).body("errors.field", contains("limit"));
         as(publisher).get("/api/media?limit=0").then().statusCode(400).body("errors.field", contains("limit"));
@@ -312,6 +336,19 @@ class MediaEditResourceTest {
     }
 
     @Test
+    void imageUsedInABody() {
+        long media = upload(anna);
+        long draft = articleWithBodyImages(anna, pets, "Minka in the text", media);
+
+        as(anna).get("/api/media/%d/usage".formatted(media)).then().statusCode(200)
+                .body("mayEdit", equalTo(true))
+                .body("articles.id", contains((int) draft))
+                .body("articles[0].latest", equalTo(true))
+                .body("articles[0].live", equalTo(false))
+                .body("articles[0].older", equalTo(false));
+    }
+
+    @Test
     void unusedAndUnknownMedia() {
         long media = upload(anna);
 
@@ -355,6 +392,29 @@ class MediaEditResourceTest {
         as(anna).get("/api/media/%d/usage".formatted(media)).then()
                 .body("mayEdit", equalTo(false))
                 .body("articles[0].pendingLevel", notNullValue());
+    }
+
+    @Test
+    void reporterCannotEditTheirLiveBodyImage() {
+        long media = upload(anna);
+        makeLive(articleWithBodyImages(anna, pets, "Minka", media));
+        List<String> before = keys(media);
+
+        edit(anna, media, pixelate(0)).statusCode(403);
+
+        assertThat(keys(media)).isEqualTo(before);
+        as(anna).get("/api/media/" + media).then().body("version", equalTo(0));
+        as(anna).get("/api/media/%d/usage".formatted(media)).then().body("mayEdit", equalTo(false));
+    }
+
+    @Test
+    void reporterCannotEditABodyImageUnderReview() {
+        long media = upload(anna);
+        long id = articleWithBodyImages(anna, pets, "Minka", media);
+        as(anna).post("/api/articles/%d/submit".formatted(id)).then().statusCode(200);
+
+        edit(anna, media, pixelate(0)).statusCode(403);
+        as(anna).get("/api/media/%d/usage".formatted(media)).then().body("mayEdit", equalTo(false));
     }
 
     @Test

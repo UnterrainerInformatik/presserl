@@ -12,7 +12,11 @@ import info.unterrainer.presserl.admin.ui.editor.HelpPart
 import info.unterrainer.presserl.admin.ui.editor.IdSource
 import info.unterrainer.presserl.admin.ui.editor.SaveState
 import info.unterrainer.presserl.admin.ui.editor.draftOf
+import info.unterrainer.presserl.admin.ui.editor.explanation
 import info.unterrainer.presserl.admin.ui.editor.helpPart
+import info.unterrainer.presserl.admin.ui.editor.label
+import info.unterrainer.presserl.admin.ui.editor.sample
+import info.unterrainer.presserl.admin.ui.editor.showsImageRights
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockEngineConfig
@@ -40,6 +44,30 @@ class FieldHelpTest {
 
         assertEquals(all.size, all.toSet().size, "two editor parts share a help part: $all")
         assertEquals(HelpPart.entries.toSet(), all.toSet())
+    }
+
+    @Test
+    fun partsFollowTheReaderOrderWithTheImageBlockLast() {
+        assertEquals(
+            listOf(HelpPart.SECTION, HelpPart.KICKER, HelpPart.HEADLINE, HelpPart.SUBHEADLINE, HelpPart.LEAD_IMAGE,
+                HelpPart.CAPTION, HelpPart.LEAD, HelpPart.PARAGRAPH, HelpPart.SUBHEAD, HelpPart.QUOTE, HelpPart.LIST,
+                HelpPart.IMAGE),
+            HelpPart.entries,
+        )
+        assertEquals(HelpPart.IMAGE, BlockType.IMAGE.helpPart)
+    }
+
+    @Test
+    fun theSampleShowsEveryPartOnce() {
+        // One sample article for all explanations: every part has its own text in it
+        assertEquals(HelpPart.entries.size, HelpPart.entries.map { it.sample }.toSet().size)
+        assertEquals(HelpPart.entries.size, HelpPart.entries.map { it.explanation }.toSet().size)
+        assertEquals(HelpPart.entries.size, HelpPart.entries.map { it.label }.toSet().size)
+    }
+
+    @Test
+    fun imageRightsOnBothPhotoParts() {
+        assertEquals(listOf(HelpPart.LEAD_IMAGE, HelpPart.IMAGE), HelpPart.entries.filter { it.showsImageRights })
     }
 
     @Test

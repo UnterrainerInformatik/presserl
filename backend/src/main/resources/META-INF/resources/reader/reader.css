@@ -11,7 +11,8 @@
  *            not-found">
  *   classes  .masthead .masthead__name .masthead__subtitle .masthead__issue .section-bar .section-tag
  *            .text-size-switch .lead-article .article-card .kicker .headline .subheadline .lead
- *            .byline .article .article__body .lead-image .lead-image__caption .note .print-link
+ *            .byline .article .article__body .article__figure .article__caption .lead-image
+ *            .lead-image__caption .note .print-link
  *            .print-toolbar .print-columns .print-section-header
  * Within [data-view="print-issue"], --presserl-grid-columns is the number of columns after the first
  * page (default 2).
@@ -582,6 +583,19 @@ button:focus-visible {
   margin: 0;
 }
 
+/* Body images: full column width, never wider than the rendition; caption like the lead image's */
+.article__figure {
+  margin: 1.5rem 0;
+  break-inside: avoid;
+}
+
+.article__figure img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  background: var(--presserl-color-rule);
+}
+
 /* ---------------------------------------------------------------------------------------------
  * Lead images: as wide as their column, never wider than the rendition; caption below the image
  * ------------------------------------------------------------------------------------------- */
@@ -603,7 +617,8 @@ button:focus-visible {
   background: var(--presserl-color-rule);
 }
 
-.lead-image__caption {
+.lead-image__caption,
+.article__caption {
   margin-top: 0.4rem;
   font-size: 0.85rem;
   line-height: 1.4;
@@ -789,7 +804,8 @@ button:focus-visible {
   font-size: 1.35rem;
 }
 
-.print-columns .lead-image {
+.print-columns .lead-image,
+.print-columns .article__figure {
   margin: 0.5rem 0;
 }
 
@@ -867,6 +883,7 @@ button:focus-visible {
 
   figure,
   .lead-image,
+  .article__figure,
   .print-headline-block {
     break-inside: avoid;
   }
@@ -883,8 +900,10 @@ button:focus-visible {
     widows: 3;
   }
 
-  .lead-image img {
+  .lead-image img,
+  .article__figure img {
     width: auto;
+    max-width: 100%;
     max-height: 110mm;
   }
 }

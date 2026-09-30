@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import info.unterrainer.presserl.api.FieldError;
 import info.unterrainer.presserl.article.ArticleEntity;
 import info.unterrainer.presserl.article.ArticleRevisionEntity;
+import info.unterrainer.presserl.article.ArticleRevisionMediaEntity;
 import info.unterrainer.presserl.article.AuthorDto;
 import info.unterrainer.presserl.article.SectionRefDto;
 import info.unterrainer.presserl.section.Newsroom;
@@ -195,7 +196,7 @@ public class MediaService {
         Long beforeId = before;
         return Panache.withSession(() -> Panache.getSession().flatMap(session -> {
             Mutiny.SelectionQuery<Object[]> query = session.createSelectionQuery("select m, (select count(distinct "
-                    + "r.articleId) from ArticleRevisionEntity r where r.leadImageMediaId = m.id) from MediaEntity m"
+                    + "u.articleId) from ArticleRevisionMediaEntity u where u.mediaId = m.id) from MediaEntity m"
                     + (beforeId != null ? " where m.id < :before" : "") + " order by m.id desc", Object[].class);
             if (beforeId != null) {
                 query.setParameter("before", beforeId);
@@ -225,8 +226,8 @@ public class MediaService {
     }
 
     /**
-     * The articles using the media as lead image in any revision, most recently changed first, and
-     * whether the caller may edit the media.
+     * The articles using the media (as lead image or in the body) in any revision, most recently
+     * changed first, and whether the caller may edit the media.
      */
     public Uni<MediaUsageDto> usage(Newsroom newsroom, long id) {
         requireWriter(newsroom);
@@ -243,7 +244,7 @@ public class MediaService {
 
     private static Uni<List<MediaUsageDto.ArticleUseDto>> uses(long id) {
         return Panache.getSession().flatMap(session -> session.createSelectionQuery(
-                "select r.articleId, r.number from ArticleRevisionEntity r where r.leadImageMediaId = :id",
+                "select u.articleId, u.number from ArticleRevisionMediaEntity u where u.mediaId = :id",
                 Object[].class)
                 .setParameter("id", id)
                 .getResultList()
@@ -278,13 +279,13 @@ public class MediaService {
 
     /**
      * Whether an article's live revision, or the latest revision of an article waiting for approval,
-     * uses the media as lead image; such a use keeps the uploader from editing it.
+     * uses the media as lead image or in its body; such a use keeps the uploader from editing it.
      */
     private static Uni<Boolean> blockingUse(long id) {
         return Panache.getSession().flatMap(session -> session.createSelectionQuery(
-                "select count(r) from ArticleEntity a, ArticleRevisionEntity r where r.articleId = a.id "
-                        + "and r.leadImageMediaId = :id and (r.number = a.liveRevision or (a.pendingLevel is "
-                        + "not null and r.number = (select max(r2.number) from ArticleRevisionEntity r2 "
+                "select count(u) from ArticleEntity a, ArticleRevisionMediaEntity u where u.articleId = a.id "
+                        + "and u.mediaId = :id and (u.number = a.liveRevision or (a.pendingLevel is "
+                        + "not null and u.number = (select max(r2.number) from ArticleRevisionEntity r2 "
                         + "where r2.articleId = a.id)))",
                 Long.class)
                 .setParameter("id", id)

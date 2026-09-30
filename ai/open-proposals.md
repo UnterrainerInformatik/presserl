@@ -38,3 +38,16 @@ are refused with a reload offer, as for images.
 docker-build-workflow) still checks out with `actions/checkout@v4` and pre-fetches v4/v3 actions,
 which GitHub forces onto Node 24 with a deprecation annotation. Raise to the current majors
 (checkout v7 at the time of ci-build-speed). Lives outside this repo; affects all callers.
+
+## Analytics package: article counts and list sorting
+- Section list: every section shows its number of articles — currently (live/published now), ever
+  (all articles that were ever in it) and per issue.
+- Article list: sorting "newest first" and "by section".
+Needs count fields (or a stats endpoint) for sections, a sort parameter for `GET /api/articles`,
+the admin list UI, primer and `.http` updates.
+
+## Publishers may edit other authors' articles (newspaper switch)
+A higher-ranking editor (publisher) may edit articles of other authors after all. Controlled by a
+switch on the "Newspaper" settings page; default: editable. Touches `ArticlePolicy` (EDIT verdict),
+the newspaper settings (new setting with default `true`), the settings screen, primer and tests;
+clarify how it interacts with pending submissions and the emergency-brake lock.
