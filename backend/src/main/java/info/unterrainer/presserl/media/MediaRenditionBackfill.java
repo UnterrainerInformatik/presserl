@@ -92,7 +92,7 @@ public class MediaRenditionBackfill {
     private void backfill(long id) throws Throwable {
         MediaView view = await(() -> Panache.withSession(() -> MediaEntity.<MediaEntity>findById(id)
                 .flatMap(media -> MediaRenditionEntity.<MediaRenditionEntity>list("mediaId", id)
-                        .map(renditions -> new MediaView(media, renditions)))));
+                        .map(renditions -> new MediaView(media, renditions, List.of())))));
         Set<String> present = view.renditions().stream().map(r -> r.kind).collect(Collectors.toSet());
         byte[] stored = store.get(view.media().objectKey);
         List<MediaProcessor.Rendition> missing = service.underProcessingLimit(

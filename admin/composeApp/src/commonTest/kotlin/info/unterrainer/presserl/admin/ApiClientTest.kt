@@ -12,7 +12,10 @@ import info.unterrainer.presserl.admin.api.EllipseRequest
 import info.unterrainer.presserl.admin.api.EditRolesRequest
 import info.unterrainer.presserl.admin.api.LeadImageDto
 import info.unterrainer.presserl.admin.api.LeadImageRequest
+import info.unterrainer.presserl.admin.api.MediaDetailsRequest
 import info.unterrainer.presserl.admin.api.MediaDto
+import info.unterrainer.presserl.admin.api.MediaFilter
+import info.unterrainer.presserl.admin.api.MediaTagDto
 import info.unterrainer.presserl.admin.api.RenditionDto
 import info.unterrainer.presserl.admin.api.SectionRequest
 import info.unterrainer.presserl.admin.api.SectionRoleDto
@@ -655,6 +658,88 @@ class ApiClientTest {
         assertEquals(2, result.items.single().usageCount)
         mediaApi(sent, body = """{ "items": [], "next": null }""".encodeToByteArray()).listMedia()
         assertEquals("https://news.example.org/api/media", sent.last().url)
+    }
+
+    @Test
+    fun uploadMediaSendsDescriptionAndOneTagPartPerTag() = runTest {
+        val sent = mutableListOf<Sent>()
+
+        mediaApi(sent, HttpStatusCode.Created).uploadMedia(byteArrayOf(1), "photo.jpg", "Foto: Anna", listOf("Sportfest", "Schule"))
+
+        val text = sent.single().body.decodeToString()
+        assertEquals(4, Regex("Content-Disposition").findAll(text).count(), text)
+        assertTrue(Regex("name=\"?description\"?\r\n(.*\r\n)*\r\nFoto: Anna\r\n").containsMatchIn(text), text)
+        val tags = Regex("name=\"?tag\"?\r\n(?:.*\r\n)*?\r\n(.*)\r\n").findAll(text).map { it.groupValues[1] }.toList()
+        assertEquals(listOf("Sportfest", "Schule"), tags)
+    }
+
+    @Test
+    fun uploadMediaLeavesOutABlankDescription() = runTest {
+        val sent = mutableListOf<Sent>()
+
+        mediaApi(sent, HttpStatusCode.Created).uploadMedia(byteArrayOf(1), "photo.jpg", "  ")
+
+        assertEquals(1, Regex("Content-Disposition").findAll(sent.single().body.decodeToString()).count())
+    }
+
+    @Test
+    fun mediaReadsDescriptionAndTags() = runTest {
+        val withDetails = MEDIA.trimEnd().removeSuffix("}") + """, "description": "Foto: Anna", "tags": ["Einsatz", "Feuerwehr"] }"""
+
+        val media = mediaApi(mutableListOf(), body = withDetails.encodeToByteArray()).media(17)
+
+        assertEquals("Foto: Anna", media.description)
+        assertEquals(listOf("Einsatz", "Feuerwehr"), media.tags)
+        assertNull(mediaApi(mutableListOf()).media(17).description)
+        assertEquals(emptyList(), mediaApi(mutableListOf()).media(17).tags)
+    }
+
+    @Test
+    fun listMediaSendsTheFilters() = runTest {
+        val sent = mutableListOf<Sent>()
+        val empty = """{ "items": [], "next": null }""".encodeToByteArray()
+
+        mediaApi(sent, body = empty).listMedia(
+            60, 123, MediaFilter(listOf("Feuerwehr", "Freiwillige Feuerwehr"), " dorfplatz anna ", unused = true, mine = true),
+        )
+        mediaApi(sent, body = empty).listMedia(filter = MediaFilter(q = "  "))
+
+        assertEquals(
+            "https://news.example.org/api/media?limit=60&before=123&tag=Feuerwehr&tag=Freiwillige+Feuerwehr&q=dorfplatz+anna" +
+                "&unused=true&mine=true",
+            sent.first().url,
+        )
+        assertEquals("https://news.example.org/api/media", sent.last().url)
+    }
+
+    @Test
+    fun setMediaDetailsSendsBothFields() = runTest {
+        val sent = mutableListOf<Sent>()
+
+        mediaApi(sent).setMediaDetails(17, MediaDetailsRequest(null, listOf("feuerwehr")))
+
+        val request = sent.single()
+        assertEquals(HttpMethod.Put, request.method)
+        assertEquals("https://news.example.org/api/media/17/details", request.url)
+        assertEquals("Bearer token-123", request.authorization)
+        assertEquals(
+            Json.parseToJsonElement("""{ "description": null, "tags": ["feuerwehr"] }"""),
+            Json.parseToJsonElement(request.body.decodeToString()),
+        )
+    }
+
+    @Test
+    fun mediaTagsSendsPrefixAndLimit() = runTest {
+        val sent = mutableListOf<Sent>()
+        val tags = """{ "items": [{ "name": "Feuerwehr", "count": 12 }, { "name": "Freiwillige Feuerwehr", "count": 3 }] }"""
+
+        val result = mediaApi(sent, body = tags.encodeToByteArray()).mediaTags(" feu ", 20)
+        mediaApi(sent, body = tags.encodeToByteArray()).mediaTags()
+
+        assertEquals(listOf(MediaTagDto("Feuerwehr", 12), MediaTagDto("Freiwillige Feuerwehr", 3)), result)
+        assertEquals("https://news.example.org/api/media/tags?prefix=feu&limit=20", sent.first().url)
+        assertEquals("Bearer token-123", sent.first().authorization)
+        assertEquals("https://news.example.org/api/media/tags", sent.last().url)
     }
 
     @Test

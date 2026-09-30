@@ -3,6 +3,7 @@ package info.unterrainer.presserl.admin
 import androidx.compose.ui.graphics.ImageBitmap
 import info.unterrainer.presserl.admin.api.AuthorDto
 import info.unterrainer.presserl.admin.api.MediaDto
+import info.unterrainer.presserl.admin.api.MediaFilter
 import info.unterrainer.presserl.admin.api.MediaListItemDto
 import info.unterrainer.presserl.admin.api.MediaPage
 import info.unterrainer.presserl.admin.api.MediaUsageDto
@@ -16,6 +17,7 @@ import info.unterrainer.presserl.admin.ui.media.editImpact
 import info.unterrainer.presserl.admin.ui.media.formatBytes
 import info.unterrainer.presserl.admin.ui.media.mayEdit
 import info.unterrainer.presserl.admin.ui.media.usagePlaces
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -35,7 +37,7 @@ class MediaBrowserModelTest {
     @Test
     fun gridLoadsTheNextPageAtTheEnd() = runTest {
         val requested = mutableListOf<Long?>()
-        val grid = MediaGridModel { before ->
+        val grid = MediaGridModel { _, before ->
             requested += before
             if (before == null) MediaPage((75L downTo 16L).map { item(it) }, next = 16) else MediaPage((15L downTo 1L).map { item(it) }, null)
         }
@@ -57,7 +59,7 @@ class MediaBrowserModelTest {
     @Test
     fun gridKeepsItsPagesWhenAPageFails() = runTest {
         var fail = false
-        val grid = MediaGridModel { before -> if (fail) error("offline") else MediaPage(listOf(item(3), item(2)), next = 2) }
+        val grid = MediaGridModel { _, _ -> if (fail) error("offline") else MediaPage(listOf(item(3), item(2)), next = 2) }
         grid.loadMore()
         fail = true
 
@@ -70,7 +72,7 @@ class MediaBrowserModelTest {
 
     @Test
     fun gridShowsAnEditedMediaInPlace() = runTest {
-        val grid = MediaGridModel { MediaPage(listOf(item(3, usageCount = 2), item(2)), null) }
+        val grid = MediaGridModel { _, _ -> MediaPage(listOf(item(3, usageCount = 2), item(2)), null) }
         grid.loadMore()
 
         grid.replace(MediaDto(3, "image/jpeg", 1200, 800, 900, AuthorDto("anna", "Anna"), "t", version = 1))
@@ -79,6 +81,87 @@ class MediaBrowserModelTest {
         assertEquals(1200, grid.items[0].width)
         assertEquals(2, grid.items[0].usageCount)
         assertEquals(0, grid.items[1].version)
+    }
+
+    @Test
+    fun gridShowsSavedDetailsInPlace() = runTest {
+        val grid = MediaGridModel { _, _ -> MediaPage(listOf(item(3, usageCount = 2)), null) }
+        grid.loadMore()
+
+        grid.replace(MediaDto(3, "image/jpeg", 1600, 1067, 1000, AuthorDto("anna", "Anna"), "t", description = "Foto: Anna",
+            tags = listOf("Feuerwehr")))
+
+        assertEquals("Foto: Anna", grid.items[0].description)
+        assertEquals(listOf("Feuerwehr"), grid.items[0].tags)
+        assertEquals(2, grid.items[0].usageCount)
+    }
+
+    @Test
+    fun filterReloadsFromTheFirstPage() = runTest {
+        val requested = mutableListOf<Pair<MediaFilter, Long?>>()
+        val grid = MediaGridModel { filter, before ->
+            requested += filter to before
+            if (filter.tags.isEmpty()) MediaPage(listOf(item(9), item(8)), next = 8) else MediaPage(listOf(item(5)), null)
+        }
+        grid.loadMore()
+        val feuerwehr = MediaFilter(tags = listOf("Feuerwehr"), unused = true)
+
+        grid.setFilter(feuerwehr)
+
+        assertEquals(listOf(5L), grid.items.map { it.id })
+        assertEquals(feuerwehr, grid.filter)
+        assertFalse(grid.hasMore)
+        assertEquals(listOf<Pair<MediaFilter, Long?>>(MediaFilter() to null, feuerwehr to null), requested)
+    }
+
+    @Test
+    fun pagingKeepsTheFilter() = runTest {
+        val requested = mutableListOf<Pair<MediaFilter, Long?>>()
+        val filter = MediaFilter(q = "dorfplatz", mine = true)
+        val grid = MediaGridModel { f, before ->
+            requested += f to before
+            if (before == null) MediaPage(listOf(item(9), item(8)), next = 8) else MediaPage(listOf(item(4)), null)
+        }
+
+        grid.setFilter(filter)
+        grid.loadMore()
+
+        assertEquals(listOf(9L, 8L, 4L), grid.items.map { it.id })
+        assertEquals(listOf<Pair<MediaFilter, Long?>>(filter to null, filter to 8L), requested)
+    }
+
+    @Test
+    fun pageOfAPreviousFilterIsDropped() = runTest {
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val grid = MediaGridModel { filter, _ ->
+            if (filter.tags.isEmpty()) {
+                gate.await()
+                MediaPage(listOf(item(9)), null)
+            } else {
+                MediaPage(listOf(item(5)), null)
+            }
+        }
+        val first = launch { grid.loadMore() }
+        testScheduler.runCurrent()
+
+        grid.setFilter(MediaFilter(tags = listOf("Sport")))
+        gate.complete(Unit)
+        first.join()
+
+        assertEquals(listOf(5L), grid.items.map { it.id })
+        assertFalse(grid.loading)
+    }
+
+    @Test
+    fun uploadedMediaIsPrependedEvenWhenFiltered() = runTest {
+        val grid = MediaGridModel { _, _ -> MediaPage(listOf(item(5), item(4)), null) }
+        grid.setFilter(MediaFilter(tags = listOf("Sport")))
+
+        grid.prepend(item(12))
+        grid.prepend(item(13))
+        grid.prepend(item(12))
+
+        assertEquals(listOf(12L, 13L, 5L, 4L), grid.items.map { it.id })
     }
 
     @Test

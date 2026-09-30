@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import info.unterrainer.presserl.admin.api.MediaDto
+import info.unterrainer.presserl.admin.api.MediaFilter
 import info.unterrainer.presserl.admin.api.MediaListItemDto
 import info.unterrainer.presserl.admin.api.MediaPage
 import info.unterrainer.presserl.admin.api.MediaUsageDto
@@ -15,15 +16,18 @@ import io.ktor.client.plugins.ResponseException
 const val MEDIA_PAGE_SIZE = 60
 
 /**
- * The media grid: pages of `GET /api/media` loaded one after another with [loadMore] (called when the user scrolls
- * to the end). Kept by the caller while detail and edit views are open, so the grid keeps its pages.
+ * The media grid: pages of `GET /api/media` with the active [filter], loaded one after another with [loadMore] (called
+ * when the user scrolls to the end). Kept by the caller while detail and edit views are open, so the grid keeps its
+ * pages and filters.
  */
-class MediaGridModel(private val load: suspend (before: Long?) -> MediaPage) {
+class MediaGridModel(private val load: suspend (filter: MediaFilter, before: Long?) -> MediaPage) {
     var items by mutableStateOf<List<MediaListItemDto>>(emptyList())
         private set
     var loading by mutableStateOf(false)
         private set
     var error by mutableStateOf<String?>(null)
+        private set
+    var filter by mutableStateOf(MediaFilter())
         private set
 
     /** Whether the first page arrived. */
@@ -31,38 +35,61 @@ class MediaGridModel(private val load: suspend (before: Long?) -> MediaPage) {
         private set
     private var next: Long? = null
 
+    /** Counts restarts; a page requested before the last restart is dropped when it arrives. */
+    private var generation = 0
+
     /** Whether another page can be loaded. */
     val hasMore: Boolean get() = !loaded || next != null
 
     /** Loads the next page, or the first one after [reload]; nothing while a page is loading or all are loaded. */
     suspend fun loadMore() {
         if (loading || !hasMore) return
+        val started = generation
         loading = true
         error = null
         try {
-            attempt({ error = it }) { load(next) }?.let { page ->
+            val page = attempt({ if (started == generation) error = it }) { load(filter, next) }
+            if (page != null && started == generation) {
                 items = items + page.items.filter { new -> items.none { it.id == new.id } }
                 next = page.next
                 loaded = true
             }
         } finally {
-            loading = false
+            if (started == generation) loading = false
         }
     }
 
     /** Starts again with the first page. */
-    suspend fun reload() {
-        items = emptyList()
-        next = null
-        loaded = false
+    suspend fun reload() = setFilter(filter)
+
+    /** Applies [filter] and loads its first page; a page still loading for the previous filter is dropped. */
+    suspend fun setFilter(filter: MediaFilter) {
+        showFilter(filter)
         loadMore()
     }
 
-    /** Shows an edited media (new version, size, renditions) in place; its usage count stays. */
+    /** Applies [filter] and forgets the pages; the grid loads the first page when it is shown. */
+    fun showFilter(filter: MediaFilter) {
+        this.filter = filter
+        generation++
+        items = emptyList()
+        next = null
+        loaded = false
+        loading = false
+        error = null
+    }
+
+    /** Shows a freshly uploaded media at the top, whether or not the active filter would list it. */
+    fun prepend(item: MediaListItemDto) {
+        items = listOf(item) + items.filter { it.id != item.id }
+    }
+
+    /** Shows an edited media (new version, size, renditions, description, tags) in place; its usage count stays. */
     fun replace(media: MediaDto) {
         items = items.map {
             if (it.id != media.id) it else it.copy(version = media.version, contentType = media.contentType, width = media.width,
-                height = media.height, size = media.size, renditions = media.renditions)
+                height = media.height, size = media.size, renditions = media.renditions, description = media.description,
+                tags = media.tags)
         }
     }
 }

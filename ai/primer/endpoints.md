@@ -1248,7 +1248,18 @@ All media endpoints require a bearer token (missing/invalid → `401`, empty bod
 `sectionlessReporter` marker); everyone else gets `403`. Refusals carry the error body (`{"errors": [{"field": …, "message": …}]}`) with
 field `file` for problems of the uploaded file and `null` otherwise.
 
-Editing follows its own rule (see `POST /api/media/{id}/edit`).
+Editing follows its own rule (see `POST /api/media/{id}/edit`). Description and tags
+(`PUT /api/media/{id}/details`) may be set by every `USE_MEDIA` user on every media.
+
+Every media has an optional **description** (free text: subject, photographer, credit) and free
+**tags**. Rules (also for the upload parts): description `null` or 1–1000 code points after trimming
+(blank → `null`); at most 20 tags after case-insensitive de-duplication; a tag is normalised first
+(outer whitespace removed, inner runs of whitespace collapsed to one space) and then must be 1–40
+code points, without control characters and without a comma. Tags are compared case-insensitively
+(`Locale.ROOT` lower case): duplicates collapse to the first spelling, and a tag other media already
+carry keeps the newspaper's existing spelling (the most frequent one if several). A tag no media
+carries any more no longer exists. Readers never see description or tags. Setting them changes
+neither `version` nor the `ETag`.
 
 **Body limits:** the HTTP layer accepts request bodies up to 64M for `POST /api/media` only; every
 other path keeps the former 10M limit (`413`, error body with field `null`, message
@@ -1264,13 +1275,16 @@ other path keeps the former 10M limit (`413`, error body with field `null`, mess
   "renditions": {
     "thumbnail": { "width": 480,  "height": 320,  "size": 31877 },
     "web":       { "width": 1600, "height": 1067, "size": 298114 },
-    "print":     { "width": 3000, "height": 2000, "size": 861022 } } }
+    "print":     { "width": 3000, "height": 2000, "size": 861022 } },
+  "description": "Einsatz am Dorfplatz, Foto: Anna",
+  "tags": ["Einsatz", "Feuerwehr"] }
 ```
-`version`: `0` after the upload, incremented by every edit. `contentType`: `image/jpeg` |
+`version`: `0` after the upload, incremented by every edit (not by description or tags). `contentType`: `image/jpeg` |
 `image/png` — the type of the stored (re-encoded) image, not of the upload; the renditions have the same type. `width`, `height`: pixels of the stored image. `size`:
 bytes of the stored image. `uploadedBy`: username and display name at upload time (like article
 bylines). `renditions`: per kind width, height and bytes; always all three once produced, `{}`
-while the backfill has not reached an older media yet.
+while the backfill has not reached an older media yet. `description`: `null` for none. `tags`:
+sorted case-insensitively, `[]` for none.
 
 ## `POST /api/media`
 
@@ -1280,19 +1294,28 @@ Uploads one image.
 - **Body:** `multipart/form-data` with exactly one file part named `file` (the part needs a
   `filename`). The declared part content type and the file name are ignored; the type is detected
   from the bytes: JPEG, PNG and WebP (lossy, lossless, with or without transparency, not animated).
+  Optional text parts (no `filename`): at most one `description` and any number of `tag` (one tag
+  each), checked by the description/tag rules above **before** the image is processed. Other parts
+  are ignored.
+  ```
+  --b  Content-Disposition: form-data; name="file"; filename="IMG_0412.jpg"   (bytes)
+  --b  Content-Disposition: form-data; name="description"                      Einsatz am Dorfplatz
+  --b  Content-Disposition: form-data; name="tag"                              Feuerwehr
+  --b  Content-Disposition: form-data; name="tag"                              Einsatz
+  ```
 - **Response `201`:** header `Location: /api/media/{id}`, body a `MediaDto`.
 - **Errors:**
 
   | Status | When |
   |---|---|
-  | `400` | no `file` part, more than one file, empty file (field `file`); image larger than 50 megapixels or a side longer than 20000 px (checked before decoding); damaged or undecodable image, e.g. truncated (field `file`) |
+  | `400` | no `file` part, more than one file, empty file (field `file`); invalid description or tag, or two `description` parts (fields `description`, `tags` for more than 20, `tags[i]` counting the `tag` parts from 0; nothing stored); image larger than 50 megapixels or a side longer than 20000 px (checked before decoding); damaged or undecodable image, e.g. truncated (field `file`) |
   | `403` | no `USE_MEDIA` (checked before the body) |
   | `413` | file larger than the effective setting `media.max-size` (default `10M`, at most `60M`; field `file`); above 64M Quarkus answers `413` with an empty body |
   | `415` | not JPEG, PNG or still WebP — e.g. GIF, HEIC, SVG, PDF, animated WebP, HTML named `.jpg` (field `file`) |
   | `503` | object store unreachable, also while writing a rendition (field `null`); no media record and no object is left behind |
 
 - **Side effects:** the re-encoded image and its three renditions are written to the object store
-  under random keys, then the media record and its rendition records are stored in one transaction;
+  under random keys, then the media record, its rendition records and its tags are stored in one transaction;
   on any failure the objects already written are deleted (best effort). Nothing is stored for a
   refused upload.
 
@@ -1302,21 +1325,48 @@ The newspaper's media, newest upload first, paged by id.
 
 - **Auth:** `USE_MEDIA`
 - **Query:** `limit` (1–200, default 60), `before` (a media id; only media with a smaller id are
-  listed — pass `next` of the previous page).
+  listed — pass `next` of the previous page, with the same filters). Optional filters, combined with
+  AND (paging applies to the filtered list):
+  - `tag` (repeatable, at most 10): only media carrying every given tag (normalised and compared
+    case-insensitively); an unknown tag yields an empty list.
+  - `q` (at most 200 code points): split at whitespace; every word must occur case-insensitively in
+    the description or in one of the tags (substring). Blank → ignored.
+  - `unused=true`: only media with `usageCount` `0`.
+  - `mine=true`: only media uploaded by the caller (same token `sub`).
+  `unused` and `mine` accept `true` and `false` only (`false` = no filter).
+  Example: `GET /api/media?tag=Feuerwehr&tag=Einsatz&q=dorfplatz&unused=true&mine=true&before=63&limit=60`
 - **Response `200`:**
   ```json
   { "items": [ { "id": 122, "version": 0, "contentType": "image/jpeg", "width": 4096, "height": 2731,
                  "size": 1834211, "uploadedBy": { "username": "anna", "displayName": "Anna" },
                  "uploadedAt": "2026-09-27T14:03:11.402Z", "renditions": { "thumbnail": { … }, … },
-                 "usageCount": 2 } ],
+                 "description": null, "tags": ["Feuerwehr"], "usageCount": 2 } ],
     "next": 63 }
   ```
   Each item is a `MediaDto` plus `usageCount`: the number of distinct articles any of whose
   revisions uses the media as lead image or in an image block of its body (an article using it
   several times counts once). `next`: the `before` value of the following page, `null`
   on the last page.
-- **Errors:** `400` invalid `limit` (field `limit`) or `before` (not a positive integer, field
-  `before`); `403`.
+- **Errors:** `400` naming every invalid parameter: `limit`, `before` (not a positive integer),
+  `tag` (more than 10, or an empty one), `q` (longer than 200), `unused`/`mine` (other than
+  `true`/`false`); `403`.
+- **Side effects:** none.
+
+## `GET /api/media/tags`
+
+The newspaper's tags with their usage, for autocompletion. `/tags` is a literal path segment, not a
+media id.
+
+- **Auth:** `USE_MEDIA`
+- **Query:** `prefix` (optional; trimmed, case-insensitive): only tags whose name, or any word of it,
+  starts with it (`%`, `_` and `\` are literal); `limit` (1–100, default 20).
+- **Response `200`:**
+  ```json
+  { "items": [ { "name": "Feuerwehr", "count": 12 }, { "name": "Freiwillige Feuerwehr", "count": 3 } ] }
+  ```
+  `count`: number of media carrying the tag; `name`: its most frequent spelling. Ordered by `count`
+  descending, then name case-insensitively.
+- **Errors:** `400` invalid `limit` (field `limit`); `403`.
 - **Side effects:** none.
 
 ## `GET /api/media/{id}`
@@ -1325,6 +1375,23 @@ The newspaper's media, newest upload first, paged by id.
 - **Response `200`:** a `MediaDto`.
 - **Errors:** `403`, `404` unknown id (field `null`).
 - **Side effects:** none.
+
+## `PUT /api/media/{id}/details`
+
+Replaces description and tags of a media.
+
+- **Auth:** `USE_MEDIA` — whoever uploaded the media and whatever articles use it.
+- **Body:** both fields required (`tags` may be empty), no others:
+  ```json
+  { "description": "Einsatz am Dorfplatz, Foto: Anna", "tags": ["feuerwehr", "Einsatz"] }
+  ```
+- **Response `200`:** the `MediaDto` with the stored (normalised, adopted spelling, sorted) values;
+  `version` unchanged.
+- **Errors:** `400` naming every violation — missing field, wrong type, unknown field (field = its
+  name), invalid value (`description`, `tags`, `tags[i]`); nothing changes. `403`, `404` unknown id.
+- **Side effects:** the media's description and tags are replaced in one transaction under a row
+  lock; concurrent requests do not merge (the last one wins). Image, renditions, `version` and
+  `ETag` stay as they are.
 
 ## `GET /api/media/{id}/usage`
 

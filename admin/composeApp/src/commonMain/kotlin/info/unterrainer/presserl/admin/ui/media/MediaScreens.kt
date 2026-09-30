@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -28,12 +29,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -59,15 +62,23 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.MediaDto
+import info.unterrainer.presserl.admin.api.MediaFilter
 import info.unterrainer.presserl.admin.api.MediaListItemDto
+import info.unterrainer.presserl.admin.api.MediaTagDto
 import info.unterrainer.presserl.admin.api.MediaUsageDto
 import info.unterrainer.presserl.admin.api.MediaUseDto
+import info.unterrainer.presserl.admin.api.asListItem
 import info.unterrainer.presserl.admin.resources.Res
+import info.unterrainer.presserl.admin.resources.back
+import info.unterrainer.presserl.admin.resources.cancel
 import info.unterrainer.presserl.admin.resources.cancel_edit
 import info.unterrainer.presserl.admin.resources.lead_image_no_preview
 import info.unterrainer.presserl.admin.resources.loading
@@ -78,7 +89,17 @@ import info.unterrainer.presserl.admin.resources.media_confirm_unused
 import info.unterrainer.presserl.admin.resources.media_confirm_usage
 import info.unterrainer.presserl.admin.resources.media_crop_hint
 import info.unterrainer.presserl.admin.resources.media_crop_reset
+import info.unterrainer.presserl.admin.resources.media_description
+import info.unterrainer.presserl.admin.resources.media_description_none
 import info.unterrainer.presserl.admin.resources.media_detail_title
+import info.unterrainer.presserl.admin.resources.media_details_discard_text
+import info.unterrainer.presserl.admin.resources.media_details_edit
+import info.unterrainer.presserl.admin.resources.media_details_forbidden
+import info.unterrainer.presserl.admin.resources.media_details_invalid
+import info.unterrainer.presserl.admin.resources.media_details_invalid_description
+import info.unterrainer.presserl.admin.resources.media_details_invalid_tag
+import info.unterrainer.presserl.admin.resources.media_details_invalid_tags
+import info.unterrainer.presserl.admin.resources.media_details_title
 import info.unterrainer.presserl.admin.resources.media_discard
 import info.unterrainer.presserl.admin.resources.media_discard_text
 import info.unterrainer.presserl.admin.resources.media_discard_title
@@ -91,8 +112,14 @@ import info.unterrainer.presserl.admin.resources.media_error_forbidden
 import info.unterrainer.presserl.admin.resources.media_error_invalid
 import info.unterrainer.presserl.admin.resources.media_error_other
 import info.unterrainer.presserl.admin.resources.media_error_unreachable
+import info.unterrainer.presserl.admin.resources.media_filter_clear
+import info.unterrainer.presserl.admin.resources.media_filter_mine
+import info.unterrainer.presserl.admin.resources.media_filter_tags
+import info.unterrainer.presserl.admin.resources.media_filter_text
+import info.unterrainer.presserl.admin.resources.media_filter_unused
 import info.unterrainer.presserl.admin.resources.media_load_more
 import info.unterrainer.presserl.admin.resources.media_none
+import info.unterrainer.presserl.admin.resources.media_none_matching
 import info.unterrainer.presserl.admin.resources.media_not_used
 import info.unterrainer.presserl.admin.resources.media_pixelate_hint
 import info.unterrainer.presserl.admin.resources.media_place_live
@@ -104,15 +131,30 @@ import info.unterrainer.presserl.admin.resources.media_reload_image
 import info.unterrainer.presserl.admin.resources.media_save
 import info.unterrainer.presserl.admin.resources.media_saving
 import info.unterrainer.presserl.admin.resources.media_size
+import info.unterrainer.presserl.admin.resources.media_tag_show
+import info.unterrainer.presserl.admin.resources.media_tags_none
+import info.unterrainer.presserl.admin.resources.media_take_photo
 import info.unterrainer.presserl.admin.resources.media_tool_crop
 import info.unterrainer.presserl.admin.resources.media_tool_pixelate
 import info.unterrainer.presserl.admin.resources.media_undo
+import info.unterrainer.presserl.admin.resources.media_upload
+import info.unterrainer.presserl.admin.resources.media_upload_close
+import info.unterrainer.presserl.admin.resources.media_upload_description
+import info.unterrainer.presserl.admin.resources.media_upload_discard_text
+import info.unterrainer.presserl.admin.resources.media_upload_discard_title
+import info.unterrainer.presserl.admin.resources.media_upload_done
+import info.unterrainer.presserl.admin.resources.media_upload_retry
+import info.unterrainer.presserl.admin.resources.media_upload_start
+import info.unterrainer.presserl.admin.resources.media_upload_tags
+import info.unterrainer.presserl.admin.resources.media_upload_uploading
+import info.unterrainer.presserl.admin.resources.media_upload_waiting
 import info.unterrainer.presserl.admin.resources.media_uploaded
 import info.unterrainer.presserl.admin.resources.media_usage_none
 import info.unterrainer.presserl.admin.resources.media_usage_title
 import info.unterrainer.presserl.admin.resources.media_used_by
 import info.unterrainer.presserl.admin.resources.media_used_by_one
 import info.unterrainer.presserl.admin.resources.no_headline
+import info.unterrainer.presserl.admin.resources.remove
 import info.unterrainer.presserl.admin.ui.BackButton
 import info.unterrainer.presserl.admin.ui.Banner
 import info.unterrainer.presserl.admin.ui.LoadFailed
@@ -122,6 +164,7 @@ import info.unterrainer.presserl.admin.ui.section.ColorMarker
 import info.unterrainer.presserl.admin.ui.statusText
 import info.unterrainer.presserl.admin.ui.waitingText
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -129,40 +172,203 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-/** The grid of the newspaper's images, newest first; further pages load at the end. */
+/**
+ * The grid of the newspaper's images, newest first, with "Upload images", "Take photo" and the search bar above;
+ * further pages load at the end. [maxUploadSize] is the newspaper's `media.max-size`, named when a file is too large.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun MediaGridScreen(grid: MediaGridModel, thumbnails: Thumbnails, onOpen: (Long) -> Unit) {
+fun MediaGridScreen(
+    api: ApiClient,
+    grid: MediaGridModel,
+    thumbnails: Thumbnails,
+    maxUploadSize: String?,
+    onOpen: (Long) -> Unit,
+) {
     val scope = rememberCoroutineScope()
     val state = rememberLazyGridState()
+    var upload by remember { mutableStateOf<MediaUploadModel?>(null) }
+    val searchTags = remember(grid) { TagChips(grid.filter.tags, MAX_FILTER_TAGS) }
+    var query by remember(grid) { mutableStateOf(grid.filter.q) }
     LaunchedEffect(grid) { if (!grid.loaded) grid.loadMore() }
     LaunchedEffect(grid, state) {
         snapshotFlow { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index to state.layoutInfo.totalItemsCount }
             .distinctUntilChanged()
             .collect { (last, total) -> if (last != null && total > 0 && last >= total - 1 && grid.loaded) grid.loadMore() }
     }
-    val error = grid.error
-    when {
-        !grid.loaded && error != null -> LoadFailed(error) { scope.launch { grid.reload() } }
-        !grid.loaded -> Text(stringResource(Res.string.loading))
-        grid.items.isEmpty() -> Text(stringResource(Res.string.media_none))
-        else -> LazyVerticalGrid(
-            GridCells.Adaptive(170.dp),
-            state = state,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            items(grid.items, key = { it.id }) { media -> MediaTile(media, thumbnails) { onOpen(media.id) } }
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    error?.let { Banner(it) }
-                    when {
-                        grid.loading -> Text(stringResource(Res.string.loading))
-                        grid.hasMore -> OutlinedButton(onClick = { scope.launch { grid.loadMore() } }) {
-                            Text(stringResource(Res.string.media_load_more))
+    // reloads only after a short pause in typing
+    LaunchedEffect(grid, query) {
+        if (query == grid.filter.q) return@LaunchedEffect
+        delay(SEARCH_DEBOUNCE_MILLIS)
+        grid.setFilter(grid.filter.copy(q = query))
+    }
+    val choose = { camera: Boolean ->
+        scope.launch {
+            chooseForUpload({ pickImageFiles(camera) }, api::uploadMedia) { grid.prepend(it.asListItem()) }?.let { upload = it }
+        }
+    }
+    val clearFilters = {
+        searchTags.set(emptyList())
+        query = ""
+        scope.launch { grid.setFilter(MediaFilter()) }
+    }
+    val suggest: suspend (String) -> List<MediaTagDto> = { api.mediaTags(it) }
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { choose(false) }) { Text(stringResource(Res.string.media_upload)) }
+            OutlinedButton(onClick = { choose(true) }) { Text(stringResource(Res.string.media_take_photo)) }
+        }
+        TagInput(
+            searchTags,
+            stringResource(Res.string.media_filter_tags),
+            suggest,
+            onChange = { tags -> scope.launch { grid.setFilter(grid.filter.copy(tags = tags)) } },
+        )
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text(stringResource(Res.string.media_filter_text)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            FilterChip(
+                selected = grid.filter.unused,
+                onClick = { scope.launch { grid.setFilter(grid.filter.copy(unused = !grid.filter.unused)) } },
+                label = { Text(stringResource(Res.string.media_filter_unused)) },
+            )
+            FilterChip(
+                selected = grid.filter.mine,
+                onClick = { scope.launch { grid.setFilter(grid.filter.copy(mine = !grid.filter.mine)) } },
+                label = { Text(stringResource(Res.string.media_filter_mine)) },
+            )
+            if (grid.filter.active || query.isNotBlank()) {
+                TextButton(onClick = { clearFilters() }) { Text(stringResource(Res.string.media_filter_clear)) }
+            }
+        }
+        val error = grid.error
+        when {
+            !grid.loaded && error != null -> LoadFailed(error) { scope.launch { grid.reload() } }
+            !grid.loaded -> Text(stringResource(Res.string.loading))
+            grid.items.isEmpty() && grid.filter.active -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(Res.string.media_none_matching))
+                OutlinedButton(onClick = { clearFilters() }) { Text(stringResource(Res.string.media_filter_clear)) }
+            }
+            grid.items.isEmpty() -> Text(stringResource(Res.string.media_none))
+            else -> LazyVerticalGrid(
+                GridCells.Adaptive(170.dp),
+                state = state,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                items(grid.items, key = { it.id }) { media -> MediaTile(media, thumbnails) { onOpen(media.id) } }
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        error?.let { Banner(it) }
+                        when {
+                            grid.loading -> Text(stringResource(Res.string.loading))
+                            grid.hasMore -> OutlinedButton(onClick = { scope.launch { grid.loadMore() } }) {
+                                Text(stringResource(Res.string.media_load_more))
+                            }
                         }
                     }
                 }
+            }
+        }
+    }
+    upload?.let { model -> UploadDialog(model, maxUploadSize, suggest, onClose = { upload = null }) }
+}
+
+/** Pause after the last keystroke in the search text before the grid reloads. */
+private const val SEARCH_DEBOUNCE_MILLIS = 400L
+
+/**
+ * The chosen files with size and state, the shared tags and description, and "Upload"; closing while files are not
+ * uploaded asks first. The uploads run in the dialog's scope, so discarding stops them.
+ */
+@Composable
+private fun UploadDialog(
+    model: MediaUploadModel,
+    maxUploadSize: String?,
+    suggest: suspend (String) -> List<MediaTagDto>,
+    onClose: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var confirmDiscard by remember { mutableStateOf(false) }
+    val close = { if (model.hasPending) confirmDiscard = true else onClose() }
+    AlertDialog(
+        onDismissRequest = { close() },
+        title = { Text(stringResource(Res.string.media_upload)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                model.entries.forEach { entry -> UploadRow(model, entry, maxUploadSize) { scope.launch { model.retry(entry) } } }
+                TagInput(model.tags, stringResource(Res.string.media_upload_tags), suggest, enabled = !model.started)
+                OutlinedTextField(
+                    value = model.description,
+                    onValueChange = { if (it.length <= MAX_DESCRIPTION_LENGTH) model.description = it },
+                    label = { Text(stringResource(Res.string.media_upload_description)) },
+                    enabled = !model.started,
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            if (model.allDone) {
+                Button(onClick = onClose) { Text(stringResource(Res.string.media_upload_close)) }
+            } else if (!model.started) {
+                Button(onClick = { scope.launch { model.start() } }, enabled = model.entries.isNotEmpty()) {
+                    Text(stringResource(Res.string.media_upload_start))
+                }
+            }
+        },
+        dismissButton = {
+            if (!model.allDone) TextButton(onClick = { close() }) { Text(stringResource(Res.string.cancel)) }
+        },
+    )
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text(stringResource(Res.string.media_upload_discard_title)) },
+            text = {
+                Text(stringResource(Res.string.media_upload_discard_text,
+                    model.entries.count { it.state !is MediaUploadModel.State.Done }))
+            },
+            confirmButton = {
+                Button(onClick = {
+                    confirmDiscard = false
+                    onClose()
+                }) { Text(stringResource(Res.string.media_discard)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text(stringResource(Res.string.back)) } },
+        )
+    }
+}
+
+@Composable
+private fun UploadRow(model: MediaUploadModel, entry: MediaUploadModel.Entry, maxUploadSize: String?, onRetry: () -> Unit) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text(entry.file.name, style = MaterialTheme.typography.bodyMedium)
+                val state = when (val current = entry.state) {
+                    MediaUploadModel.State.Waiting -> stringResource(Res.string.media_upload_waiting)
+                    MediaUploadModel.State.Uploading -> stringResource(Res.string.media_upload_uploading)
+                    is MediaUploadModel.State.Done -> stringResource(Res.string.media_upload_done)
+                    is MediaUploadModel.State.Failed -> uploadErrorText(current.error, maxUploadSize)
+                }
+                Text(
+                    "${formatBytes(entry.file.size)} · $state",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (entry.state is MediaUploadModel.State.Failed) MaterialTheme.colorScheme.error else Color.Unspecified,
+                )
+            }
+            if (entry.state is MediaUploadModel.State.Failed && !model.running) {
+                TextButton(onClick = onRetry) { Text(stringResource(Res.string.media_upload_retry)) }
+            }
+            if (entry.state is MediaUploadModel.State.Failed || (entry.state == MediaUploadModel.State.Waiting && !model.started)) {
+                TextButton(onClick = { model.remove(entry) }) { Text(stringResource(Res.string.remove)) }
             }
         }
     }
@@ -190,10 +396,22 @@ private fun MediaTile(media: MediaListItemDto, thumbnails: Thumbnails, onClick: 
                 Text(media.uploadedBy.displayName, style = MaterialTheme.typography.bodyMedium)
                 Text(formatTimestamp(media.uploadedAt), style = MaterialTheme.typography.bodySmall)
                 Text(usageText(media.usageCount), style = MaterialTheme.typography.bodySmall)
+                if (media.tags.isNotEmpty()) {
+                    Text(
+                        media.tags.take(TILE_TAGS).joinToString(" · ") + if (media.tags.size > TILE_TAGS) " …" else "",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
 }
+
+/** Tags a grid tile shows at most. */
+private const val TILE_TAGS = 3
 
 @Composable
 private fun usageText(count: Long): String = when (count) {
@@ -217,7 +435,12 @@ private suspend fun loadRendition(api: ApiClient, id: Long, kinds: List<String>)
     return null
 }
 
-/** One image: preview, size, uploader and the articles using it; "Edit" when the server allows it. */
+/**
+ * One image: preview, size, uploader, description and tags (editable by every user of the view) and the articles
+ * using it; "Edit" when the server allows it. [onSaved] receives the media after description and tags were saved,
+ * [onTag] a tag the user selected to browse by.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MediaDetailScreen(
     api: ApiClient,
@@ -225,46 +448,129 @@ fun MediaDetailScreen(
     onBack: () -> Unit,
     onEdit: (MediaDto, MediaUsageDto) -> Unit,
     onOpenArticle: (Long) -> Unit,
+    onSaved: (MediaDto) -> Unit = {},
+    onTag: (String) -> Unit = {},
 ) {
-    var media by remember { mutableStateOf<MediaDto?>(null) }
+    val scope = rememberCoroutineScope()
+    var details by remember { mutableStateOf<MediaDetailsModel?>(null) }
     var usage by remember { mutableStateOf<MediaUsageDto?>(null) }
     var preview by remember { mutableStateOf<ImageBitmap?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var loads by remember { mutableStateOf(0) }
+    var confirmLeave by remember { mutableStateOf(false) }
     LaunchedEffect(loads) {
         error = null
         attempt({ error = it }) {
-            media = api.media(mediaId)
+            val loaded = api.media(mediaId)
+            details = MediaDetailsModel(loaded) { api.setMediaDetails(mediaId, it) }
             usage = api.mediaUsage(mediaId)
         }
         preview = loadRendition(api, mediaId, listOf("web"))
     }
+    val leave = { if (details?.dirty == true) confirmLeave = true else onBack() }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            BackButton(onBack)
+            BackButton { leave() }
             Text(stringResource(Res.string.media_detail_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-            val current = media
+            val current = details?.media
             val currentUsage = usage
             if (current != null && mayEdit(currentUsage)) {
                 Button(onClick = { onEdit(current, currentUsage!!) }) { Text(stringResource(Res.string.media_edit)) }
             }
         }
         error?.let { LoadFailed(it) { loads++ } }
-        val current = media ?: run {
+        val model = details ?: run {
             if (error == null) Text(stringResource(Res.string.loading))
             return@Column
         }
+        val current = model.media
         val frame = Modifier.fillMaxWidth().aspectRatio(current.width.toFloat() / current.height)
         preview?.let { Image(it, contentDescription = null, modifier = frame, contentScale = ContentScale.Fit) }
             ?: Box(frame.background(MaterialTheme.colorScheme.surfaceVariant))
         Text(stringResource(Res.string.media_size, current.width, current.height, formatBytes(current.size)))
         Text(stringResource(Res.string.media_uploaded, current.uploadedBy.displayName, formatTimestamp(current.uploadedAt)))
         HorizontalDivider()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(Res.string.media_details_title), style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f))
+            if (!model.editing) TextButton(onClick = { model.edit() }) { Text(stringResource(Res.string.media_details_edit)) }
+        }
+        if (model.editing) {
+            OutlinedTextField(
+                value = model.description,
+                onValueChange = { if (it.length <= MAX_DESCRIPTION_LENGTH) model.description = it },
+                label = { Text(stringResource(Res.string.media_description)) },
+                enabled = !model.saving,
+                minLines = 2,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            TagInput(model.tags, stringResource(Res.string.media_filter_tags), { api.mediaTags(it) }, enabled = !model.saving)
+            model.error?.let { Text(detailsErrorText(it), color = MaterialTheme.colorScheme.error) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(
+                    onClick = { scope.launch { model.save()?.let(onSaved) } },
+                    enabled = !model.saving,
+                ) { Text(stringResource(Res.string.media_save)) }
+                TextButton(onClick = { model.cancel() }, enabled = !model.saving) { Text(stringResource(Res.string.cancel)) }
+                if (model.saving) Text(stringResource(Res.string.media_saving), style = MaterialTheme.typography.bodySmall)
+            }
+        } else {
+            Text(
+                current.description ?: stringResource(Res.string.media_description_none),
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (current.description == null) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified,
+            )
+            if (current.tags.isEmpty()) {
+                Text(stringResource(Res.string.media_tags_none), style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    current.tags.forEach { tag ->
+                        val show = stringResource(Res.string.media_tag_show, tag)
+                        AssistChip(
+                            onClick = { onTag(tag) },
+                            label = { Text(tag) },
+                            modifier = Modifier.semantics { contentDescription = show },
+                        )
+                    }
+                }
+            }
+        }
+        HorizontalDivider()
         Text(stringResource(Res.string.media_usage_title), style = MaterialTheme.typography.titleMedium)
         val articles = usage?.articles.orEmpty()
         if (usage != null && articles.isEmpty()) Text(stringResource(Res.string.media_usage_none))
         articles.forEach { use -> UsageRow(use) { onOpenArticle(use.id) } }
     }
+    if (confirmLeave) {
+        AlertDialog(
+            onDismissRequest = { confirmLeave = false },
+            title = { Text(stringResource(Res.string.media_discard_title)) },
+            text = { Text(stringResource(Res.string.media_details_discard_text)) },
+            confirmButton = {
+                Button(onClick = {
+                    confirmLeave = false
+                    onBack()
+                }) { Text(stringResource(Res.string.media_discard)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmLeave = false }) { Text(stringResource(Res.string.cancel_edit)) } },
+        )
+    }
+}
+
+@Composable
+private fun detailsErrorText(error: MediaDetailsError): String = when (error) {
+    is MediaDetailsError.Invalid -> stringResource(
+        when {
+            error.field == "description" -> Res.string.media_details_invalid_description
+            error.field == "tags" -> Res.string.media_details_invalid_tags
+            error.field?.startsWith("tags[") == true -> Res.string.media_details_invalid_tag
+            else -> Res.string.media_details_invalid
+        },
+    )
+    MediaDetailsError.Forbidden -> stringResource(Res.string.media_details_forbidden)
+    MediaDetailsError.Unreachable -> stringResource(Res.string.media_error_unreachable)
+    is MediaDetailsError.Other -> stringResource(Res.string.media_error_other, error.message)
 }
 
 @Composable

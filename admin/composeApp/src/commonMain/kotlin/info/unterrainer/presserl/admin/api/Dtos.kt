@@ -80,7 +80,8 @@ data class AuthorDto(
  * `POST /api/media` and `GET /api/media/{id}`: an uploaded image as stored after re-encoding. [contentType] is
  * `image/jpeg` or `image/png`, [size] the stored file's bytes; [uploadedAt] is an ISO-8601 string. [renditions] maps
  * `thumbnail`, `web` and `print` to their sizes; empty while the server has not produced them yet. [version] is `0`
- * after the upload and incremented by every edit (`POST /api/media/{id}/edit`).
+ * after the upload and incremented by every edit (`POST /api/media/{id}/edit`). [description] (`null` for none) and
+ * [tags] (sorted case-insensitively) are set with `PUT /api/media/{id}/details` and do not change the version.
  */
 @Serializable
 data class MediaDto(
@@ -93,6 +94,8 @@ data class MediaDto(
     val uploadedAt: String,
     val renditions: Map<String, RenditionDto> = emptyMap(),
     val version: Long = 0,
+    val description: String? = null,
+    val tags: List<String> = emptyList(),
 )
 
 /** Entry of `GET /api/media`: a [MediaDto]'s fields plus [usageCount], the number of articles using the image. */
@@ -108,7 +111,39 @@ data class MediaListItemDto(
     val uploadedAt: String,
     val renditions: Map<String, RenditionDto> = emptyMap(),
     val usageCount: Long = 0,
+    val description: String? = null,
+    val tags: List<String> = emptyList(),
 )
+
+/** A freshly uploaded or updated [media] as a grid entry with [usageCount]. */
+fun MediaDto.asListItem(usageCount: Long = 0): MediaListItemDto =
+    MediaListItemDto(id, version, contentType, width, height, size, uploadedBy, uploadedAt, renditions, usageCount, description, tags)
+
+/**
+ * Filters of `GET /api/media`, combined with AND: every tag in [tags], every word of [q] in description or tags,
+ * only unused media ([unused]) and only the user's own uploads ([mine]).
+ */
+data class MediaFilter(
+    val tags: List<String> = emptyList(),
+    val q: String = "",
+    val unused: Boolean = false,
+    val mine: Boolean = false,
+) {
+    /** Whether any filter is active. */
+    val active: Boolean get() = tags.isNotEmpty() || q.isNotBlank() || unused || mine
+}
+
+/** Body of `PUT /api/media/{id}/details`: both fields are always sent (`null` description for none). */
+@Serializable
+data class MediaDetailsRequest(val description: String?, val tags: List<String>)
+
+/** A tag of `GET /api/media/tags` in its most frequent spelling and how many media carry it. */
+@Serializable
+data class MediaTagDto(val name: String, val count: Long)
+
+/** `GET /api/media/tags`: tags, most used first. */
+@Serializable
+data class MediaTagList(val items: List<MediaTagDto> = emptyList())
 
 /** One page of `GET /api/media`, newest first; [next] is the `before` value of the next page, `null` on the last. */
 @Serializable

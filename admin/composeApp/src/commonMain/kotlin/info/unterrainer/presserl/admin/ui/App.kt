@@ -34,6 +34,7 @@ import info.unterrainer.presserl.admin.api.AccountDto
 import info.unterrainer.presserl.admin.api.ArticleSummaryDto
 import info.unterrainer.presserl.admin.api.CreatedAccountDto
 import info.unterrainer.presserl.admin.api.MediaDto
+import info.unterrainer.presserl.admin.api.MediaFilter
 import info.unterrainer.presserl.admin.api.MediaUsageDto
 import info.unterrainer.presserl.admin.api.MeDto
 import info.unterrainer.presserl.admin.api.NewspaperDto
@@ -195,7 +196,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
     // the order of the article lists, kept while the app is open
     var sort by remember { mutableStateOf(ArticleSort.CHANGED) }
     // kept while detail and edit views are open, so the grid keeps its pages and thumbnails
-    val newMediaGrid = { MediaGridModel { before -> api.listMedia(MEDIA_PAGE_SIZE, before) } }
+    val newMediaGrid = { MediaGridModel { filter, before -> api.listMedia(MEDIA_PAGE_SIZE, before, filter) } }
     var mediaGrid by remember { mutableStateOf(newMediaGrid()) }
     val mediaThumbnails = remember { Thumbnails { api.mediaRendition(it, "thumbnail") } }
     val push = { route: Route -> stack = stack + route }
@@ -326,7 +327,13 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                         mayConfigureSpellCheck = NewspaperAction.CONFIGURE_SPELL_CHECK in screen.me.allowedActions,
                         mayConfigureCorrections = NewspaperAction.CONFIGURE_CORRECTIONS in screen.me.allowedActions,
                     )
-                    Route.Media -> MediaGridScreen(mediaGrid, mediaThumbnails, onOpen = { push(Route.MediaDetail(it)) })
+                    Route.Media -> MediaGridScreen(
+                        api,
+                        mediaGrid,
+                        mediaThumbnails,
+                        maxUploadSize = screen.newspaper.settings[MAX_UPLOAD_SIZE]?.jsonPrimitive?.contentOrNull,
+                        onOpen = { push(Route.MediaDetail(it)) },
+                    )
                     is Route.MediaDetail -> key(route) {
                         MediaDetailScreen(
                             api,
@@ -334,6 +341,11 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                             onBack = back,
                             onEdit = { media, usage -> push(Route.MediaEdit(media, usage)) },
                             onOpenArticle = { push(Route.Editor(it)) },
+                            onSaved = { mediaGrid.replace(it) },
+                            onTag = { tag ->
+                                mediaGrid.showFilter(MediaFilter(tags = listOf(tag)))
+                                stack = listOf(Route.Media)
+                            },
                         )
                     }
                     is Route.MediaEdit -> key(route) {

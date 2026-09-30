@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -48,6 +49,10 @@ public class MediaService {
     private static final Logger LOG = Logger.getLogger(MediaService.class);
     static final int DEFAULT_PAGE_SIZE = 60;
     static final int MAX_PAGE_SIZE = 200;
+    static final int MAX_TAG_FILTERS = 10;
+    static final int MAX_QUERY_LENGTH = 200;
+    static final int DEFAULT_TAG_SUGGESTIONS = 20;
+    static final int MAX_TAG_SUGGESTIONS = 100;
 
     @Inject
     MediaConfig config;
@@ -71,7 +76,10 @@ public class MediaService {
         processing = new Semaphore(Math.max(1, config.maxConcurrentProcessing()), true);
     }
 
-    public Uni<MediaView> upload(Newsroom newsroom, Path file, long size) {
+    /**
+     * Stores the image with its already validated {@code details} (see {@link MediaDetailsValidator#of}).
+     */
+    public Uni<MediaView> upload(Newsroom newsroom, Path file, long size, MediaDetailsValidator.Details details) {
         requireMediaUser(newsroom);
         if (size == 0) {
             throw MediaException.invalid("the file is empty");
@@ -80,7 +88,7 @@ public class MediaService {
             throw MediaException.tooLarge("the file is larger than " + config.maxSize());
         }
         return vertx.executeBlocking(Uni.createFrom().item(() -> store(process(file))))
-                .flatMap(stored -> insert(newsroom, stored)
+                .flatMap(stored -> insert(newsroom, stored, details)
                         .onFailure().call(e -> vertx.executeBlocking(Uni.createFrom().item(() -> {
                             discard(stored.keys(), "the media record failed");
                             return null;
@@ -89,10 +97,32 @@ public class MediaService {
 
     public Uni<MediaView> get(Newsroom newsroom, long id) {
         requireMediaUser(newsroom);
-        return Panache.withSession(() -> MediaEntity.<MediaEntity>findById(id)
-                .onItem().ifNull().failWith(() -> MediaException.notFound("media " + id + " does not exist"))
-                .flatMap(media -> MediaRenditionEntity.<MediaRenditionEntity>list("mediaId", id)
-                        .map(renditions -> new MediaView(media, renditions))));
+        return Panache.withSession(() -> findMedia(id).flatMap(MediaService::view));
+    }
+
+    /**
+     * The media with its renditions and tags, read in the current session.
+     */
+    private static Uni<MediaView> view(MediaEntity media) {
+        return MediaRenditionEntity.<MediaRenditionEntity>list("mediaId", media.id)
+                .flatMap(renditions -> tagsOf(List.of(media.id))
+                        .map(tags -> new MediaView(media, renditions, tags.getOrDefault(media.id, List.of()))));
+    }
+
+    /**
+     * The tags of the media, per media id, sorted by {@link MediaDetailsValidator#TAG_ORDER}; media
+     * without tags are missing from the map.
+     */
+    private static Uni<Map<Long, List<String>>> tagsOf(List<Long> ids) {
+        if (ids.isEmpty()) {
+            return Uni.createFrom().item(Map.of());
+        }
+        return MediaTagEntity.<MediaTagEntity>list("mediaId in ?1", ids).map(rows -> {
+            Map<Long, List<String>> tags = new HashMap<>();
+            rows.forEach(row -> tags.computeIfAbsent(row.mediaId, k -> new ArrayList<>()).add(row.name));
+            tags.values().forEach(names -> names.sort(MediaDetailsValidator.TAG_ORDER));
+            return tags;
+        });
     }
 
     /**
@@ -164,18 +194,25 @@ public class MediaService {
     }
 
     /**
-     * The newspaper's media, newest first, at most {@code limit} with an id below {@code before}
-     * ({@code null} for the first page), each with the number of articles using it.
-     *
-     * @param limitParam  1 to {@value #MAX_PAGE_SIZE}, {@code null} for {@value #DEFAULT_PAGE_SIZE}
-     * @param beforeParam a positive media id or {@code null}
+     * The raw query parameters of {@code GET /api/media}; {@code null} (or empty {@code tags}) for absent ones.
      */
-    public Uni<MediaPageDto> list(Newsroom newsroom, String limitParam, String beforeParam) {
+    public record ListQuery(String limit, String before, List<String> tags, String q, String unused, String mine) {
+    }
+
+    /**
+     * The newspaper's media, newest first, at most {@code limit} with an id below {@code before}
+     * ({@code null} for the first page), each with the number of articles using it; restricted by the
+     * filters {@code tag} (every one carried), {@code q} (every word in the description or a tag),
+     * {@code unused} and {@code mine}.
+     *
+     * @throws MediaException {@code 400} naming every invalid parameter
+     */
+    public Uni<MediaPageDto> list(Newsroom newsroom, ListQuery params) {
         requireMediaUser(newsroom);
         List<FieldError> errors = new ArrayList<>();
         int limit = DEFAULT_PAGE_SIZE;
-        if (limitParam != null) {
-            Long parsed = parsePositive(limitParam);
+        if (params.limit() != null) {
+            Long parsed = parsePositive(params.limit());
             if (parsed == null || parsed > MAX_PAGE_SIZE) {
                 errors.add(new FieldError("limit", "must be an integer from 1 to " + MAX_PAGE_SIZE));
             } else {
@@ -183,24 +220,72 @@ public class MediaService {
             }
         }
         Long before = null;
-        if (beforeParam != null) {
-            before = parsePositive(beforeParam);
+        if (params.before() != null) {
+            before = parsePositive(params.before());
             if (before == null) {
                 errors.add(new FieldError("before", "must be a positive media id"));
             }
         }
+        List<String> tagKeys = new ArrayList<>();
+        List<String> tags = params.tags() == null ? List.of() : params.tags();
+        if (tags.size() > MAX_TAG_FILTERS) {
+            errors.add(new FieldError("tag", "must be given at most " + MAX_TAG_FILTERS + " times"));
+        } else {
+            for (String tag : tags) {
+                String normalized = MediaDetailsValidator.normalizeTag(tag == null ? "" : tag);
+                if (normalized.isEmpty()) {
+                    errors.add(new FieldError("tag", "must not be empty"));
+                    break;
+                }
+                tagKeys.add(MediaDetailsValidator.key(normalized));
+            }
+        }
+        List<String> words = List.of();
+        if (params.q() != null) {
+            if (params.q().codePointCount(0, params.q().length()) > MAX_QUERY_LENGTH) {
+                errors.add(new FieldError("q", "must be at most " + MAX_QUERY_LENGTH + " characters"));
+            } else {
+                String normalized = MediaDetailsValidator.normalizeTag(params.q());
+                words = normalized.isEmpty() ? List.of()
+                        : List.of(MediaDetailsValidator.key(normalized).split(" "));
+            }
+        }
+        boolean unused = flag("unused", params.unused(), errors);
+        boolean mine = flag("mine", params.mine(), errors);
         if (!errors.isEmpty()) {
             throw MediaException.invalid(errors);
         }
+        StringBuilder where = new StringBuilder();
+        Map<String, Object> parameters = new HashMap<>();
+        if (before != null) {
+            where.append(" and m.id < :before");
+            parameters.put("before", before);
+        }
+        for (int i = 0; i < tagKeys.size(); i++) {
+            where.append(" and exists (select 1 from MediaTagEntity t where t.mediaId = m.id and t.nameKey = :tag")
+                    .append(i).append(")");
+            parameters.put("tag" + i, tagKeys.get(i));
+        }
+        for (int i = 0; i < words.size(); i++) {
+            where.append(" and (lower(m.description) like :word").append(i).append(" escape '\\' or exists (select 1 ")
+                    .append("from MediaTagEntity t where t.mediaId = m.id and t.nameKey like :word").append(i)
+                    .append(" escape '\\'))");
+            parameters.put("word" + i, "%" + escapeLike(words.get(i)) + "%");
+        }
+        if (unused) {
+            where.append(" and not exists (select 1 from ArticleRevisionMediaEntity u where u.mediaId = m.id)");
+        }
+        if (mine) {
+            where.append(" and m.uploaderSub = :sub");
+            parameters.put("sub", newsroom.user().sub());
+        }
+        String hql = "select m, (select count(distinct u.articleId) from ArticleRevisionMediaEntity u where "
+                + "u.mediaId = m.id) from MediaEntity m" + (where.isEmpty() ? "" : " where" + where.substring(4))
+                + " order by m.id desc";
         int pageSize = limit;
-        Long beforeId = before;
         return Panache.withSession(() -> Panache.getSession().flatMap(session -> {
-            Mutiny.SelectionQuery<Object[]> query = session.createSelectionQuery("select m, (select count(distinct "
-                    + "u.articleId) from ArticleRevisionMediaEntity u where u.mediaId = m.id) from MediaEntity m"
-                    + (beforeId != null ? " where m.id < :before" : "") + " order by m.id desc", Object[].class);
-            if (beforeId != null) {
-                query.setParameter("before", beforeId);
-            }
+            Mutiny.SelectionQuery<Object[]> query = session.createSelectionQuery(hql, Object[].class);
+            parameters.forEach(query::setParameter);
             return query.setMaxResults(pageSize + 1).getResultList();
         }).flatMap(rows -> {
             List<Object[]> page = rows.subList(0, Math.min(pageSize, rows.size()));
@@ -208,12 +293,136 @@ public class MediaService {
             List<Long> ids = page.stream().map(row -> ((MediaEntity) row[0]).id).toList();
             Uni<List<MediaRenditionEntity>> renditions = ids.isEmpty() ? Uni.createFrom().item(List.of())
                     : MediaRenditionEntity.list("mediaId in ?1", ids);
-            return renditions.map(all -> new MediaPageDto(page.stream().map(row -> {
+            return renditions.flatMap(all -> tagsOf(ids).map(tagsById -> new MediaPageDto(page.stream().map(row -> {
                 MediaEntity media = (MediaEntity) row[0];
                 return MediaListItemDto.of(new MediaView(media,
-                        all.stream().filter(r -> r.mediaId.equals(media.id)).toList()), (Long) row[1]);
-            }).toList(), next));
+                        all.stream().filter(r -> r.mediaId.equals(media.id)).toList(),
+                        tagsById.getOrDefault(media.id, List.of())), (Long) row[1]);
+            }).toList(), next)));
         }));
+    }
+
+    /**
+     * {@code true} or {@code false} ({@code null} = {@code false}); anything else is reported.
+     */
+    private static boolean flag(String name, String value, List<FieldError> errors) {
+        if (value == null || value.equals("false")) {
+            return false;
+        }
+        if (value.equals("true")) {
+            return true;
+        }
+        errors.add(new FieldError(name, "must be true or false"));
+        return false;
+    }
+
+    /**
+     * {@code value} with the {@code like} wildcards and the escape character {@code \} escaped.
+     */
+    static String escapeLike(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
+    /**
+     * The newspaper's tags, each in its most frequent spelling with the number of media carrying it, most
+     * used first, then by name case-insensitively.
+     *
+     * @param prefixParam restricts to tags whose name or one of its words starts with it (case-insensitive,
+     *                    trimmed); {@code null} or blank for all
+     * @param limitParam  1 to {@value #MAX_TAG_SUGGESTIONS}, {@code null} for {@value #DEFAULT_TAG_SUGGESTIONS}
+     */
+    public Uni<MediaTagsDto> tags(Newsroom newsroom, String prefixParam, String limitParam) {
+        requireMediaUser(newsroom);
+        int limit = DEFAULT_TAG_SUGGESTIONS;
+        if (limitParam != null) {
+            Long parsed = parsePositive(limitParam);
+            if (parsed == null || parsed > MAX_TAG_SUGGESTIONS) {
+                throw MediaException.invalid(List.of(new FieldError("limit",
+                        "must be an integer from 1 to " + MAX_TAG_SUGGESTIONS)));
+            }
+            limit = parsed.intValue();
+        }
+        String prefix = prefixParam == null ? ""
+                : MediaDetailsValidator.key(MediaDetailsValidator.normalizeTag(prefixParam));
+        int max = limit;
+        return Panache.withSession(() -> Panache.getSession().flatMap(session -> {
+            Mutiny.SelectionQuery<Object[]> query = session.createSelectionQuery("select t.nameKey, t.name, count(t) "
+                    + "from MediaTagEntity t" + (prefix.isEmpty() ? "" : " where t.nameKey like :start escape '\\' "
+                            + "or t.nameKey like :word escape '\\'")
+                    + " group by t.nameKey, t.name", Object[].class);
+            if (!prefix.isEmpty()) {
+                query.setParameter("start", escapeLike(prefix) + "%");
+                query.setParameter("word", "% " + escapeLike(prefix) + "%");
+            }
+            return query.getResultList();
+        })).map(rows -> {
+            Map<String, List<Object[]>> byKey = new HashMap<>();
+            rows.forEach(row -> byKey.computeIfAbsent((String) row[0], k -> new ArrayList<>()).add(row));
+            return new MediaTagsDto(byKey.entrySet().stream().map(entry -> {
+                long count = entry.getValue().stream().mapToLong(row -> (Long) row[2]).sum();
+                String name = entry.getValue().stream()
+                        .max(Comparator.<Object[]>comparingLong(row -> (Long) row[2])
+                                .thenComparing(row -> (String) row[1], Comparator.reverseOrder()))
+                        .map(row -> (String) row[1]).orElseThrow();
+                return new MediaTagsDto.TagDto(name, count);
+            }).sorted(Comparator.comparingLong(MediaTagsDto.TagDto::count).reversed()
+                    .thenComparing(MediaTagsDto.TagDto::name, MediaDetailsValidator.TAG_ORDER))
+                    .limit(max).toList());
+        });
+    }
+
+    /**
+     * Replaces description and tags of a media ({@code PUT /api/media/{id}/details}); the image and its
+     * version stay unchanged. The row is locked, so concurrent requests do not merge: the last one wins.
+     */
+    public Uni<MediaView> setDetails(Newsroom newsroom, long id, JsonNode json) {
+        requireMediaUser(newsroom);
+        MediaDetailsValidator.Details details = MediaDetailsValidator.parse(json);
+        return Panache.withTransaction(() -> MediaEntity.<MediaEntity>findById(id, LockModeType.PESSIMISTIC_WRITE)
+                .onItem().ifNull().failWith(() -> MediaException.notFound("media " + id + " does not exist"))
+                .flatMap(media -> {
+                    media.description = details.description();
+                    return replaceTags(id, details.tags()).flatMap(tags -> MediaRenditionEntity
+                            .<MediaRenditionEntity>list("mediaId", id)
+                            .map(renditions -> new MediaView(media, renditions, tags)));
+                }));
+    }
+
+    /**
+     * Replaces the tags of a media inside the current transaction. A tag other media carry in another
+     * spelling is stored in that spelling (the most frequent one when there are several).
+     *
+     * @param tags normalised, free of case-insensitive duplicates
+     * @return the stored tags, sorted by {@link MediaDetailsValidator#TAG_ORDER}
+     */
+    private static Uni<List<String>> replaceTags(long mediaId, List<String> tags) {
+        Uni<Long> deleted = MediaTagEntity.delete("mediaId", mediaId);
+        if (tags.isEmpty()) {
+            return deleted.replaceWith(List.of());
+        }
+        List<String> keys = tags.stream().map(MediaDetailsValidator::key).toList();
+        return deleted.flatMap(ignored -> Panache.getSession()).flatMap(session -> session.createSelectionQuery(
+                "select t.nameKey, t.name, count(t) from MediaTagEntity t where t.nameKey in :keys and "
+                        + "t.mediaId <> :id group by t.nameKey, t.name", Object[].class)
+                .setParameter("keys", keys)
+                .setParameter("id", mediaId)
+                .getResultList())
+                .flatMap(existing -> {
+                    Map<String, Object[]> spelling = new HashMap<>();
+                    existing.forEach(row -> spelling.merge((String) row[0], row, (a, b) -> (Long) b[2] > (Long) a[2]
+                            || ((Long) b[2]).equals(a[2]) && ((String) b[1]).compareTo((String) a[1]) < 0 ? b : a));
+                    List<MediaTagEntity> rows = new ArrayList<>();
+                    for (int i = 0; i < tags.size(); i++) {
+                        MediaTagEntity row = new MediaTagEntity();
+                        row.mediaId = mediaId;
+                        row.nameKey = keys.get(i);
+                        Object[] adopted = spelling.get(row.nameKey);
+                        row.name = adopted != null ? (String) adopted[1] : tags.get(i);
+                        rows.add(row);
+                    }
+                    return MediaTagEntity.persist(rows).replaceWith(rows.stream().map(row -> row.name)
+                            .sorted(MediaDetailsValidator.TAG_ORDER).toList());
+                });
     }
 
     private static Long parsePositive(String value) {
@@ -386,7 +595,9 @@ public class MediaService {
                         Uni<Void> persisted = added.isEmpty() ? Uni.createFrom().voidItem()
                                 : MediaRenditionEntity.persist(added);
                         return persisted.flatMap(ignored -> MediaObjectTrashEntity.persist(trash))
-                                .replaceWith(new Replaced(new MediaView(media, rows), List.copyOf(oldKeys)));
+                                .flatMap(ignored -> tagsOf(List.of(id)))
+                                .map(tags -> new Replaced(new MediaView(media, rows, tags.getOrDefault(id, List.of())),
+                                        List.copyOf(oldKeys)));
                     });
                 })));
     }
@@ -500,7 +711,7 @@ public class MediaService {
         return keys;
     }
 
-    private Uni<MediaView> insert(Newsroom newsroom, Stored stored) {
+    private Uni<MediaView> insert(Newsroom newsroom, Stored stored, MediaDetailsValidator.Details details) {
         MediaProcessor.Processed processed = stored.processed();
         MediaEntity media = new MediaEntity();
         media.objectKey = stored.keys().getFirst();
@@ -513,10 +724,13 @@ public class MediaService {
         media.uploaderDisplayName = newsroom.user().displayName();
         // PostgreSQL keeps microseconds
         media.createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
+        media.description = details.description();
         return Panache.withTransaction(() -> media.<MediaEntity>persist().flatMap(persisted -> {
             List<MediaRenditionEntity> rows = renditionRows(persisted.id, processed.renditions(),
                     stored.keys().subList(1, stored.keys().size()));
-            return MediaRenditionEntity.persist(rows).replaceWith(new MediaView(persisted, rows));
+            return MediaRenditionEntity.persist(rows)
+                    .flatMap(ignored -> replaceTags(persisted.id, details.tags()))
+                    .map(tags -> new MediaView(persisted, rows, tags));
         }));
     }
 

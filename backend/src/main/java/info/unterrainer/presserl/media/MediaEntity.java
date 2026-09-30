@@ -54,4 +54,10 @@ public class MediaEntity extends PanacheEntityBase {
 
     @Column(name = "created_at", nullable = false)
     public Instant createdAt;
+
+    /**
+     * Free text (subject, photographer, credit); {@code null} for none. See {@link MediaDetailsValidator}.
+     */
+    @Column(columnDefinition = "text")
+    public String description;
 }

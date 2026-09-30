@@ -474,3 +474,182 @@ Content-Type: application/json
     });
 %}
 
+
+### Upload with a description and two tags
+POST {{baseUrl}}/api/media
+Authorization: Bearer {{accessToken}}
+Content-Type: multipart/form-data; boundary=PresserlBoundary
+
+--PresserlBoundary
+Content-Disposition: form-data; name="description"
+Content-Type: text/plain
+
+Einsatz am Dorfplatz, Foto: Anna
+--PresserlBoundary
+Content-Disposition: form-data; name="tag"
+Content-Type: text/plain
+
+Feuerwehr
+--PresserlBoundary
+Content-Disposition: form-data; name="tag"
+Content-Type: text/plain
+
+Einsatz
+--PresserlBoundary
+Content-Disposition: form-data; name="file"; filename="photo-gps.jpg"
+Content-Type: image/jpeg
+
+< ./media/photo-gps.jpg
+--PresserlBoundary--
+
+> {%
+    client.test("201 with description and sorted tags", () => {
+        client.assert(response.status === 201, "status " + response.status);
+        client.assert(response.body.description === "Einsatz am Dorfplatz, Foto: Anna", "description " + response.body.description);
+        client.assert(JSON.stringify(response.body.tags) === '["Einsatz","Feuerwehr"]', "tags " + JSON.stringify(response.body.tags));
+    });
+    client.global.set("taggedId", response.body.id);
+%}
+
+### Upload with an invalid tag: refused before the image is processed
+POST {{baseUrl}}/api/media
+Authorization: Bearer {{accessToken}}
+Content-Type: multipart/form-data; boundary=PresserlBoundary
+
+--PresserlBoundary
+Content-Disposition: form-data; name="tag"
+Content-Type: text/plain
+
+Feuer, Wasser
+--PresserlBoundary
+Content-Disposition: form-data; name="file"; filename="photo-gps.jpg"
+Content-Type: image/jpeg
+
+< ./media/photo-gps.jpg
+--PresserlBoundary--
+
+> {%
+    client.test("400 for tags[0]", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "tags[0]", "field " + response.body.errors[0].field);
+    });
+%}
+
+### Set description and tags: normalised, the newspaper's spelling is kept, the version stays
+PUT {{baseUrl}}/api/media/{{pngId}}/details
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "description": "  Foto: Anna ", "tags": ["feuerwehr ", "Hochwasser  2026", "FEUERWEHR"] }
+
+> {%
+    client.test("200 with the stored values", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.description === "Foto: Anna", "description " + response.body.description);
+        client.assert(JSON.stringify(response.body.tags) === '["Feuerwehr","Hochwasser 2026"]', "tags " + JSON.stringify(response.body.tags));
+        client.assert(response.body.version === 0, "version " + response.body.version);
+    });
+%}
+
+### Details with an unknown field
+PUT {{baseUrl}}/api/media/{{pngId}}/details
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "description": null, "tags": [], "version": 0 }
+
+> {%
+    client.test("400 naming the field", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "version", "field " + response.body.errors[0].field);
+    });
+%}
+
+### Readers may not set details
+PUT {{baseUrl}}/api/media/{{pngId}}/details
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{ "description": null, "tags": [] }
+
+> {%
+    client.test("403", () => {
+        client.assert(response.status === 403, "status " + response.status);
+    });
+%}
+
+### Tag suggestions while typing "feu"
+GET {{baseUrl}}/api/media/tags?prefix=feu
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("Feuerwehr first, carried by both tagged media", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.items[0].name === "Feuerwehr", "items " + JSON.stringify(response.body.items));
+        client.assert(response.body.items[0].count >= 2, "count " + response.body.items[0].count);
+        client.assert(response.body.items.every(t => t.name.toLowerCase().split(" ").some(w => w.startsWith("feu"))),
+            "items " + JSON.stringify(response.body.items));
+    });
+%}
+
+### Invalid suggestion limit
+GET {{baseUrl}}/api/media/tags?limit=0
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("400 for limit", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "limit", "field " + response.body.errors[0].field);
+    });
+%}
+
+### Media carrying both tags
+GET {{baseUrl}}/api/media?tag=feuerwehr&tag=Einsatz
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("the tagged upload, not the PNG with only Feuerwehr", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const ids = response.body.items.map(i => i.id);
+        client.assert(ids.includes(client.global.get("taggedId")), "ids " + ids);
+        client.assert(!ids.includes(client.global.get("pngId")), "ids " + ids);
+        client.assert(response.body.items.every(i => i.tags.includes("Einsatz") && i.tags.includes("Feuerwehr")), "tags");
+    });
+%}
+
+### Words in the description
+GET {{baseUrl}}/api/media?q=dorfplatz%20anna
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("the upload described with Dorfplatz and Anna", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        const ids = response.body.items.map(i => i.id);
+        client.assert(ids.includes(client.global.get("taggedId")), "ids " + ids);
+        client.assert(!ids.includes(client.global.get("pngId")), "ids " + ids);
+    });
+%}
+
+### Own unused images
+GET {{baseUrl}}/api/media?mine=true&unused=true
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("only the publisher's media no article uses", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.items.length > 0, "items " + response.body.items.length);
+        client.assert(response.body.items.every(i => i.uploadedBy.username === "publisher" && i.usageCount === 0),
+            "items " + JSON.stringify(response.body.items.map(i => [i.id, i.uploadedBy.username, i.usageCount])));
+    });
+%}
+
+### Invalid flag
+GET {{baseUrl}}/api/media?unused=yes
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("400 for unused", () => {
+        client.assert(response.status === 400, "status " + response.status);
+        client.assert(response.body.errors[0].field === "unused", "field " + response.body.errors[0].field);
+    });
+%}

@@ -3,16 +3,18 @@ package info.unterrainer.presserl.media;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import info.unterrainer.presserl.article.AuthorDto;
 
 /**
  * An uploaded image: its version (incremented by every edit), type and size of the stored (re-encoded) file, who uploaded it when, and its
- * renditions by {@link RenditionKind#value()}, smallest first ({@code {}} while not produced yet).
+ * renditions by {@link RenditionKind#value()}, smallest first ({@code {}} while not produced yet), its description
+ * ({@code null} for none) and tags (sorted case-insensitively). Neither description nor tags change the version.
  */
 public record MediaDto(long id, long version, String contentType, int width, int height, long size, AuthorDto uploadedBy,
-        Instant uploadedAt, Map<String, RenditionDto> renditions) {
+        Instant uploadedAt, Map<String, RenditionDto> renditions, String description, List<String> tags) {
 
     /**
      * Size of one rendition.
@@ -27,6 +29,7 @@ public record MediaDto(long id, long version, String contentType, int width, int
                 .sorted(Comparator.comparingInt(r -> RenditionKind.parse(r.kind).map(k -> -k.ordinal()).orElse(0)))
                 .forEach(r -> renditions.put(r.kind, new RenditionDto(r.width, r.height, r.byteSize)));
         return new MediaDto(media.id, media.version, media.contentType, media.width, media.height, media.byteSize,
-                new AuthorDto(media.uploaderUsername, media.uploaderDisplayName), media.createdAt, renditions);
+                new AuthorDto(media.uploaderUsername, media.uploaderDisplayName), media.createdAt, renditions, media.description,
+                List.copyOf(view.tags()));
     }
 }

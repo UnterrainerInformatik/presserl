@@ -127,12 +127,6 @@ import info.unterrainer.presserl.admin.resources.take_offline
 import info.unterrainer.presserl.admin.resources.undo
 import info.unterrainer.presserl.admin.resources.unlock
 import info.unterrainer.presserl.admin.resources.unpublished_changes
-import info.unterrainer.presserl.admin.resources.upload_damaged
-import info.unterrainer.presserl.admin.resources.upload_failed
-import info.unterrainer.presserl.admin.resources.upload_too_large
-import info.unterrainer.presserl.admin.resources.upload_too_large_unknown
-import info.unterrainer.presserl.admin.resources.upload_unreachable
-import info.unterrainer.presserl.admin.resources.upload_unsupported
 import info.unterrainer.presserl.admin.resources.view_in_reader
 import info.unterrainer.presserl.admin.resources.withdraw
 import info.unterrainer.presserl.admin.ui.ArticleView
@@ -150,7 +144,7 @@ import info.unterrainer.presserl.admin.ui.media.LeadImagePreview
 import info.unterrainer.presserl.admin.ui.media.MediaPreview
 import info.unterrainer.presserl.admin.ui.media.PictureIcon
 import info.unterrainer.presserl.admin.ui.media.Thumbnails
-import info.unterrainer.presserl.admin.ui.media.formatMaxSize
+import info.unterrainer.presserl.admin.ui.media.uploadErrorText
 import info.unterrainer.presserl.admin.ui.media.pickImageFile
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
 import info.unterrainer.presserl.admin.ui.spell.CheckField
@@ -789,16 +783,6 @@ private fun UploadErrorText(model: EditorModel, target: UploadTarget, maxUploadS
         Text(uploadErrorText(uploadError, maxUploadSize), color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyMedium)
     }
-}
-
-@Composable
-private fun uploadErrorText(error: UploadError, maxUploadSize: String?): String = when (error) {
-    UploadError.TooLarge -> maxUploadSize?.let { stringResource(Res.string.upload_too_large, formatMaxSize(it)) }
-        ?: stringResource(Res.string.upload_too_large_unknown)
-    UploadError.Unsupported -> stringResource(Res.string.upload_unsupported)
-    UploadError.Damaged -> stringResource(Res.string.upload_damaged)
-    UploadError.Unreachable -> stringResource(Res.string.upload_unreachable)
-    is UploadError.Other -> stringResource(Res.string.upload_failed, error.message)
 }
 
 /**

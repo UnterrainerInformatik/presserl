@@ -314,11 +314,17 @@ class ApiClient(
     }
 
     /**
-     * Uploads an image as the multipart part `file`. The server detects the type from the bytes (JPEG, PNG, WebP),
-     * re-encodes it without metadata and answers the stored image; `413` above `media.max-size`, `415` for other
-     * types, `400` for damaged or oversized images.
+     * Uploads an image as the multipart part `file`, with an optional [description] and [tags] (one `tag` part each).
+     * The server detects the type from the bytes (JPEG, PNG, WebP), re-encodes it without metadata and answers the
+     * stored image; `413` above `media.max-size`, `415` for other types, `400` for damaged or oversized images and for
+     * an invalid description or tag (checked before the image).
      */
-    suspend fun uploadMedia(bytes: ByteArray, fileName: String): MediaDto =
+    suspend fun uploadMedia(
+        bytes: ByteArray,
+        fileName: String,
+        description: String? = null,
+        tags: List<String> = emptyList(),
+    ): MediaDto =
         http.submitFormWithBinaryData(
             "$baseUrl/api/media",
             formData {
@@ -330,16 +336,47 @@ class ApiClient(
                         append(HttpHeaders.ContentDisposition, "filename=\"${fileName.quotable()}\"")
                     },
                 )
+                description?.takeIf { it.isNotBlank() }?.let { append("description", it) }
+                tags.forEach { append("tag", it) }
             },
         ) { bearerAuth(accessToken()) }.body()
 
-    /** The newspaper's media, newest first, [limit] per page; [before] is [MediaPage.next] of the previous page. */
-    suspend fun listMedia(limit: Int? = null, before: Long? = null): MediaPage =
+    /**
+     * The newspaper's media matching [filter], newest first, [limit] per page; [before] is [MediaPage.next] of the
+     * previous page (with the same filter).
+     */
+    suspend fun listMedia(limit: Int? = null, before: Long? = null, filter: MediaFilter = MediaFilter()): MediaPage =
         http.get("$baseUrl/api/media") {
             bearerAuth(accessToken())
             limit?.let { parameter("limit", it) }
             before?.let { parameter("before", it) }
+            filter.tags.forEach { parameter("tag", it) }
+            filter.q.trim().takeIf { it.isNotEmpty() }?.let { parameter("q", it) }
+            if (filter.unused) parameter("unused", true)
+            if (filter.mine) parameter("mine", true)
         }.body()
+
+    /**
+     * Replaces description and tags of the image; answers it with the stored (normalised) values. `400` naming
+     * `description`, `tags` or `tags[i]` for invalid values.
+     */
+    suspend fun setMediaDetails(id: Long, request: MediaDetailsRequest): MediaDto =
+        http.put("$baseUrl/api/media/$id/details") {
+            bearerAuth(accessToken())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
+    /**
+     * The newspaper's tags with their usage count, most used first; [prefix] matches the start of a tag or of one of
+     * its words (all tags when blank), at most [limit].
+     */
+    suspend fun mediaTags(prefix: String = "", limit: Int? = null): List<MediaTagDto> =
+        http.get("$baseUrl/api/media/tags") {
+            bearerAuth(accessToken())
+            prefix.trim().takeIf { it.isNotEmpty() }?.let { parameter("prefix", it) }
+            limit?.let { parameter("limit", it) }
+        }.body<MediaTagList>().items
 
     /** The articles using the image and whether the user may edit it. */
     suspend fun mediaUsage(id: Long): MediaUsageDto =
