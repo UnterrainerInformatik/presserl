@@ -21,11 +21,12 @@ import io.quarkus.qute.TemplateData;
  * @param activeSectionId the section the front page is filtered by, {@code null} for none; its tags
  *                   link back to {@code /}
  * @param legalNotice whether the theme holds a legal notice, linked from the footer
+ * @param icons      the favicons and Apple touch icon linked in the head
  */
 @TemplateData
 public record ReaderPage(String lang, String name, String subtitle, String viewerName, String textSize,
         boolean customCss, List<ReaderSection> sections, String path, IssueLine issueLine, Long activeSectionId,
-        boolean legalNotice) {
+        boolean legalNotice, Icons icons) {
 
     static final List<String> TEXT_SIZES = Arrays.stream(TextSize.values()).map(TextSize::value).toList();
 
@@ -35,17 +36,17 @@ public record ReaderPage(String lang, String name, String subtitle, String viewe
 
     ReaderPage withSections(List<ReaderSection> sections) {
         return new ReaderPage(lang, name, subtitle, viewerName, textSize, customCss, sections, path, issueLine,
-                activeSectionId, legalNotice);
+                activeSectionId, legalNotice, icons);
     }
 
     ReaderPage withIssueLine(IssueLine issueLine) {
         return new ReaderPage(lang, name, subtitle, viewerName, textSize, customCss, sections, path, issueLine,
-                activeSectionId, legalNotice);
+                activeSectionId, legalNotice, icons);
     }
 
     ReaderPage withActiveSection(Long activeSectionId) {
         return new ReaderPage(lang, name, subtitle, viewerName, textSize, customCss, sections, path, issueLine,
-                activeSectionId, legalNotice);
+                activeSectionId, legalNotice, icons);
     }
 
     /**
@@ -65,6 +66,17 @@ public record ReaderPage(String lang, String name, String subtitle, String viewe
      */
     @TemplateData
     public record IssueLine(ReaderIssue issue, boolean linked, boolean archiveLink) {
+    }
+
+    /**
+     * Icon URLs of the head: the fork theme's file where it has one, else the bundled Presserl icon.
+     *
+     * @param svg   SVG favicon
+     * @param ico   ICO favicon (16, 32 and 48 px) for browsers without SVG favicons
+     * @param touch 180×180 Apple touch icon
+     */
+    @TemplateData
+    public record Icons(String svg, String ico, String touch) {
     }
 
     /**

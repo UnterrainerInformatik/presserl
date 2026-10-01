@@ -203,6 +203,48 @@ GET {{baseUrl}}/reader/reader.css
     });
 %}
 
+### Icons: the front page links SVG, ICO and Apple touch icon (defaults without a fork theme)
+GET {{baseUrl}}/
+
+> {%
+    client.test("icon links", () => {
+        client.assert(response.body.includes('<link rel="icon" href="/reader/icons/favicon.svg" type="image/svg+xml">'), "svg");
+        client.assert(response.body.includes('<link rel="icon" href="/reader/icons/favicon.ico" sizes="48x48">'), "ico");
+        client.assert(response.body.includes('<link rel="apple-touch-icon" href="/reader/icons/apple-touch-icon.png">'), "touch");
+    });
+%}
+
+### Icons: SVG favicon
+GET {{baseUrl}}/reader/icons/favicon.svg
+
+> {%
+    client.test("svg", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.contentType.mimeType === "image/svg+xml", response.contentType.mimeType);
+    });
+%}
+
+### Icons: Apple touch icon
+GET {{baseUrl}}/reader/icons/apple-touch-icon.png
+
+> {%
+    client.test("png", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.contentType.mimeType === "image/png", response.contentType.mimeType);
+    });
+%}
+
+### Icons: /favicon.ico at the root
+GET {{baseUrl}}/favicon.ico
+
+> {%
+    client.test("ico, revalidated", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.contentType.mimeType === "image/x-icon", response.contentType.mimeType);
+        client.assert(response.headers.valueOf("Cache-Control") === "no-cache", "Cache-Control");
+    });
+%}
+
 ### Front page filtered by the article's section; its tag links back to the unfiltered front page
 GET {{baseUrl}}/?section={{readerSectionId}}
 

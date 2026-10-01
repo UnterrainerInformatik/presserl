@@ -113,6 +113,12 @@ Verified 2026-09-26 on Gerald's machine (JDK 21, Docker running) unless marked o
   info.unterrainer.presserl --locales de-AT` (`Locale.getDefault()` does not follow it — use the
   resources' configuration). The code scanner's close button cancels cleanly, system back in it
   reports `INTERNAL` (13).
+- **Brand icons (verified 2026-10-01):** `icons/build.sh` regenerates every variant (creates
+  `icons/.venv` with fontTools + brotli on first use; needs `rsvg-convert`, `magick`,
+  `google-chrome-stable`); `icons/sync.sh` copies them into reader, admin web, Android `drawable/`
+  and `admin/androidApp/play/graphics/`; `icons/sync.sh --check` lists outdated copies and exits 1.
+  Run all three whenever the artwork changes; builds only use the copies. Under zsh, `rm icons/x/*`
+  on an empty glob aborts the whole command line — delete directories instead.
 - **Homepage (`../../JAVASCRIPT/homepage`, verified 2026-10-01):** Vue CLI 4 needs Node 14 (`.nvmrc`);
   the host's Node 24 fails (OpenSSL, `fibers`). Build a copy without `node_modules`/`dist` in the
   scratchpad: `docker run --rm -v <copy>:/app -w /app node:14 sh -c "npm install --no-save && npm run build"`

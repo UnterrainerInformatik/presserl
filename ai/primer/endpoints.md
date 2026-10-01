@@ -1744,3 +1744,15 @@ Read-only files of the fork's theme directory (`presserl.theme.dir`, default
   resolving outside the theme directory (also via symlinks).
 - **Effect:** when `custom.css` exists, every reader page links `/theme/custom.css` after
   `/reader/reader.css`.
+  `favicon.svg`, `favicon.ico` and `apple-touch-icon.png` at the top level replace the bundled
+  icon of that kind (see below).
+
+## Reader icons and `GET /favicon.ico`
+
+- Every reader page (including print views, legal notice and not-found page) links in its head
+  `<link rel="icon" type="image/svg+xml">`, `<link rel="icon" sizes="48x48">` (ICO) and
+  `<link rel="apple-touch-icon">`. Each points to `/theme/<file>` while the theme directory holds
+  that file, else to the bundled `/reader/icons/{favicon.svg,favicon.ico,apple-touch-icon.png}`
+  (static, same origin, no login — also for a private newspaper).
+- `GET /favicon.ico` — **Auth:** none. **Response `200`:** the theme's `favicon.ico` if present,
+  otherwise the bundled one; `Content-Type: image/x-icon`, `Cache-Control: no-cache`.

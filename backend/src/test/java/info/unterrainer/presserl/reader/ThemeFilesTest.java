@@ -124,6 +124,34 @@ class ThemeFilesTest {
     }
 
     @Test
+    void iconsAreTheBundledDefaultsWithoutThemeFiles() {
+        assertThat(files.icons()).isEqualTo(new ReaderPage.Icons("/reader/icons/favicon.svg",
+                "/reader/icons/favicon.ico", "/reader/icons/apple-touch-icon.png"));
+    }
+
+    @Test
+    void eachThemeIconReplacesOnlyItsOwnKind() throws IOException {
+        Files.writeString(theme.resolve("favicon.svg"), "<svg/>");
+
+        assertThat(files.icons()).isEqualTo(new ReaderPage.Icons("/theme/favicon.svg", "/reader/icons/favicon.ico",
+                "/reader/icons/apple-touch-icon.png"));
+
+        Files.write(theme.resolve("favicon.ico"), new byte[] { 0, 0, 1, 0 });
+        Files.write(theme.resolve("apple-touch-icon.png"), new byte[] { 1 });
+        Files.delete(theme.resolve("favicon.svg"));
+
+        assertThat(files.icons()).isEqualTo(new ReaderPage.Icons("/reader/icons/favicon.svg", "/theme/favicon.ico",
+                "/theme/apple-touch-icon.png"));
+    }
+
+    @Test
+    void iconDirectoriesAreNoIcons() throws IOException {
+        Files.createDirectory(theme.resolve("favicon.svg"));
+
+        assertThat(files.icons().svg()).isEqualTo("/reader/icons/favicon.svg");
+    }
+
+    @Test
     void legalNoticeIsNeverAServableThemeFile() throws IOException {
         Files.writeString(theme.resolve("legal-notice.txt"), "Notice");
 

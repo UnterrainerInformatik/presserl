@@ -1,6 +1,8 @@
 package info.unterrainer.presserl.reader;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
@@ -18,6 +20,7 @@ import java.util.Optional;
 
 import org.jboss.logging.Logger;
 
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.ext.web.Router;
@@ -32,6 +35,9 @@ import jakarta.inject.Inject;
  * directory; everything else is {@code 404}. Responses are revalidated ({@code no-cache}) so a changed
  * theme applies on the next page load. A missing directory is served as an empty one.
  * <p>
+ * Also answers {@code /favicon.ico} at the root with the theme's {@code favicon.ico}, or the bundled
+ * Presserl icon when the theme has none.
+ * <p>
  * Registered on the Vert.x router, so it bypasses the API permissions and the reader OIDC tenant.
  */
 @ApplicationScoped
@@ -41,6 +47,12 @@ public class ThemeFiles {
     static final String CUSTOM_CSS = "custom.css";
     static final String LEGAL_NOTICE = "legal-notice.txt";
     static final long LEGAL_NOTICE_MAX_BYTES = 64 * 1024;
+    static final String FAVICON_SVG = "favicon.svg";
+    static final String FAVICON_ICO = "favicon.ico";
+    static final String APPLE_TOUCH_ICON = "apple-touch-icon.png";
+    static final String DEFAULT_ICONS = "/reader/icons/";
+    static final String ROOT_FAVICON = "/favicon.ico";
+    static final String BUNDLED_FAVICON = "META-INF/resources/reader/icons/" + FAVICON_ICO;
     static final Map<String, String> TYPES = Map.ofEntries(
             Map.entry("css", "text/css;charset=UTF-8"),
             Map.entry("woff2", "font/woff2"),
@@ -59,6 +71,7 @@ public class ThemeFiles {
     private static final DateTimeFormatter HTTP_DATE = DateTimeFormatter.RFC_1123_DATE_TIME.withZone(ZoneOffset.UTC);
 
     Path dir;
+    private Buffer bundledFavicon;
 
     @Inject
     ThemeFiles(ReaderConfig config) {
@@ -74,6 +87,9 @@ public class ThemeFiles {
             LOG.infof("Theme directory %s does not exist; the reader uses the default theme only", dir);
         }
         router.route(PREFIX + "*").method(HttpMethod.GET).method(HttpMethod.HEAD).blockingHandler(this::serve, false);
+        bundledFavicon = Buffer.buffer(bundled(BUNDLED_FAVICON));
+        router.route(ROOT_FAVICON).method(HttpMethod.GET).method(HttpMethod.HEAD).blockingHandler(this::serveFavicon,
+                false);
     }
 
     /**
@@ -81,6 +97,18 @@ public class ThemeFiles {
      */
     public boolean customCssPresent() {
         return resolve(CUSTOM_CSS).isPresent();
+    }
+
+    /**
+     * The icons reader pages link right now: each one the theme's file under {@code /theme/} while the
+     * theme directory holds it, else the bundled default under {@code /reader/icons/}.
+     */
+    public ReaderPage.Icons icons() {
+        return new ReaderPage.Icons(icon(FAVICON_SVG), icon(FAVICON_ICO), icon(APPLE_TOUCH_ICON));
+    }
+
+    String icon(String name) {
+        return (resolve(name).isPresent() ? PREFIX : DEFAULT_ICONS) + name;
     }
 
     /**
@@ -178,9 +206,41 @@ public class ThemeFiles {
             ctx.response().setStatusCode(404).end();
             return;
         }
+        send(ctx, file.get(), type(path).orElseThrow());
+    }
+
+    private void serveFavicon(RoutingContext ctx) {
+        Optional<Path> file = resolve(FAVICON_ICO);
+        if (file.isPresent()) {
+            send(ctx, file.get(), TYPES.get("ico"));
+            return;
+        }
+        ctx.response()
+                .putHeader(HttpHeaders.CACHE_CONTROL, "no-cache")
+                .putHeader("X-Content-Type-Options", "nosniff")
+                .putHeader(HttpHeaders.CONTENT_TYPE, TYPES.get("ico"));
+        if (ctx.request().method() == HttpMethod.HEAD) {
+            ctx.response().putHeader(HttpHeaders.CONTENT_LENGTH, String.valueOf(bundledFavicon.length())).end();
+        } else {
+            ctx.response().end(bundledFavicon);
+        }
+    }
+
+    private static byte[] bundled(String resource) {
+        try (InputStream in = Thread.currentThread().getContextClassLoader().getResourceAsStream(resource)) {
+            if (in == null) {
+                throw new IllegalStateException("Bundled resource " + resource + " is missing");
+            }
+            return in.readAllBytes();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private void send(RoutingContext ctx, Path file, String contentType) {
         Instant modified;
         try {
-            modified = Files.getLastModifiedTime(file.get()).toInstant().truncatedTo(ChronoUnit.SECONDS);
+            modified = Files.getLastModifiedTime(file).toInstant().truncatedTo(ChronoUnit.SECONDS);
         } catch (IOException e) {
             ctx.response().setStatusCode(404).end();
             return;
@@ -193,11 +253,11 @@ public class ThemeFiles {
             ctx.response().setStatusCode(304).end();
             return;
         }
-        ctx.response().putHeader(HttpHeaders.CONTENT_TYPE, type(path).orElseThrow());
+        ctx.response().putHeader(HttpHeaders.CONTENT_TYPE, contentType);
         if (ctx.request().method() == HttpMethod.HEAD) {
             ctx.response().end();
         } else {
-            ctx.response().sendFile(file.get().toString());
+            ctx.response().sendFile(file.toString());
         }
     }
 

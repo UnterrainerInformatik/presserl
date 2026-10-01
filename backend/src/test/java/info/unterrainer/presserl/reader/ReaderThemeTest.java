@@ -2,7 +2,10 @@ package info.unterrainer.presserl.reader;
 
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.startsWith;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -260,6 +263,44 @@ class ReaderThemeTest {
         assertThat(given().get("/").asString())
                 .contains("<link rel=\"stylesheet\" href=\"/reader/reader.css\">")
                 .doesNotContain("/theme/custom.css");
+    }
+
+    // --- icons
+
+    @Test
+    void everyReaderPageLinksTheBundledIcons() {
+        long id = fixtures.published("Iconic", SEPT_20);
+
+        for (String path : List.of("/", "/articles/" + id, "/articles/999999", "/print/article/" + id)) {
+            assertThat(given().get(path).asString()).as(path).contains(
+                    "<link rel=\"icon\" href=\"/reader/icons/favicon.svg\" type=\"image/svg+xml\">",
+                    "<link rel=\"icon\" href=\"/reader/icons/favicon.ico\" sizes=\"48x48\">",
+                    "<link rel=\"apple-touch-icon\" href=\"/reader/icons/apple-touch-icon.png\">");
+        }
+    }
+
+    @Test
+    void bundledIconsAreServed() {
+        given().get("/reader/icons/favicon.svg").then().statusCode(200).contentType(startsWith("image/svg+xml"));
+        given().get("/reader/icons/favicon.ico").then().statusCode(200).contentType("image/x-icon");
+        given().get("/reader/icons/apple-touch-icon.png").then().statusCode(200).contentType("image/png");
+    }
+
+    @Test
+    void rootFaviconIsTheBundledIco() throws IOException {
+        byte[] bundled;
+        try (InputStream in = getClass().getClassLoader()
+                .getResourceAsStream("META-INF/resources/reader/icons/favicon.ico")) {
+            bundled = in.readAllBytes();
+        }
+
+        Response response = given().get("/favicon.ico");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.contentType()).isEqualTo("image/x-icon");
+        assertThat(response.header("Cache-Control")).isEqualTo("no-cache");
+        assertThat(response.asByteArray()).isEqualTo(bundled);
+        given().head("/favicon.ico").then().statusCode(200).contentType("image/x-icon");
     }
 
     // --- stylesheet and fonts

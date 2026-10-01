@@ -130,6 +130,13 @@ Newsroom words (*Ressort*, *Dachzeile*, *Vorspann* …) mean nothing to a ten-ye
 - Front page: a grid of `--presserl-grid-columns` columns (12) on wide screens, 6 on tablets, 1 on phones; the lead story spans the full width, the other stories are equal cards separated by thin rules. A section bar below the masthead lists the sections with their colour markers; stories and articles show their section the same way.
 - Custom fonts and images go into `deploy/theme/fonts/` and `deploy/theme/` — same origin, CSP stays `self`.
 - Upstream ships the example themes *Classic*, *Colourful* (for younger kids) and *Night* in `deploy/theme/examples/` as templates to copy; `deploy/theme/custom.css` is a comment-only starter. Changes apply on the next page load (`Cache-Control: no-cache`).
+- `favicon.svg`, `favicon.ico` and `apple-touch-icon.png` (180×180) in `deploy/theme/` replace the Presserl icon of that kind on reader pages; kinds the theme leaves out keep the default.
+
+## 5a. Brand icon
+
+- Motif: a newspaper front page tilted by −6° — Playfair Display "P" as masthead, double rule, the eight section colours as section bar, a child's drawing (sky, sun, hills) as lead picture, a few text lines — in paper `#fbf8f1` and ink `#1d1b18` on the accent red `#a8321d`, the default theme's colours. The favicon is a simplified upright sheet with the "P" and one rule, legible at 16 px.
+- `icons/` is the single source: generator, SVG sources and every rendered variant (store icon, feature graphics de/en, favicons, Android launcher layers including a monochrome one for themed icons). The reader, the admin web app, the Android launcher and the Play listing hold plain copies, distributed by `icons/sync.sh` and checked by `icons/sync.sh --check`; never draw a variant elsewhere. See `icons/README.md`.
+- The Android app and the store listing show the upstream icon for every newspaper; forks change only the reader's icons, through their theme.
 
 ## 6. Account slip (printable)
 

@@ -83,6 +83,31 @@ class ThemeRouteTest {
         assertThat(given().get("/").asString()).doesNotContain("/theme/custom.css");
     }
 
+    @Test
+    void themeIconsReplaceTheDefaultsOfTheirKindWhilePresent() throws IOException {
+        ThemeProfile.write("favicon.svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"/>");
+        ThemeProfile.write("favicon.ico", "fork icon");
+
+        String html = given().get("/").asString();
+
+        assertThat(html).contains("<link rel=\"icon\" href=\"/theme/favicon.svg\" type=\"image/svg+xml\">",
+                "<link rel=\"icon\" href=\"/theme/favicon.ico\" sizes=\"48x48\">",
+                "<link rel=\"apple-touch-icon\" href=\"/reader/icons/apple-touch-icon.png\">");
+        given().get("/theme/favicon.svg").then().statusCode(200).contentType("image/svg+xml");
+        given().get("/favicon.ico").then()
+                .statusCode(200)
+                .contentType("image/x-icon")
+                .header("Cache-Control", "no-cache")
+                .body(equalTo("fork icon"));
+
+        Files.delete(ThemeProfile.DIR.resolve("favicon.svg"));
+        Files.delete(ThemeProfile.DIR.resolve("favicon.ico"));
+
+        assertThat(given().get("/").asString()).doesNotContain("/theme/favicon")
+                .contains("href=\"/reader/icons/favicon.svg\"");
+        assertThat(given().get("/favicon.ico").asString()).isNotEqualTo("fork icon");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = { "/theme/notes.txt", "/theme/folder.css", "/theme/missing.css", "/theme/",
             "/theme/../application.properties", "/theme/%2e%2e/%2e%2e/etc/passwd",

@@ -393,7 +393,7 @@ public class ReaderResource {
         String path = request.getRawQuery() == null ? request.getRawPath()
                 : request.getRawPath() + "?" + request.getRawQuery();
         return new ReaderPage(locale.getLanguage(), s.name(), s.subtitle(), viewer.displayName(), textSize.value(),
-                theme.customCssPresent(), List.of(), path, null, null, theme.legalNotice().isPresent());
+                theme.customCssPresent(), List.of(), path, null, null, theme.legalNotice().isPresent(), theme.icons());
     }
 
     private static boolean noStore(EffectiveSettings s, ReaderViewer viewer) {

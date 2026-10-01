@@ -65,6 +65,25 @@ class ReaderPrivateTest {
     }
 
     @Test
+    void iconsAreServedWithoutLogin() {
+        String html = given().get("/").asString();
+
+        assertThat(html).contains("href=\"/reader/icons/favicon.svg\"", "href=\"/reader/icons/favicon.ico\"",
+                "href=\"/reader/icons/apple-touch-icon.png\"");
+        assertIcon("/reader/icons/favicon.svg", "image/svg+xml");
+        assertIcon("/reader/icons/favicon.ico", "image/x-icon");
+        assertIcon("/reader/icons/apple-touch-icon.png", "image/png");
+        assertIcon("/favicon.ico", "image/x-icon");
+    }
+
+    private static void assertIcon(String path, String type) {
+        Response response = given().redirects().follow(false).get(path);
+
+        assertThat(response.statusCode()).as(path).isEqualTo(200);
+        assertThat(response.contentType()).as(path).startsWith(type);
+    }
+
+    @Test
     void sectionFilterShowsOnlyThePrivateNote() {
         for (String section : new String[] { "1", "999999", "abc" }) {
             Response response = given().redirects().follow(false).get("/?section=" + section);

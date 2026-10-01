@@ -98,12 +98,13 @@ up; a lost upload key is reset via Play support, not fatal.
 
 ### D7 — Store listing as plain files
 `admin/androidApp/play/listing/{de-DE,en-US}/{title,short-description,full-description}.txt`,
-`admin/androidApp/play/graphics/icon-512.png`, `feature-1024x500.png`,
+`admin/androidApp/play/graphics/icon-512.png`, `feature-1024x500-{de-DE,en-US}.png`,
 `phone-screenshots/{de-DE,en-US}/NN-*.png`. Layout follows the fastlane/Gradle Play Publisher
-convention so a later automated sync can take it over unchanged. Icon: rendered from the existing
-launcher icon source at 512×512 (32-bit PNG, no transparency beyond what Play allows). Feature
-graphic: logo and the claim on the app's brand colour, made as SVG in the same folder and rendered
-to PNG. Screenshots: taken with `adb exec-out screencap` on Gerald's A54 against staging with a
+convention so a later automated sync can take it over unchanged. Icon and feature graphics are
+copies of the brand artwork in `icons/` (`play-icon-512.png`, `feature-graphic-{de,en}.png`),
+distributed by `icons/sync.sh` (app-icon-and-favicon): the icon 512×512 full bleed, one feature
+graphic per listing language with the brand icon, "Presserl" and the claim in that language,
+1024×500 without alpha. Screenshots: taken with `adb exec-out screencap` on Gerald's A54 against staging with a
 demo newspaper state (start screen, scan, "My articles", editor, media, account slip) — one set per
 language by switching the phone language. A small check script (`admin/androidApp/play/check.sh`)
 verifies text lengths and image sizes (`file`/`identify`).

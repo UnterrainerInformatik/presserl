@@ -21,7 +21,8 @@ import io.restassured.response.Response;
 
 /**
  * Delivery of the admin bundle; the test classpath carries stubs of {@code META-INF/resources/admin/index.html},
- * {@code startup.js}, {@code styles.css}, {@code composeApp.js} and a content-hashed {@code .wasm} module, and Brotli variants
+ * {@code startup.js}, {@code styles.css}, {@code composeApp.js}, {@code favicon.svg}, {@code favicon.ico} and a
+ * content-hashed {@code .wasm} module, and Brotli variants
  * ({@code brotli --best --keep}) of {@code composeApp.js} and the {@code .wasm} module.
  */
 @QuarkusTest
@@ -65,6 +66,20 @@ class AdminDeliveryTest {
         given().get(path).then()
                 .statusCode(200)
                 .header("Cache-Control", "no-cache");
+    }
+
+    @Test
+    void faviconsAreServedWithImageTypesUnderTheAdminCsp() {
+        for (String[] icon : new String[][] { { "/admin/favicon.svg", "image/svg+xml" },
+                { "/admin/favicon.ico", "image/x-icon" } }) {
+            Response response = given().get(icon[0]);
+
+            assertThat(response.statusCode()).as(icon[0]).isEqualTo(200);
+            assertThat(response.contentType()).as(icon[0]).startsWith(icon[1]);
+            assertThat(response.header("Cache-Control")).as(icon[0]).isEqualTo("no-cache");
+            assertThat(directives(response.header("Content-Security-Policy"))).as(icon[0])
+                    .containsEntry("img-src", "'self' data:");
+        }
     }
 
     @Test

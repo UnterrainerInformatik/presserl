@@ -21,6 +21,11 @@ This directory is your newspaper's theme. The compose file mounts it read-only i
   licence allows web embedding.
 - Images (a logo, a background) can go anywhere in this directory; reference them relative to
   `custom.css`, e.g. `url("logo.svg")`.
+- **Icons**: `favicon.svg`, `favicon.ico` and `apple-touch-icon.png` (180×180 PNG) at the top
+  level of this directory replace the Presserl icon of that kind in the browser tab and on home
+  screens; `/favicon.ico` then answers with your `favicon.ico` too. Each file is optional — kinds
+  you leave out keep the Presserl icon. Browsers keep favicons in a cache of their own: after
+  adding or changing an icon, a hard reload (or a new tab) may be needed to see it.
 - **`legal-notice.txt`** is your legal notice (Impressum), plain UTF-8 text. While it exists, every
   reader page except the print views ends with `<footer class="presserl-footer">` linking
   `/legal-notice`, which shows the text: blank lines separate paragraphs, line breaks are kept,

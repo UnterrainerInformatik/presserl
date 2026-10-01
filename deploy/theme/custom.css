@@ -36,6 +36,9 @@
  * into theme/fonts/ and are loaded with
  *   @font-face { font-family: "My Font"; src: url("fonts/my-font.woff2") format("woff2"); }
  * Images (logo, backgrounds) go into theme/ as well and are referenced relative to this file.
+ * Your own tab and home-screen icons: theme/favicon.svg, theme/favicon.ico and
+ * theme/apple-touch-icon.png (180x180) replace the Presserl icon of that kind; no CSS needed.
+ * Browsers cache favicons separately, so a hard reload may be needed to see a new one.
  * Allowed file types: css, woff2, woff, ttf, otf, png, jpg, jpeg, gif, webp, svg, ico.
  *
  * ---------------------------------------------------------------------------------------------

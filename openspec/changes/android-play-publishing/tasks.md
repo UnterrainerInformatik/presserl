@@ -15,7 +15,7 @@
 ## 3. Store listing
 
 - [ ] 3.1 `admin/androidApp/play/listing/{de-DE,en-US}/`: title, short and full description (say that a presserl newspaper and a newsroom account slip are needed; nothing the app lacks)
-- [ ] 3.2 Icon 512×512 PNG from the launcher icon source; feature graphic 1024×500 as SVG + rendered PNG
+- [x] 3.2 Icon 512×512 PNG and feature graphics 1024×500 per language (`feature-1024x500-{de-DE,en-US}.png`) copied from `icons/` via `icons/sync.sh` (done in app-icon-and-favicon)
 - [ ] 3.3 Prepare a demo state on staging (newspaper with a few sample articles and images, the `play-review` account of 5.1) for screenshots
 - [ ] 3.4 Screenshots on the A54 against staging, German and English phone language: start screen, scanner/slip login, "My articles", editor, media, account slip — at least 4 per language, no personal data on them
 - [ ] 3.5 `admin/androidApp/play/check.sh`: text length limits and image sizes/formats; run it
