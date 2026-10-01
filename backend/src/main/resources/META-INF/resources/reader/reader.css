@@ -8,7 +8,7 @@
  *            --presserl-color-rule, --presserl-text-size, --presserl-letter-spacing,
  *            --presserl-measure, --presserl-grid-columns, --presserl-section-<key>
  *   views    <main data-view="frontpage | article | issues | issue | print-article | print-issue |
- *            not-found | legal-notice">
+ *            not-found | legal-notice | account-deletion">
  *   classes  .masthead .masthead__name .masthead__subtitle .masthead__issue .section-bar .section-tag
  *            .text-size-switch .lead-article .article-card .kicker .headline .subheadline .lead
  *            .byline .article .article__body .article__figure .article__caption .lead-image
@@ -687,6 +687,11 @@ a.section-tag[aria-current="page"] {
 
 .legal-notice {
   max-width: var(--presserl-measure);
+}
+
+.legal-notice__more {
+  margin-top: 2rem;
+  font-size: 0.85rem;
 }
 
 /* ---------------------------------------------------------------------------------------------

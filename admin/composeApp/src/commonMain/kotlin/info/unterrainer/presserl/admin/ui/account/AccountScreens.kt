@@ -59,6 +59,7 @@ import info.unterrainer.presserl.admin.resources.action_edit_roles
 import info.unterrainer.presserl.admin.resources.action_lock
 import info.unterrainer.presserl.admin.resources.action_reset_password
 import info.unterrainer.presserl.admin.resources.action_trust
+import info.unterrainer.presserl.admin.resources.action_delete
 import info.unterrainer.presserl.admin.resources.action_unlock
 import info.unterrainer.presserl.admin.resources.cancel
 import info.unterrainer.presserl.admin.resources.confirm_lock_text
@@ -69,6 +70,9 @@ import info.unterrainer.presserl.admin.resources.confirm_trust_text
 import info.unterrainer.presserl.admin.resources.confirm_trust_title
 import info.unterrainer.presserl.admin.resources.confirm_unlock_text
 import info.unterrainer.presserl.admin.resources.confirm_unlock_title
+import info.unterrainer.presserl.admin.resources.confirm_delete_text
+import info.unterrainer.presserl.admin.resources.confirm_delete_title
+import info.unterrainer.presserl.admin.resources.deletion_requested_on
 import info.unterrainer.presserl.admin.resources.create_account
 import info.unterrainer.presserl.admin.resources.done
 import info.unterrainer.presserl.admin.resources.edit_roles_title
@@ -98,6 +102,7 @@ import info.unterrainer.presserl.admin.ui.BackButton
 import info.unterrainer.presserl.admin.ui.LoadFailed
 import info.unterrainer.presserl.admin.ui.approvalLevelLabel
 import info.unterrainer.presserl.admin.ui.attempt
+import info.unterrainer.presserl.admin.ui.formatTimestamp
 import info.unterrainer.presserl.admin.ui.roleText
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
 import info.unterrainer.presserl.admin.ui.sectionRoleText
@@ -164,7 +169,7 @@ fun AccountListScreen(
 @Composable
 private fun AccountList(api: ApiClient, view: AccountsView, onEditRoles: (AccountDto) -> Unit, onReset: (CreatedAccountDto) -> Unit) {
     val scope = rememberCoroutineScope()
-    val model = remember { AccountListModel(scope, view.accounts.accounts, api::resetPassword, api::lock, api::unlock, api::setTrust) }
+    val model = remember { AccountListModel(scope, view.accounts.accounts, api::resetPassword, api::lock, api::unlock, api::setTrust, api::deleteAccount) }
     val state by model.state.collectAsState()
     val sectionNames = view.sections.associate { it.id to it.name }
 
@@ -210,6 +215,7 @@ private fun ConfirmPending(pending: Pending, sectionNames: Map<Long, String>, on
                 AccountAction.RESET_PASSWORD -> Res.string.confirm_reset_title to Res.string.confirm_reset_text
                 AccountAction.LOCK -> Res.string.confirm_lock_title to Res.string.confirm_lock_text
                 AccountAction.UNLOCK -> Res.string.confirm_unlock_title to Res.string.confirm_unlock_text
+                AccountAction.DELETE -> Res.string.confirm_delete_title to Res.string.confirm_delete_text
                 AccountAction.EDIT_ROLES -> return
             }
             ConfirmDialog(
@@ -248,6 +254,7 @@ private fun actionText(action: AccountAction): String = stringResource(
         AccountAction.RESET_PASSWORD -> Res.string.action_reset_password
         AccountAction.LOCK -> Res.string.action_lock
         AccountAction.UNLOCK -> Res.string.action_unlock
+        AccountAction.DELETE -> Res.string.action_delete
     },
 )
 
@@ -262,6 +269,13 @@ private fun AccountRow(
     Column(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(vertical = 12.dp, horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         val title = listOfNotNull(account.username, stringResource(Res.string.account_locked).takeIf { !account.enabled })
         Text(title.joinToString(" · "), style = MaterialTheme.typography.titleMedium)
+        account.deletionRequestedAt?.let {
+            Text(
+                stringResource(Res.string.deletion_requested_on, formatTimestamp(it)),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
         val roles = account.roles.map { roleText(it) } +
             (if (account.sectionlessReporter) listOf(stringResource(sectionlessReporterLabel)) else emptyList()) +
             account.sectionRoles.map { sectionRoleText(it.role) + " · " + (sectionNames[it.sectionId] ?: "#${it.sectionId}") }

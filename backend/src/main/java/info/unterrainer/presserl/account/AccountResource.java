@@ -2,6 +2,8 @@ package info.unterrainer.presserl.account;
 
 import java.net.URI;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.logging.Logger;
@@ -10,6 +12,7 @@ import org.jboss.resteasy.reactive.RestResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import info.unterrainer.presserl.auth.CurrentUser;
+import info.unterrainer.presserl.auth.NewspaperRole;
 import info.unterrainer.presserl.section.Newsroom;
 import info.unterrainer.presserl.section.NewsroomService;
 import info.unterrainer.presserl.section.SectionRoleDto;
@@ -22,6 +25,7 @@ import io.quarkus.security.Authenticated;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -77,20 +81,34 @@ public class AccountResource {
     @Inject
     PassPhraseGenerator passPhrases;
 
+    @Inject
+    AccountDeletionRequestStore deletionRequests;
+
+    @Inject
+    AccountDeletion deletion;
+
     @GET
     public Uni<AccountListDto> list() {
         return newsroom().flatMap(newsroom -> keycloakCalls.call(service::list)
                 .flatMap(accounts -> sectionRoles.byAccount().flatMap(roles -> trustStore.byAccount()
-                        .flatMap(trusts -> markers.marked().flatMap(marked -> sectionRoles.sectionIds()
-                                .map(sectionIds -> new AccountListDto(
-                                        RoleDelegation.assignableBy(newsroom.user()), newsroom.isAdministrator(),
-                                        accounts.stream()
-                                                .map(account -> account
-                                                        .withSectionRoles(roles.getOrDefault(account.id(), List.of()))
-                                                        .withSectionlessReporter(marked.contains(account.id()))
-                                                        .withTrusts(trusts.getOrDefault(account.id(), List.of()))
-                                                        .withAllowedActionsFor(newsroom, sectionIds))
-                                                .toList())))))));
+                        .flatMap(trusts -> markers.marked().flatMap(marked -> deletionRequests.byAccount()
+                                .flatMap(requests -> sectionRoles.sectionIds().map(sectionIds -> {
+                                    Set<String> enabledPublishers = accounts.stream()
+                                            .filter(account -> account.enabled()
+                                                    && account.roles().contains(NewspaperRole.PUBLISHER))
+                                            .map(AccountDto::id)
+                                            .collect(Collectors.toUnmodifiableSet());
+                                    return new AccountListDto(
+                                            RoleDelegation.assignableBy(newsroom.user()), newsroom.isAdministrator(),
+                                            accounts.stream()
+                                                    .map(account -> account
+                                                            .withSectionRoles(roles.getOrDefault(account.id(), List.of()))
+                                                            .withSectionlessReporter(marked.contains(account.id()))
+                                                            .withDeletionRequestedAt(requests.get(account.id()))
+                                                            .withTrusts(trusts.getOrDefault(account.id(), List.of()))
+                                                            .withAllowedActionsFor(newsroom, sectionIds, enabledPublishers))
+                                                    .toList());
+                                })))))));
     }
 
     @GET
@@ -108,8 +126,9 @@ public class AccountResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<RestResponse<CreatedAccountDto>> create(JsonNode json) {
         return newsroom().flatMap(newsroom -> creation.create(newsroom, AccountRequestValidator.validate(json))
+                // a new account has no deletion request, so the enabled publishers do not matter
                 .flatMap(created -> sectionRoles.sectionIds().map(sectionIds -> new CreatedAccountDto(
-                        created.account().withAllowedActionsFor(newsroom, sectionIds), created.password()))))
+                        created.account().withAllowedActionsFor(newsroom, sectionIds, Set.of()), created.password()))))
                 .map(created -> RestResponse.ResponseBuilder
                         .<CreatedAccountDto>created(URI.create("/api/accounts/" + created.account().id()))
                         .entity(created)
@@ -220,6 +239,22 @@ public class AccountResource {
     }
 
     /**
+     * Deletes the account: its content stays with anonymised names, its section roles, marker, trust
+     * entries and deletion request go, pending submissions of its articles are withdrawn, and the
+     * Keycloak user is removed (which ends its sessions). See {@link AccountDeletion}.
+     */
+    @DELETE
+    @Path("/{id}")
+    public Uni<RestResponse<Void>> delete(@PathParam("id") String id) {
+        return target(id, AccountAction.DELETE, "delete").flatMap(target -> deletion.delete(target.account())
+                .map(done -> {
+                    LOG.infof("Account '%s' deleted by '%s'", target.account().username(),
+                            target.requester().user().username());
+                    return RestResponse.<Void>noContent();
+                }));
+    }
+
+    /**
      * The requesting user and the account {@code id} (see {@link #load}), once the access rule and
      * {@link AccountPolicy#permitted} allow {@code action}.
      *
@@ -228,7 +263,7 @@ public class AccountResource {
      */
     private Uni<Target> target(String id, AccountAction action, String verb) {
         return newsroom().flatMap(newsroom -> load(newsroom, id)).invoke(target -> {
-            if (!AccountPolicy.permitted(action, target.requester(), target.account())) {
+            if (!AccountPolicy.permitted(action, target.requester(), target.account(), target.enabledPublishers())) {
                 throw AccountException.forbidden(null, "you may not " + verb + " account '"
                         + target.account().username() + "'");
             }
@@ -236,8 +271,8 @@ public class AccountResource {
     }
 
     /**
-     * The account {@code id} with newspaper roles, section roles, marker and trust entries, and the
-     * ids of all sections by position.
+     * The account {@code id} with newspaper roles, section roles, marker, deletion request and trust
+     * entries, the ids of all sections by position and the ids of the enabled publishers.
      *
      * @throws AccountException {@code 404} for an unknown id or a service account
      */
@@ -249,21 +284,25 @@ public class AccountResource {
                             .map(role -> new SectionRoleDto(role.sectionId(), role.role())).toList()));
                 })
                 .flatMap(account -> markers.isMarked(id).map(account::withSectionlessReporter))
-                .flatMap(account -> sectionRoles.sectionIds().flatMap(sectionIds -> trustStore.scopesOf(id)
-                        .map(trusts -> new Target(newsroom, account.withTrusts(
-                                trusts.stream().sorted(TrustScope.order(sectionIds)).toList()), sectionIds))));
+                .flatMap(account -> deletionRequests.requestedAt(id).map(account::withDeletionRequestedAt))
+                .flatMap(account -> keycloakCalls.call(service::enabledPublisherIds).flatMap(enabledPublishers -> sectionRoles
+                        .sectionIds().flatMap(sectionIds -> trustStore.scopesOf(id)
+                                .map(trusts -> new Target(newsroom, account.withTrusts(
+                                        trusts.stream().sorted(TrustScope.order(sectionIds)).toList()), sectionIds,
+                                        enabledPublishers)))));
     }
 
     /**
-     * @param sectionIds the ids of all sections by position
+     * @param sectionIds        the ids of all sections by position
+     * @param enabledPublishers the ids of the enabled accounts holding {@code PUBLISHER}
      */
-    private record Target(Newsroom requester, AccountDto account, List<Long> sectionIds) {
+    private record Target(Newsroom requester, AccountDto account, List<Long> sectionIds, Set<String> enabledPublishers) {
 
         /**
          * {@code account} (this target after a change) as answered to the requester.
          */
         AccountDto answer(AccountDto account) {
-            return account.withAllowedActionsFor(requester, sectionIds);
+            return account.withAllowedActionsFor(requester, sectionIds, enabledPublishers);
         }
     }
 

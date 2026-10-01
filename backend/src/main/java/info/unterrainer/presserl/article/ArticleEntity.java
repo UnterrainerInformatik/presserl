@@ -15,7 +15,8 @@ import jakarta.persistence.Version;
 
 /**
  * An article; its content lives in {@link ArticleRevisionEntity}. The author is identified by the
- * token subject; username and display name are snapshots for the byline.
+ * token subject; username and display name are snapshots for the byline, both {@code null} once the
+ * author's account was deleted.
  */
 @Entity
 @Table(name = "article")
@@ -32,10 +33,10 @@ public class ArticleEntity extends PanacheEntityBase {
     @Column(name = "author_sub", columnDefinition = "text", nullable = false)
     public String authorSub;
 
-    @Column(name = "author_username", columnDefinition = "text", nullable = false)
+    @Column(name = "author_username", columnDefinition = "text")
     public String authorUsername;
 
-    @Column(name = "author_display_name", columnDefinition = "text", nullable = false)
+    @Column(name = "author_display_name", columnDefinition = "text")
     public String authorDisplayName;
 
     /**

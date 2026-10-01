@@ -96,6 +96,19 @@ public class AccountService {
     }
 
     /**
+     * The ids of the enabled members of the {@code PUBLISHER} group; at most {@value #LIST_MAX}.
+     */
+    public Set<String> enabledPublisherIds() {
+        return keycloakCall(() -> {
+            RealmResource realm = realm();
+            return realm.groups().group(groupIds(realm).get(NewspaperRole.PUBLISHER)).members(0, LIST_MAX, true).stream()
+                    .filter(member -> Boolean.TRUE.equals(member.isEnabled()))
+                    .map(UserRepresentation::getId)
+                    .collect(Collectors.toUnmodifiableSet());
+        });
+    }
+
+    /**
      * The first free username derived from {@code firstName} (see {@link UsernameDeriver}).
      */
     public String suggestUsername(String firstName) {
@@ -155,7 +168,7 @@ public class AccountService {
                 throw e;
             }
             return new AccountDto(id, request.username(), request.firstName(), request.lastName(), request.roles(),
-                    List.of(), false, true, List.of(), List.of(), List.of());
+                    List.of(), false, true, null, List.of(), List.of(), List.of());
         });
         return new CreatedAccountDto(account, password);
     }
@@ -194,6 +207,23 @@ public class AccountService {
     public void logout(String id) {
         keycloakCall(() -> {
             realm().users().get(id).logout();
+            return null;
+        });
+    }
+
+    /**
+     * Deletes the Keycloak user, which ends its sessions; an account already gone counts as deleted.
+     *
+     * @throws AccountException {@code 503} when Keycloak is unavailable or refuses
+     */
+    public void delete(String id) {
+        keycloakCall(() -> {
+            try (Response response = realm().users().delete(id)) {
+                int status = response.getStatus();
+                if (status >= 300 && status != Response.Status.NOT_FOUND.getStatusCode()) {
+                    throw new WebApplicationException("Deleting user %s failed with HTTP %d".formatted(id, status), status);
+                }
+            }
             return null;
         });
     }
@@ -339,8 +369,8 @@ public class AccountService {
 
     private static AccountDto account(UserRepresentation user, List<NewspaperRole> roles) {
         return new AccountDto(user.getId(), user.getUsername(), orEmpty(user.getFirstName()),
-                orEmpty(user.getLastName()), roles, List.of(), false, Boolean.TRUE.equals(user.isEnabled()), List.of(),
-                List.of(), List.of());
+                orEmpty(user.getLastName()), roles, List.of(), false, Boolean.TRUE.equals(user.isEnabled()), null,
+                List.of(), List.of(), List.of());
     }
 
     private static String orEmpty(String value) {

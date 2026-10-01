@@ -14,7 +14,7 @@ import jakarta.persistence.Table;
 
 /**
  * An approval or rejection of an article's latest revision. The reviewer's username and display
- * name are snapshots, like the article's author.
+ * name are snapshots, like the article's author ({@code null} once the reviewer's account was deleted).
  */
 @Entity
 @Table(name = "article_review")
@@ -47,10 +47,10 @@ public class ArticleReviewEntity extends PanacheEntityBase {
     @Column(name = "reviewer_sub", columnDefinition = "text", nullable = false)
     public String reviewerSub;
 
-    @Column(name = "reviewer_username", columnDefinition = "text", nullable = false)
+    @Column(name = "reviewer_username", columnDefinition = "text")
     public String reviewerUsername;
 
-    @Column(name = "reviewer_display_name", columnDefinition = "text", nullable = false)
+    @Column(name = "reviewer_display_name", columnDefinition = "text")
     public String reviewerDisplayName;
 
     /**

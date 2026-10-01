@@ -17,6 +17,6 @@
   {#if story.article.lead}
   <p class="lead">{story.article.lead}</p>
   {/if}
-  <p class="byline">{msg:byline(story.article.byline)} · <time datetime="{story.article.publishedAt.isoDate}">{msg:published(story.article.publishedAt.longDate)}</time></p>
+  <p class="byline">{#if story.article.byline}{msg:byline(story.article.byline)}{#else}{msg:bylineFormer}{/if} · <time datetime="{story.article.publishedAt.isoDate}">{msg:published(story.article.publishedAt.longDate)}</time></p>
   {#articleBody blocks=story.blocks print=true /}
 </article>

@@ -158,6 +158,37 @@ class DtoTest {
     }
 
     @Test
+    fun meWithDeletionRequest() {
+        val dto = json.decodeFromString<MeDto>(
+            """{ "username": "papa", "displayName": "Papa", "roles": [], "deletionRequestedAt": "2026-10-02T08:15:00Z" }""",
+        )
+
+        assertEquals("2026-10-02T08:15:00Z", dto.deletionRequestedAt)
+        assertEquals(null, json.decodeFromString<MeDto>("""{ "username": "papa", "displayName": "Papa", "roles": [] }""").deletionRequestedAt)
+    }
+
+    @Test
+    fun deletedAuthorHasNoNames() {
+        val reviews = json.decodeFromString<List<ReviewDto>>(
+            """[{ "decision": "APPROVED", "level": "EDITOR_IN_CHIEF", "revision": 1,
+                  "reviewer": { "username": null, "displayName": null }, "note": null, "createdAt": "2026-09-27T10:01:00Z" }]""",
+        )
+
+        assertEquals(AuthorDto(null, null), reviews[0].reviewer)
+    }
+
+    @Test
+    fun accountWithDeletionRequest() {
+        val dto = json.decodeFromString<AccountDto>(
+            """{ "id": "r1", "username": "reader", "firstName": "", "lastName": "", "roles": ["READER"], "enabled": true,
+                 "deletionRequestedAt": "2026-10-02T08:15:00Z", "allowedActions": ["LOCK", "DELETE"] }""",
+        )
+
+        assertEquals("2026-10-02T08:15:00Z", dto.deletionRequestedAt)
+        assertEquals(listOf("LOCK", "DELETE"), dto.allowedActions)
+    }
+
+    @Test
     fun additiveFieldsAreIgnored() {
         val dto = json.decodeFromString<MeDto>(
             """{ "username": "papa", "displayName": "Papa", "roles": [], "scopes": ["x"] }""",

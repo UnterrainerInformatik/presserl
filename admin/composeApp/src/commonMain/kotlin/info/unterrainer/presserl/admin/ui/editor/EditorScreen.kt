@@ -153,6 +153,7 @@ import info.unterrainer.presserl.admin.ui.spell.findingAt
 import info.unterrainer.presserl.admin.ui.spell.spellChecker
 import info.unterrainer.presserl.admin.ui.spell.spellMarksOverlay
 import info.unterrainer.presserl.admin.ui.issueWaitText
+import info.unterrainer.presserl.admin.ui.authorLabel
 import info.unterrainer.presserl.admin.ui.statusText
 import info.unterrainer.presserl.admin.ui.SymbolIcon
 import info.unterrainer.presserl.admin.ui.waitingText
@@ -372,10 +373,10 @@ private fun Editor(
         }
         errors.general.forEach { Banner(stringResource(Res.string.action_failed, it)) }
         notice.correcting?.let {
-            Banner(stringResource(Res.string.correcting_notice, it.displayName), color = MaterialTheme.colorScheme.tertiaryContainer)
+            Banner(stringResource(Res.string.correcting_notice, authorLabel(it)), color = MaterialTheme.colorScheme.tertiaryContainer)
         }
         notice.lastChangedBy?.let { editor ->
-            Banner(stringResource(Res.string.last_changed_by, editor.displayName), color = MaterialTheme.colorScheme.secondaryContainer) {
+            Banner(stringResource(Res.string.last_changed_by, authorLabel(editor)), color = MaterialTheme.colorScheme.secondaryContainer) {
                 OutlinedButton(onClick = { leave { onShowChanges(article.revision) } }) { Text(stringResource(Res.string.show_changes)) }
             }
         }
@@ -390,7 +391,7 @@ private fun Editor(
         }
         rejectionToShow(reviews, pendingLevel)?.let { rejection ->
             Banner(
-                stringResource(Res.string.rejected_by, rejection.reviewer.displayName, rejection.note.orEmpty()),
+                stringResource(Res.string.rejected_by, authorLabel(rejection.reviewer), rejection.note.orEmpty()),
                 color = MaterialTheme.colorScheme.tertiaryContainer,
             )
         }
@@ -580,7 +581,7 @@ private fun Reviews(reviews: List<ReviewDto>) {
         reviews.forEach { review ->
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    listOf(decisionText(review.decision), approvalLevelText(review.level), review.reviewer.displayName,
+                    listOf(decisionText(review.decision), approvalLevelText(review.level), authorLabel(review.reviewer),
                         formatTimestamp(review.createdAt)).joinToString(" · "),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (review.decision == "REJECTED") FontWeight.SemiBold else FontWeight.Normal,

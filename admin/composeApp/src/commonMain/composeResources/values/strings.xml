@@ -384,4 +384,21 @@
     <string name="front_page_marker">Titelseite %1$d</string>
     <string name="front_page_label">Titelseite</string>
     <string name="front_page_help">1 ist der Aufmacher, kleinere Zahlen stehen weiter oben. Leer: normale Reihenfolge, neueste zuerst.</string>
+    <string name="former_member">ehemaliges Redaktionsmitglied</string>
+    <string name="my_account_title">Mein Konto</string>
+    <string name="my_account_username">Benutzername: %1$s</string>
+    <string name="deletion_requested_marker">Löschung beantragt</string>
+    <string name="deletion_requested_on">Löschung beantragt am %1$s</string>
+    <string name="request_deletion">Konto löschen beantragen</string>
+    <string name="withdraw_deletion">Antrag zurückziehen</string>
+    <string name="deletion_explanation">Gelöscht wird dein Konto von den Herausgebern der Zeitung. Deine Artikel und Bilder bleiben erhalten, als Autor steht dann „ehemaliges Redaktionsmitglied“. Was die App auf diesem Gerät gespeichert hat, entfernst du, indem du dich abmeldest.</string>
+    <string name="deletion_explanation_publisher">Als Herausgeber wirst du von einem anderen Herausgeber gelöscht. Gibt es keinen anderen, löscht der Betreiber des Zeitungsservers dein Konto.</string>
+    <string name="deletion_pending_explanation">Bis ein Herausgeber dein Konto löscht, kannst du weiterarbeiten oder den Antrag zurückziehen.</string>
+    <string name="confirm_request_deletion_title">Löschung beantragen?</string>
+    <string name="confirm_request_deletion_text">Die Herausgeber sehen deinen Antrag und löschen dein Konto. Das lässt sich dann nicht mehr rückgängig machen.</string>
+    <string name="confirm_withdraw_deletion_title">Antrag zurückziehen?</string>
+    <string name="confirm_withdraw_deletion_text">Dein Konto bleibt dann bestehen.</string>
+    <string name="action_delete">Löschen</string>
+    <string name="confirm_delete_title">Konto löschen?</string>
+    <string name="confirm_delete_text">„%1$s“ kann sich sofort nicht mehr anmelden, auch der Zugangszettel funktioniert nicht mehr. Artikel und Bilder des Kontos bleiben mit der Autorenzeile „ehemaliges Redaktionsmitglied“ erhalten. Das Löschen lässt sich nicht rückgängig machen.</string>
 </resources>

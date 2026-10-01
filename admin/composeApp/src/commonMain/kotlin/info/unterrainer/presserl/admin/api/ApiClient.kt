@@ -92,6 +92,14 @@ class ApiClient(
 
     suspend fun me(): MeDto = http.get("$baseUrl/api/me") { bearerAuth(accessToken()) }.body()
 
+    /** Requests the deletion of the user's own account; a repeated request keeps the first time. */
+    suspend fun requestDeletion(): DeletionRequestDto =
+        http.post("$baseUrl/api/me/deletion-request") { bearerAuth(accessToken()) }.body()
+
+    /** Withdraws the user's pending deletion request. */
+    suspend fun withdrawDeletionRequest(): DeletionRequestDto =
+        http.delete("$baseUrl/api/me/deletion-request") { bearerAuth(accessToken()) }.body()
+
     /**
      * Articles in the order [sort] (`changed`, `newest` or `section`; the server's default, newest change first, when
      * `null`); [status] filters by status, [mine] to the user's own articles, [pending] to articles waiting for
@@ -235,6 +243,11 @@ class ApiClient(
 
     suspend fun unlock(accountId: String): AccountDto =
         http.post("$baseUrl/api/accounts/$accountId/unlock") { bearerAuth(accessToken()) }.body()
+
+    /** Deletes the account (publishers only); its content stays with anonymised names. */
+    suspend fun deleteAccount(accountId: String) {
+        http.delete("$baseUrl/api/accounts/$accountId") { bearerAuth(accessToken()) }
+    }
 
     /** Sets ([trusted]) or clears a trust entry of the account; answers the account as listed. */
     suspend fun setTrust(accountId: String, level: String, sectionId: Long?, trusted: Boolean): AccountDto =

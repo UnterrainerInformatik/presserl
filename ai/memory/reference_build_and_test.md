@@ -113,5 +113,13 @@ Verified 2026-09-26 on Gerald's machine (JDK 21, Docker running) unless marked o
   info.unterrainer.presserl --locales de-AT` (`Locale.getDefault()` does not follow it — use the
   resources' configuration). The code scanner's close button cancels cleanly, system back in it
   reports `INTERNAL` (13).
+- **Homepage (`../../JAVASCRIPT/homepage`, verified 2026-10-01):** Vue CLI 4 needs Node 14 (`.nvmrc`);
+  the host's Node 24 fails (OpenSSL, `fibers`). Build a copy without `node_modules`/`dist` in the
+  scratchpad: `docker run --rm -v <copy>:/app -w /app node:14 sh -c "npm install --no-save && npm run build"`
+  (`npm ci` fails on the optional `fsevents`); lint with `npx vue-cli-service lint --no-fix <files>`.
+  The page language follows the site's flag switch, not `Accept-Language`.
+- **Full `./mvnw verify` alone:** running it next to a Gradle build let the Keycloak test container
+  time out ("Waiting for log output matching '.*Keycloak.*started.*'"), failing two profile classes
+  and skipping ~650 tests; rerun on an idle machine.
 
 See [[reference_machine_jdk]].

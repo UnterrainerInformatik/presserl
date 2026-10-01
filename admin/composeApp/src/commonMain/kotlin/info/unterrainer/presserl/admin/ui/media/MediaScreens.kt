@@ -158,6 +158,7 @@ import info.unterrainer.presserl.admin.ui.LoadFailed
 import info.unterrainer.presserl.admin.ui.attempt
 import info.unterrainer.presserl.admin.ui.formatTimestamp
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
+import info.unterrainer.presserl.admin.ui.authorLabel
 import info.unterrainer.presserl.admin.ui.statusText
 import info.unterrainer.presserl.admin.ui.waitingText
 import kotlinx.coroutines.CancellationException
@@ -360,7 +361,7 @@ internal fun MediaTile(media: MediaListItemDto, thumbnails: Thumbnails, onClick:
                 }
             }
             Column(Modifier.padding(8.dp)) {
-                Text(media.uploadedBy.displayName, style = MaterialTheme.typography.bodyMedium)
+                Text(authorLabel(media.uploadedBy), style = MaterialTheme.typography.bodyMedium)
                 Text(formatTimestamp(media.uploadedAt), style = MaterialTheme.typography.bodySmall)
                 Text(usageText(media.usageCount), style = MaterialTheme.typography.bodySmall)
                 if (media.tags.isNotEmpty()) {
@@ -456,7 +457,7 @@ fun MediaDetailScreen(
         preview?.let { Image(it, contentDescription = null, modifier = frame, contentScale = ContentScale.Fit) }
             ?: Box(frame.background(MaterialTheme.colorScheme.surfaceVariant))
         Text(stringResource(Res.string.media_size, current.width, current.height, formatBytes(current.size)))
-        Text(stringResource(Res.string.media_uploaded, current.uploadedBy.displayName, formatTimestamp(current.uploadedAt)))
+        Text(stringResource(Res.string.media_uploaded, authorLabel(current.uploadedBy), formatTimestamp(current.uploadedAt)))
         HorizontalDivider()
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(Res.string.media_details_title), style = MaterialTheme.typography.titleMedium,
@@ -551,7 +552,7 @@ private fun UsageRow(use: MediaUseDto, onClick: () -> Unit) {
             }
             val facts = buildList {
                 use.section?.let { add(it.name) }
-                add(use.author.displayName)
+                add(authorLabel(use.author))
                 add(statusText(use.status))
             }
             Text(facts.joinToString(" · "), style = MaterialTheme.typography.bodySmall)

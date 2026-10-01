@@ -7,5 +7,6 @@ public enum AccountAction {
     EDIT_ROLES,
     RESET_PASSWORD,
     LOCK,
-    UNLOCK
+    UNLOCK,
+    DELETE
 }

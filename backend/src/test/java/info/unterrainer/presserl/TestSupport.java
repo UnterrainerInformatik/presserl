@@ -97,6 +97,17 @@ public final class TestSupport {
     }
 
     /**
+     * Deletes every account deletion request.
+     */
+    public static void deleteDeletionRequests(DataSource dataSource) {
+        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+            statement.executeUpdate("DELETE FROM account_deletion_request");
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
      * Waits until {@code /q/health/ready} is UP, i.e. the publisher bootstrap has completed.
      */
     public static void awaitReady() {

@@ -98,6 +98,15 @@ final class ReaderFixtures {
     }
 
     /**
+     * A published article whose author's account was deleted: author names {@code NULL}.
+     */
+    long publishedByDeletedAuthor(String headline, Instant publishedAt) {
+        long id = article("PUBLISHED", null, null, 1, publishedAt);
+        revision(id, 1, "", headline, "", "", EMPTY_BODY, publishedAt);
+        return id;
+    }
+
+    /**
      * A published article by {@code Anna} in {@code sectionId}.
      */
     long publishedIn(long sectionId, String headline, Instant publishedAt) {

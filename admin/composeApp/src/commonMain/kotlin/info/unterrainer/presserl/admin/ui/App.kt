@@ -9,6 +9,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
@@ -42,6 +44,7 @@ import info.unterrainer.presserl.admin.api.SectionDto
 import info.unterrainer.presserl.admin.auth.AuthClient
 import info.unterrainer.presserl.admin.auth.AuthState
 import info.unterrainer.presserl.admin.resources.Res
+import info.unterrainer.presserl.admin.resources.deletion_requested_marker
 import info.unterrainer.presserl.admin.resources.loading
 import info.unterrainer.presserl.admin.resources.log_in_again
 import info.unterrainer.presserl.admin.resources.log_out
@@ -59,6 +62,7 @@ import info.unterrainer.presserl.admin.resources.try_again
 import info.unterrainer.presserl.admin.ui.account.AccountListScreen
 import info.unterrainer.presserl.admin.ui.account.AccountSlipScreen
 import info.unterrainer.presserl.admin.ui.account.EditRolesScreen
+import info.unterrainer.presserl.admin.ui.account.MyAccountScreen
 import info.unterrainer.presserl.admin.ui.account.NewAccountScreen
 import info.unterrainer.presserl.admin.ui.account.SlipPrinter
 import info.unterrainer.presserl.admin.ui.editor.EditorScreen
@@ -126,6 +130,8 @@ sealed interface Route {
     data object Media : Route
     data class MediaDetail(val mediaId: Long) : Route
     data class MediaEdit(val media: MediaDto, val usage: MediaUsageDto) : Route
+    /** Opened from the header's user line, for every logged-in user. */
+    data object MyAccount : Route
 }
 
 /** The deployment's upload limit among the newspaper settings (e.g. `10M`). */
@@ -167,7 +173,16 @@ fun App(auth: AuthClient, api: ApiClient, siteUrl: String, slipPrinter: SlipPrin
                     Text(stringResource(Res.string.something_went_wrong, current.message))
                     Button(onClick = auth::login) { Text(stringResource(Res.string.log_in_again)) }
                 }
-                is Screen.LoggedIn -> LoggedIn(current, api, siteUrl, slipPrinter, onLogout = auth::logout)
+                is Screen.LoggedIn -> LoggedIn(
+                    current,
+                    api,
+                    siteUrl,
+                    slipPrinter,
+                    onLogout = auth::logout,
+                    onDeletionRequest = { requestedAt ->
+                        (screen as? Screen.LoggedIn)?.let { screen = it.copy(me = it.me.copy(deletionRequestedAt = requestedAt)) }
+                    },
+                )
             }
         }
     }
@@ -179,7 +194,14 @@ private fun Message(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, slipPrinter: SlipPrinter, onLogout: () -> Unit) {
+private fun LoggedIn(
+    screen: Screen.LoggedIn,
+    api: ApiClient,
+    siteUrl: String,
+    slipPrinter: SlipPrinter,
+    onLogout: () -> Unit,
+    onDeletionRequest: (String?) -> Unit,
+) {
     // empty without a writing role or images: the notice is shown instead of a route
     var stack by remember { mutableStateOf(startStack(screen.start)) }
     // the last review-queue response, kept while the editor is open (design D3/D4)
@@ -206,6 +228,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                 Route.Issues -> NavEntry.ISSUES
                 Route.Newspaper -> NavEntry.NEWSPAPER
                 Route.Media -> NavEntry.IMAGES
+                Route.MyAccount -> null
                 else -> NavEntry.ARTICLES
             },
             onEntry = { entry ->
@@ -222,6 +245,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                 )
             },
             onLogout = onLogout,
+            onMyAccount = { if (stack.lastOrNull() != Route.MyAccount) push(Route.MyAccount) },
         )
         HorizontalDivider()
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -342,6 +366,7 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
                             },
                         )
                     }
+                    Route.MyAccount -> MyAccountScreen(api, screen.me, onBack = back, onChanged = onDeletionRequest)
                     is Route.MediaEdit -> key(route) {
                         MediaEditScreen(
                             api,
@@ -365,17 +390,32 @@ private fun LoggedIn(screen: Screen.LoggedIn, api: ApiClient, siteUrl: String, s
 private val NARROW_HEADER = 720.dp
 
 @Composable
-private fun Header(screen: Screen.LoggedIn, entry: NavEntry?, onEntry: (NavEntry) -> Unit, onLogout: () -> Unit) {
+private fun Header(
+    screen: Screen.LoggedIn,
+    entry: NavEntry?,
+    onEntry: (NavEntry) -> Unit,
+    onLogout: () -> Unit,
+    onMyAccount: () -> Unit,
+) {
     val identity = @Composable { modifier: Modifier ->
         Column(modifier) {
             Text(screen.newspaper.name, style = MaterialTheme.typography.titleLarge)
             val roles = screen.me.roles.map { roleText(it) } +
                 (if (screen.me.sectionlessReporter) listOf(stringResource(sectionlessReporterLabel)) else emptyList()) +
                 screen.me.sectionRoles.map { sectionRoleText(it.role) + " · " + it.sectionName }
-            Text(
-                screen.me.displayName + " · " + (if (roles.isEmpty()) stringResource(Res.string.no_roles) else roles.joinToString(", ")),
-                style = MaterialTheme.typography.bodyMedium,
+            val userLine = listOfNotNull(
+                screen.me.displayName,
+                if (roles.isEmpty()) stringResource(Res.string.no_roles) else roles.joinToString(", "),
+                stringResource(Res.string.deletion_requested_marker).takeIf { screen.me.deletionRequestedAt != null },
             )
+            // the user line opens "My account" for everyone, whatever the navigation offers
+            TextButton(
+                onClick = onMyAccount,
+                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
+                modifier = Modifier.heightIn(min = 44.dp),
+            ) {
+                Text(userLine.joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+            }
         }
     }
     val navigation = @Composable {

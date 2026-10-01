@@ -50,7 +50,9 @@ import jakarta.ws.rs.core.UriInfo;
  * <p>
  * The front page lists the articles visible to readers (published in a live issue), weighted ones
  * first; {@code ?section=<id>} filters it by section. {@code /legal-notice} shows the theme's legal
- * notice to every visitor, and every page but the print views links it from the footer.
+ * notice to every visitor, and every page but the print views links it from the footer;
+ * {@code /account-deletion} explains to every visitor how accounts are deleted and is linked from the
+ * legal notice.
  * <p>
  * Issues: {@code /issues} lists the published issues, {@code /issues/{id}} shows one; the front page
  * masthead names the newest published issue. Print views: {@code /print/article/{id}} and
@@ -77,6 +79,8 @@ public class ReaderResource {
         static native TemplateInstance notFound(ReaderPage page);
 
         static native TemplateInstance legalNotice(ReaderPage page, List<List<String>> paragraphs);
+
+        static native TemplateInstance accountDeletion(ReaderPage page);
 
         static native TemplateInstance issues(ReaderPage page, List<ReaderIssue> issues);
 
@@ -270,6 +274,24 @@ public class ReaderResource {
             return page.flatMap(p -> theme.legalNotice()
                     .map(paragraphs -> render(Templates.legalNotice(p, paragraphs), locale, Status.OK, visit.noStore()))
                     .orElseGet(() -> notFound(visit, p)));
+        });
+    }
+
+    /**
+     * How accounts of this newspaper are deleted, linking the legal notice when there is one. Public
+     * like {@link #legalNotice}, with the same cache headers.
+     */
+    @GET
+    @Path("account-deletion")
+    public Uni<RestResponse<String>> accountDeletion(@Context HttpHeaders headers, @Context UriInfo uri,
+            @CookieParam(TextSizeResource.COOKIE) String textSize) {
+        Locale locale = locale(headers);
+        ReaderViewer viewer = ReaderViewer.of(identity);
+        return settings.effective().flatMap(s -> {
+            boolean readable = s.visibility() != Visibility.PRIVATE || viewer.access() == Access.ENTITLED;
+            Visit visit = new Visit(locale, page(locale, s, viewer, textSize, uri), viewer.loggedIn());
+            Uni<ReaderPage> page = readable ? withSections(visit) : Uni.createFrom().item(visit.page());
+            return page.flatMap(p -> render(Templates.accountDeletion(p), locale, Status.OK, visit.noStore()));
         });
     }
 

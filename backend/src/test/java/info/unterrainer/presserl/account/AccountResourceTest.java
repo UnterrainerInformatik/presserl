@@ -470,7 +470,7 @@ class AccountResourceTest {
 
         for (String username : List.of("chief", "reader", "nogroups")) {
             assertThat(json.getList("accounts.find { it.username == '%s' }.allowedActions".formatted(username),
-                    String.class)).containsExactly("EDIT_ROLES", "RESET_PASSWORD", "LOCK");
+                    String.class)).containsExactly("EDIT_ROLES", "RESET_PASSWORD", "LOCK", "DELETE");
         }
         assertThat(json.getList("accounts.find { it.username == 'publisher' }.allowedActions")).isEmpty();
     }
@@ -481,7 +481,7 @@ class AccountResourceTest {
         as(publisher).post("/api/accounts/%s/lock".formatted(id)).then().statusCode(200);
 
         as(publisher).get("/api/accounts").then()
-                .body("accounts.find { it.username == 'locky' }.allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "UNLOCK"));
+                .body("accounts.find { it.username == 'locky' }.allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "UNLOCK", "DELETE"));
     }
 
     @Test
@@ -499,7 +499,7 @@ class AccountResourceTest {
     @Test
     void createdAccountCarriesAllowedActionsOfCreator() {
         post(publisher, "fresh", "[\"READER\"]", "Fresh").then().statusCode(201)
-                .body("account.allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "LOCK"));
+                .body("account.allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "LOCK", "DELETE"));
     }
 
     // --- password reset ---------------------------------------------------------------------
@@ -513,7 +513,7 @@ class AccountResourceTest {
         String password = as(publisher).post("/api/accounts/%s/password-reset".formatted(id)).then().statusCode(200)
                 .body("account.username", equalTo("resetme"))
                 .body("account.enabled", equalTo(true))
-                .body("account.allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "LOCK"))
+                .body("account.allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "LOCK", "DELETE"))
                 .body("password", matchesPattern(PASSWORD))
                 .extract().path("password");
 
@@ -628,14 +628,14 @@ class AccountResourceTest {
         as(publisher).post("/api/accounts/%s/lock".formatted(id)).then().statusCode(200)
                 .body("username", equalTo("locked"))
                 .body("enabled", equalTo(false))
-                .body("allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "UNLOCK"));
+                .body("allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "UNLOCK", "DELETE"));
         assertThat(realm.users().get(id).toRepresentation().isEnabled()).isFalse();
         TestSupport.passwordGrant(TestSupport.HTTP_CLIENT, "locked", password).then().statusCode(400);
         refresh(refreshToken).then().statusCode(400);
 
         as(publisher).post("/api/accounts/%s/unlock".formatted(id)).then().statusCode(200)
                 .body("enabled", equalTo(true))
-                .body("allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "LOCK"));
+                .body("allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "LOCK", "DELETE"));
         TestSupport.passwordGrant(TestSupport.HTTP_CLIENT, "locked", password).then().statusCode(200);
     }
 
@@ -701,7 +701,7 @@ class AccountResourceTest {
                 .body("roles", contains("EDITOR_IN_CHIEF", "READER"))
                 .body("sectionRoles", empty())
                 .body("enabled", equalTo(true))
-                .body("allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "LOCK"));
+                .body("allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "LOCK", "DELETE"));
 
         assertThat(groupsOf(id)).containsExactlyInAnyOrder("editor-in-chief", "reader");
         as(TestSupport.token("promoted", password)).get("/api/me").then().statusCode(200)

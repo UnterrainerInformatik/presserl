@@ -51,13 +51,75 @@ class AccountListModelTest {
             if (refuse) throw IllegalStateException("you may not change trust of account 'chief' at PUBLISHER")
             chief.copy(trusts = if (trusted) listOf(TrustScopeDto(level, sectionId)) else emptyList())
         },
+        delete = { id ->
+            sent += "delete $id"
+            if (refuse) throw IllegalStateException("you may not delete account 'reader'")
+        },
     )
 
     @Test
     fun actionsFollowAllowedActions() {
         assertEquals(listOf(AccountAction.RESET_PASSWORD, AccountAction.LOCK), reader.actions())
         assertEquals(emptyList(), account("x", "x", enabled = true).actions())
-        assertEquals(listOf(AccountAction.UNLOCK), account("x", "x", enabled = false, "UNLOCK", "DELETE").actions())
+        assertEquals(listOf(AccountAction.UNLOCK, AccountAction.DELETE), account("x", "x", enabled = false, "UNLOCK", "DELETE").actions())
+        assertEquals(listOf(AccountAction.DELETE), account("x", "x", enabled = true, "DELETE", "ARCHIVE").actions())
+    }
+
+    @Test
+    fun pendingDeletionRequestsComeFirstOldestFirst() = runTest {
+        val late = account("l1", "late", enabled = true).copy(deletionRequestedAt = "2026-10-02T09:00:00Z")
+        val early = account("e1", "early", enabled = true).copy(deletionRequestedAt = "2026-10-02T08:15:00.500Z")
+        val model = AccountListModel(
+            backgroundScope,
+            listOf(chief, late, reader, early),
+            resetPassword = { error("unused") },
+            lock = { error("unused") },
+            unlock = { error("unused") },
+            setTrust = { _, _, _, _ -> error("unused") },
+            delete = { error("unused") },
+        )
+
+        assertEquals(listOf(early, late, chief, reader), model.state.value.accounts)
+    }
+
+    @Test
+    fun confirmedDeletionRemovesTheRow() = runTest {
+        val model = model()
+        model.request(reader, AccountAction.DELETE)
+        assertEquals(AccountAction.DELETE, assertIs<PendingAction>(model.state.value.pending).action)
+
+        model.confirm()
+        runCurrent()
+
+        assertEquals(listOf("delete r1"), sent)
+        assertEquals(listOf(chief), model.state.value.accounts)
+        assertFalse(model.state.value.busy)
+    }
+
+    @Test
+    fun cancelledDeletionSendsNothing() = runTest {
+        val model = model()
+        model.request(reader, AccountAction.DELETE)
+
+        model.cancel()
+        runCurrent()
+
+        assertEquals(emptyList(), sent)
+        assertEquals(listOf(chief, reader), model.state.value.accounts)
+    }
+
+    @Test
+    fun refusedDeletionShowsAnErrorAndKeepsTheList() = runTest {
+        refuse = true
+        val model = model()
+        model.request(reader, AccountAction.DELETE)
+
+        model.confirm()
+        runCurrent()
+
+        assertEquals("you may not delete account 'reader'", model.state.value.error)
+        assertEquals(listOf(chief, reader), model.state.value.accounts)
+        assertFalse(model.state.value.busy)
     }
 
     @Test

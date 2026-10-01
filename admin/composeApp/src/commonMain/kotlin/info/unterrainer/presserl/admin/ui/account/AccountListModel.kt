@@ -11,13 +11,21 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.time.Instant
 
 /** Actions on an account, named like the server's `allowedActions`; [EDIT_ROLES] opens a form instead of a confirmation. */
-enum class AccountAction { EDIT_ROLES, RESET_PASSWORD, LOCK, UNLOCK }
+enum class AccountAction { EDIT_ROLES, RESET_PASSWORD, LOCK, UNLOCK, DELETE }
 
 /** The actions the server offers for this account, in its order; unknown names are skipped. */
 fun AccountDto.actions(): List<AccountAction> =
     allowedActions.mapNotNull { name -> AccountAction.entries.firstOrNull { it.name == name } }
+
+/**
+ * Accounts with a pending deletion request first, oldest request first; the others keep their order (the server's, by
+ * username).
+ */
+fun List<AccountDto>.pendingDeletionFirst(): List<AccountDto> =
+    sortedWith(compareBy(nullsLast()) { account -> account.deletionRequestedAt?.let { Instant.parse(it) } })
 
 /** The approval levels this app knows, as sent in trust entries; entries with other levels are ignored. */
 val TRUST_LEVELS = listOf("PUBLISHER", "EDITOR_IN_CHIEF", "SECTION_EDITOR")
@@ -57,7 +65,9 @@ data class AccountListState(
 
 /**
  * Account row actions: [request] asks for confirmation, [confirm] sends `POST /api/accounts/{id}/password-reset`,
- * `/lock` or `/unlock` and replaces the account's row with the server's answer, [cancel] sends nothing. Trust
+ * `/lock` or `/unlock` and replaces the account's row with the server's answer, or `DELETE /api/accounts/{id}` and
+ * removes the row, [cancel] sends nothing. Accounts with a pending deletion request are listed first
+ * ([pendingDeletionFirst]). Trust
  * switches: [requestTrust] asks for confirmation before turning trust on and sends `PUT /api/accounts/{id}/trust` at
  * once when turning it off.
  */
@@ -68,8 +78,9 @@ class AccountListModel(
     private val lock: suspend (accountId: String) -> AccountDto,
     private val unlock: suspend (accountId: String) -> AccountDto,
     private val setTrust: suspend (accountId: String, level: String, sectionId: Long?, trusted: Boolean) -> AccountDto,
+    private val delete: suspend (accountId: String) -> Unit,
 ) {
-    private val _state = MutableStateFlow(AccountListState(accounts))
+    private val _state = MutableStateFlow(AccountListState(accounts.pendingDeletionFirst()))
     val state: StateFlow<AccountListState> = _state.asStateFlow()
 
     fun request(account: AccountDto, action: AccountAction) {
@@ -107,6 +118,10 @@ class AccountListModel(
                     }
                     AccountAction.LOCK -> replace(lock(id))
                     AccountAction.UNLOCK -> replace(unlock(id))
+                    AccountAction.DELETE -> {
+                        delete(id)
+                        _state.update { state -> state.copy(accounts = state.accounts.filter { it.id != id }, busy = false) }
+                    }
                     AccountAction.EDIT_ROLES -> error("EDIT_ROLES is never confirmed")
                 }
             }

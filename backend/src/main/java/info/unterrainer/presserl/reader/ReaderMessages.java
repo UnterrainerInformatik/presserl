@@ -30,6 +30,12 @@ public interface ReaderMessages {
     @Message("Von {name}")
     String byline(String name);
 
+    /**
+     * The byline of an article whose author's account was deleted.
+     */
+    @Message("Ehemaliges Redaktionsmitglied")
+    String bylineFormer();
+
     @Message("Veröffentlicht am {date}")
     String published(String date);
 
@@ -83,4 +89,27 @@ public interface ReaderMessages {
 
     @Message("Impressum")
     String legalNotice();
+
+    @Message("Konto löschen")
+    String accountDeletion();
+
+    @Message("Die Konten dieser Zeitung legt ihre Redaktion an, gelöscht werden sie von den Herausgebern der Zeitung.")
+    String accountDeletionWho();
+
+    @Message("Die Löschung des eigenen Kontos lässt sich in der presserl-App unter „Mein Konto“ beantragen. Man kann "
+            + "auch die Herausgeber oder den Betreiber der Zeitung direkt darum bitten.")
+    String accountDeletionHow();
+
+    /**
+     * Followed by a link to the legal notice.
+     */
+    @Message("Die Kontaktdaten stehen im")
+    String accountDeletionContact();
+
+    @Message("Artikel und Bilder des Kontos bleiben erhalten und tragen dann die Angabe „ehemaliges "
+            + "Redaktionsmitglied“. Das Löschen lässt sich nicht rückgängig machen.")
+    String accountDeletionContent();
+
+    @Message("Was die App auf einem Handy speichert, wird durch Abmelden oder Deinstallieren der App entfernt.")
+    String accountDeletionDevice();
 }

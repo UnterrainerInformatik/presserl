@@ -49,7 +49,8 @@ data class OidcDto(
 /**
  * `GET /api/me`; [sectionRoles] are ordered by section position, [sectionlessReporter] is the marker that lets the
  * account use the images without writing articles, [allowedActions] are the newspaper-wide actions the server grants
- * (unknown values are kept and ignored by the app).
+ * (unknown values are kept and ignored by the app), [deletionRequestedAt] is the ISO-8601 instant of the user's pending
+ * deletion request (`null` for none).
  */
 @Serializable
 data class MeDto(
@@ -59,7 +60,12 @@ data class MeDto(
     val sectionRoles: List<MySectionRoleDto> = emptyList(),
     val sectionlessReporter: Boolean = false,
     val allowedActions: List<String> = emptyList(),
+    val deletionRequestedAt: String? = null,
 )
+
+/** `POST`/`DELETE /api/me/deletion-request`: the pending request's ISO-8601 instant, `null` for none. */
+@Serializable
+data class DeletionRequestDto(val deletionRequestedAt: String? = null)
 
 /** A section role of the logged-in user, with the section's name. */
 @Serializable
@@ -69,11 +75,14 @@ data class MySectionRoleDto(
     val role: String,
 )
 
-/** Author snapshot of an article. */
+/**
+ * Name snapshot of an article's author, a revision's author, a reviewer or an uploader; both `null` once that account
+ * was deleted (shown as "former newsroom member", see `authorLabel`).
+ */
 @Serializable
 data class AuthorDto(
-    val username: String,
-    val displayName: String,
+    val username: String? = null,
+    val displayName: String? = null,
 )
 
 /**
@@ -361,7 +370,8 @@ data class FieldErrorDto(
  * [sectionRoles] are ordered by section position, [sectionlessReporter] is the marker "Redakteur (ohne Ressort)",
  * [trusts] the levels that trust the account, [trustScopes] the trust
  * entries the user may set or clear on it (both ordered publisher, editor-in-chief, section editor by section
- * position), [allowedActions] what the user may do with it now (`EDIT_ROLES`, `RESET_PASSWORD`, `LOCK`, `UNLOCK`).
+ * position), [allowedActions] what the user may do with it now (`EDIT_ROLES`, `RESET_PASSWORD`, `LOCK`, `UNLOCK`,
+ * `DELETE`), [deletionRequestedAt] the ISO-8601 instant of the account's pending deletion request (`null` for none).
  */
 @Serializable
 data class AccountDto(
@@ -376,6 +386,7 @@ data class AccountDto(
     val trusts: List<TrustScopeDto> = emptyList(),
     val trustScopes: List<TrustScopeDto> = emptyList(),
     val allowedActions: List<String> = emptyList(),
+    val deletionRequestedAt: String? = null,
 )
 
 /**

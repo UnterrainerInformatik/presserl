@@ -15,7 +15,9 @@ import info.unterrainer.presserl.admin.resources.status_draft
 import info.unterrainer.presserl.admin.resources.status_offline
 import info.unterrainer.presserl.admin.resources.status_published
 import info.unterrainer.presserl.admin.resources.status_submitted
+import info.unterrainer.presserl.admin.api.AuthorDto
 import info.unterrainer.presserl.admin.ui.approvalLevelLabel
+import info.unterrainer.presserl.admin.ui.authorName
 import info.unterrainer.presserl.admin.ui.colorLabel
 import info.unterrainer.presserl.admin.ui.decisionLabel
 import info.unterrainer.presserl.admin.ui.roleLabel
@@ -29,6 +31,13 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class LabelsTest {
+
+    @Test
+    fun authorNameIsDisplayNameElseUsernameAndNullForADeletedAccount() {
+        assertEquals("Anna Berger", authorName(AuthorDto("anna", "Anna Berger")))
+        assertEquals("anna", authorName(AuthorDto("anna", " ")))
+        assertNull(authorName(AuthorDto(null, null)))
+    }
 
     @Test
     fun everyNewspaperRoleHasALabel() {

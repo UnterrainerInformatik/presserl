@@ -384,4 +384,21 @@
     <string name="front_page_marker">Front page %1$d</string>
     <string name="front_page_label">Front page</string>
     <string name="front_page_help">1 is the lead story; smaller numbers come first. Empty: the usual order, newest first.</string>
+    <string name="former_member">former newsroom member</string>
+    <string name="my_account_title">My account</string>
+    <string name="my_account_username">Username: %1$s</string>
+    <string name="deletion_requested_marker">Deletion requested</string>
+    <string name="deletion_requested_on">Deletion requested on %1$s</string>
+    <string name="request_deletion">Request account deletion</string>
+    <string name="withdraw_deletion">Withdraw request</string>
+    <string name="deletion_explanation">The publishers of the newspaper delete your account. Your articles and images stay and are then credited to “former newsroom member”. To remove what the app has stored on this device, log out.</string>
+    <string name="deletion_explanation_publisher">As a publisher, you are deleted by another publisher. If there is none, the operator of the newspaper server deletes your account.</string>
+    <string name="deletion_pending_explanation">Until a publisher deletes your account, you can keep working or withdraw the request.</string>
+    <string name="confirm_request_deletion_title">Request deletion?</string>
+    <string name="confirm_request_deletion_text">The publishers see your request and delete your account. That cannot be undone.</string>
+    <string name="confirm_withdraw_deletion_title">Withdraw request?</string>
+    <string name="confirm_withdraw_deletion_text">Your account then stays.</string>
+    <string name="action_delete">Delete</string>
+    <string name="confirm_delete_title">Delete account?</string>
+    <string name="confirm_delete_text">“%1$s” can no longer log in from now on, and the login slip stops working. Articles and images of the account stay with the byline “former newsroom member”. Deleting cannot be undone.</string>
 </resources>

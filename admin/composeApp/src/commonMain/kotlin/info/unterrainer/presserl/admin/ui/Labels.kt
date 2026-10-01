@@ -1,6 +1,7 @@
 package info.unterrainer.presserl.admin.ui
 
 import androidx.compose.runtime.Composable
+import info.unterrainer.presserl.admin.api.AuthorDto
 import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.color_blue
 import info.unterrainer.presserl.admin.resources.color_green
@@ -12,6 +13,7 @@ import info.unterrainer.presserl.admin.resources.color_teal
 import info.unterrainer.presserl.admin.resources.color_yellow
 import info.unterrainer.presserl.admin.resources.decision_approved
 import info.unterrainer.presserl.admin.resources.decision_rejected
+import info.unterrainer.presserl.admin.resources.former_member
 import info.unterrainer.presserl.admin.resources.front_page_marker
 import info.unterrainer.presserl.admin.resources.in_no_issue
 import info.unterrainer.presserl.admin.resources.role_editor_in_chief
@@ -28,6 +30,16 @@ import info.unterrainer.presserl.admin.resources.waiting_for_approval
 import info.unterrainer.presserl.admin.resources.waits_for_issue
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+
+/**
+ * The name to show for an article's author, a revision's author, a reviewer or an uploader: the display name, else the
+ * username; `null` once the account was deleted (both names `null`).
+ */
+fun authorName(author: AuthorDto): String? = author.displayName?.takeIf { it.isNotBlank() } ?: author.username
+
+/** [authorName], or "former newsroom member" for a deleted account. */
+@Composable
+fun authorLabel(author: AuthorDto): String = authorName(author) ?: stringResource(Res.string.former_member)
 
 /** Label of a newspaper-wide role from `GET /api/me`; `null` for a role this app does not know. */
 fun roleLabel(role: String): StringResource? = when (role) {

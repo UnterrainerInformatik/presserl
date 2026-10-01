@@ -103,7 +103,7 @@ fun RevisionsScreen(api: ApiClient, articleId: Long, onBack: () -> Unit, onOpen:
                         ) {
                             RevisionTitle(revision.number, revision.live)
                             Text(
-                                revisionDetails(revision.updatedAt, revision.publishedAt, revision.author?.displayName),
+                                revisionDetails(revision.updatedAt, revision.publishedAt, revision.author?.let { authorLabel(it) }),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }
@@ -141,7 +141,7 @@ fun RevisionScreen(api: ApiClient, articleId: Long, number: Int, onBack: () -> U
             current == null -> Text(stringResource(Res.string.loading))
             else -> {
                 Text(
-                    revisionDetails(current.updatedAt, current.publishedAt, current.author?.displayName),
+                    revisionDetails(current.updatedAt, current.publishedAt, current.author?.let { authorLabel(it) }),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 ArticleView(remember(current) { draftOf(current, IdSource()) }, thumbnails)
@@ -190,7 +190,7 @@ fun RevisionDiffScreen(api: ApiClient, articleId: Long, number: Int, onBack: () 
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             BackButton(onBack)
-            val author = comparison?.newer?.author?.displayName.orEmpty()
+            val author = comparison?.newer?.author?.let { authorLabel(it) }.orEmpty()
             Text(stringResource(Res.string.changes_title, number, author), style = MaterialTheme.typography.titleLarge)
         }
         val current = comparison

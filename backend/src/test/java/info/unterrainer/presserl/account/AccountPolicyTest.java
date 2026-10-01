@@ -1,13 +1,16 @@
 package info.unterrainer.presserl.account;
 
+import static info.unterrainer.presserl.account.AccountAction.DELETE;
 import static info.unterrainer.presserl.account.AccountAction.EDIT_ROLES;
 import static info.unterrainer.presserl.account.AccountAction.LOCK;
 import static info.unterrainer.presserl.account.AccountAction.RESET_PASSWORD;
 import static info.unterrainer.presserl.account.AccountAction.UNLOCK;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
@@ -53,7 +56,21 @@ class AccountPolicyTest {
     }
 
     private static AccountDto account(String id, List<NewspaperRole> roles, List<SectionRoleDto> sectionRoles) {
-        return new AccountDto(id, id, id, "", roles, sectionRoles, false, true, List.of(), List.of(), List.of());
+        return new AccountDto(id, id, id, "", roles, sectionRoles, false, true, null, List.of(), List.of(), List.of());
+    }
+
+    /**
+     * Both publishers enabled.
+     */
+    private static final Set<String> ENABLED_PUBLISHERS = Set.of("pub", "pub2");
+    private static final Instant REQUESTED = Instant.parse("2026-10-02T08:15:00Z");
+
+    private static List<AccountAction> actions(Newsroom requester, AccountDto target) {
+        return AccountPolicy.allowedActions(requester, target, ENABLED_PUBLISHERS);
+    }
+
+    private static boolean permitted(AccountAction action, Newsroom requester, AccountDto target) {
+        return AccountPolicy.permitted(action, requester, target, ENABLED_PUBLISHERS);
     }
 
     private static AccountDto self(Newsroom newsroom) {
@@ -63,88 +80,110 @@ class AccountPolicyTest {
     @Test
     void nobodyActsOnTheirOwnAccount() {
         for (Newsroom requester : List.of(PUBLISHER, CHIEF, SECTION_EDITOR, READER)) {
-            assertThat(AccountPolicy.allowedActions(requester, self(requester))).isEmpty();
-            assertThat(AccountPolicy.allowedActions(requester, self(requester).withEnabled(false))).isEmpty();
+            assertThat(actions(requester, self(requester))).isEmpty();
+            assertThat(actions(requester, self(requester).withEnabled(false))).isEmpty();
         }
     }
 
     @Test
-    void nobodyActsOnAPublisher() {
+    void nobodyActsOnAPublisherWithoutDeletionRequest() {
         for (Newsroom requester : List.of(PUBLISHER, CHIEF, SECTION_EDITOR, READER)) {
-            assertThat(AccountPolicy.allowedActions(requester, OTHER_PUBLISHER)).isEmpty();
-            assertThat(AccountPolicy.allowedActions(requester, OTHER_PUBLISHER.withEnabled(false))).isEmpty();
+            assertThat(actions(requester, OTHER_PUBLISHER)).isEmpty();
+            assertThat(actions(requester, OTHER_PUBLISHER.withEnabled(false))).isEmpty();
         }
     }
 
     @Test
-    void publisherEditsResetsAndLocksEveryOtherAccount() {
+    void publisherEditsResetsLocksAndDeletesEveryOtherAccount() {
         for (AccountDto target : List.of(OTHER_CHIEF, PLAIN_READER, ROLELESS, SPORT_REPORTER, SPORT_SECTION_EDITOR)) {
-            assertThat(AccountPolicy.allowedActions(PUBLISHER, target))
-                    .containsExactly(EDIT_ROLES, RESET_PASSWORD, LOCK);
+            assertThat(actions(PUBLISHER, target))
+                    .containsExactly(EDIT_ROLES, RESET_PASSWORD, LOCK, DELETE);
+            assertThat(actions(PUBLISHER, target.withDeletionRequestedAt(REQUESTED)))
+                    .containsExactly(EDIT_ROLES, RESET_PASSWORD, LOCK, DELETE);
         }
     }
 
     @Test
     void lockForEnabledUnlockForDisabled() {
-        assertThat(AccountPolicy.allowedActions(PUBLISHER, PLAIN_READER))
-                .containsExactly(EDIT_ROLES, RESET_PASSWORD, LOCK);
-        assertThat(AccountPolicy.allowedActions(PUBLISHER, PLAIN_READER.withEnabled(false)))
-                .containsExactly(EDIT_ROLES, RESET_PASSWORD, UNLOCK);
+        assertThat(actions(PUBLISHER, PLAIN_READER))
+                .containsExactly(EDIT_ROLES, RESET_PASSWORD, LOCK, DELETE);
+        assertThat(actions(PUBLISHER, PLAIN_READER.withEnabled(false)))
+                .containsExactly(EDIT_ROLES, RESET_PASSWORD, UNLOCK, DELETE);
+    }
+
+    @Test
+    void publisherDeletesAPublisherOnlyWithRequestWhileAnotherEnabledPublisherRemains() {
+        AccountDto requested = OTHER_PUBLISHER.withDeletionRequestedAt(REQUESTED);
+        assertThat(actions(PUBLISHER, requested)).containsExactly(DELETE);
+        assertThat(actions(PUBLISHER, requested.withEnabled(false))).containsExactly(DELETE);
+        assertThat(AccountPolicy.allowedActions(PUBLISHER, requested, Set.of("pub2"))).isEmpty();
+        assertThat(AccountPolicy.allowedActions(PUBLISHER, requested, Set.of("third", "pub2"))).containsExactly(DELETE);
+        for (Newsroom requester : List.of(CHIEF, SECTION_EDITOR, READER)) {
+            assertThat(actions(requester, requested)).isEmpty();
+        }
+    }
+
+    @Test
+    void onlyPublishersDelete() {
+        for (Newsroom requester : List.of(CHIEF, SECTION_EDITOR, REPORTER, READER, NOBODY)) {
+            assertThat(permitted(DELETE, requester, PLAIN_READER.withDeletionRequestedAt(REQUESTED))).isFalse();
+        }
+        assertThat(permitted(DELETE, PUBLISHER, self(PUBLISHER).withDeletionRequestedAt(REQUESTED))).isFalse();
     }
 
     @Test
     void publisherMayLockLockedAndUnlockEnabledAccounts() {
-        assertThat(AccountPolicy.permitted(LOCK, PUBLISHER, PLAIN_READER.withEnabled(false))).isTrue();
-        assertThat(AccountPolicy.permitted(UNLOCK, PUBLISHER, PLAIN_READER)).isTrue();
-        assertThat(AccountPolicy.permitted(LOCK, CHIEF, PLAIN_READER)).isFalse();
-        assertThat(AccountPolicy.permitted(LOCK, PUBLISHER, OTHER_PUBLISHER)).isFalse();
-        assertThat(AccountPolicy.permitted(UNLOCK, PUBLISHER, self(PUBLISHER).withEnabled(false))).isFalse();
+        assertThat(permitted(LOCK, PUBLISHER, PLAIN_READER.withEnabled(false))).isTrue();
+        assertThat(permitted(UNLOCK, PUBLISHER, PLAIN_READER)).isTrue();
+        assertThat(permitted(LOCK, CHIEF, PLAIN_READER)).isFalse();
+        assertThat(permitted(LOCK, PUBLISHER, OTHER_PUBLISHER)).isFalse();
+        assertThat(permitted(UNLOCK, PUBLISHER, self(PUBLISHER).withEnabled(false))).isFalse();
     }
 
     @Test
     void editorInChiefEditsAndResetsBelowOwnRankButNeverLocks() {
         for (AccountDto target : List.of(PLAIN_READER, ROLELESS, SPORT_REPORTER, SPORT_SECTION_EDITOR)) {
-            assertThat(AccountPolicy.allowedActions(CHIEF, target)).containsExactly(EDIT_ROLES, RESET_PASSWORD);
-            assertThat(AccountPolicy.allowedActions(CHIEF, target.withEnabled(false)))
+            assertThat(actions(CHIEF, target)).containsExactly(EDIT_ROLES, RESET_PASSWORD);
+            assertThat(actions(CHIEF, target.withEnabled(false)))
                     .containsExactly(EDIT_ROLES, RESET_PASSWORD);
         }
-        assertThat(AccountPolicy.allowedActions(CHIEF, OTHER_CHIEF)).isEmpty();
-        assertThat(AccountPolicy.allowedActions(CHIEF, CHIEF_REPORTING_IN_SPORT)).isEmpty();
+        assertThat(actions(CHIEF, OTHER_CHIEF)).isEmpty();
+        assertThat(actions(CHIEF, CHIEF_REPORTING_IN_SPORT)).isEmpty();
     }
 
     @Test
     void sectionEditorEditsAndResetsReportersOfOwnSectionsOnly() {
-        assertThat(AccountPolicy.allowedActions(SECTION_EDITOR, SPORT_REPORTER))
+        assertThat(actions(SECTION_EDITOR, SPORT_REPORTER))
                 .containsExactly(EDIT_ROLES, RESET_PASSWORD);
-        assertThat(AccountPolicy.allowedActions(SECTION_EDITOR, SPORT_REPORTER.withEnabled(false)))
+        assertThat(actions(SECTION_EDITOR, SPORT_REPORTER.withEnabled(false)))
                 .containsExactly(EDIT_ROLES, RESET_PASSWORD);
     }
 
     @Test
     void sectionEditorDoesNotResetReporterAlsoInForeignSection() {
-        assertThat(AccountPolicy.allowedActions(SECTION_EDITOR, SPORT_AND_KULTUR_REPORTER)).isEmpty();
-        assertThat(AccountPolicy.allowedActions(SECTION_EDITOR, KULTUR_REPORTER)).isEmpty();
+        assertThat(actions(SECTION_EDITOR, SPORT_AND_KULTUR_REPORTER)).isEmpty();
+        assertThat(actions(SECTION_EDITOR, KULTUR_REPORTER)).isEmpty();
     }
 
     @Test
     void sectionEditorDoesNotResetOtherSectionEditorsOrHigherRanks() {
-        assertThat(AccountPolicy.allowedActions(SECTION_EDITOR, SPORT_SECTION_EDITOR)).isEmpty();
-        assertThat(AccountPolicy.allowedActions(SECTION_EDITOR, CHIEF_REPORTING_IN_SPORT)).isEmpty();
-        assertThat(AccountPolicy.allowedActions(SECTION_EDITOR, OTHER_CHIEF)).isEmpty();
+        assertThat(actions(SECTION_EDITOR, SPORT_SECTION_EDITOR)).isEmpty();
+        assertThat(actions(SECTION_EDITOR, CHIEF_REPORTING_IN_SPORT)).isEmpty();
+        assertThat(actions(SECTION_EDITOR, OTHER_CHIEF)).isEmpty();
     }
 
     @Test
     void sectionEditorDoesNotResetAccountsWithoutSectionRoles() {
-        assertThat(AccountPolicy.allowedActions(SECTION_EDITOR, PLAIN_READER)).isEmpty();
-        assertThat(AccountPolicy.allowedActions(SECTION_EDITOR, ROLELESS)).isEmpty();
+        assertThat(actions(SECTION_EDITOR, PLAIN_READER)).isEmpty();
+        assertThat(actions(SECTION_EDITOR, ROLELESS)).isEmpty();
     }
 
     @Test
     void reportersReadersAndRolelessUsersDoNothing() {
         for (Newsroom requester : List.of(REPORTER, READER, NOBODY)) {
             for (AccountDto target : List.of(OTHER_CHIEF, PLAIN_READER, ROLELESS, SPORT_REPORTER)) {
-                assertThat(AccountPolicy.allowedActions(requester, target)).isEmpty();
-                assertThat(AccountPolicy.allowedActions(requester, target.withEnabled(false))).isEmpty();
+                assertThat(actions(requester, target)).isEmpty();
+                assertThat(actions(requester, target.withEnabled(false))).isEmpty();
             }
         }
     }
@@ -156,31 +195,31 @@ class AccountPolicyTest {
                 SPORT_AND_KULTUR_REPORTER, KULTUR_REPORTER, SPORT_SECTION_EDITOR, CHIEF_REPORTING_IN_SPORT);
         for (Newsroom requester : requesters) {
             for (AccountDto target : targets) {
-                assertThat(AccountPolicy.permitted(EDIT_ROLES, requester, target))
+                assertThat(permitted(EDIT_ROLES, requester, target))
                         .as("%s on %s", requester.user().sub(), target.id())
-                        .isEqualTo(AccountPolicy.permitted(RESET_PASSWORD, requester, target));
+                        .isEqualTo(permitted(RESET_PASSWORD, requester, target));
             }
         }
     }
 
     @Test
     void editRolesOnLockedAccounts() {
-        assertThat(AccountPolicy.permitted(EDIT_ROLES, PUBLISHER, PLAIN_READER.withEnabled(false))).isTrue();
-        assertThat(AccountPolicy.permitted(EDIT_ROLES, CHIEF, PLAIN_READER.withEnabled(false))).isTrue();
-        assertThat(AccountPolicy.permitted(EDIT_ROLES, SECTION_EDITOR, SPORT_REPORTER.withEnabled(false))).isTrue();
+        assertThat(permitted(EDIT_ROLES, PUBLISHER, PLAIN_READER.withEnabled(false))).isTrue();
+        assertThat(permitted(EDIT_ROLES, CHIEF, PLAIN_READER.withEnabled(false))).isTrue();
+        assertThat(permitted(EDIT_ROLES, SECTION_EDITOR, SPORT_REPORTER.withEnabled(false))).isTrue();
     }
 
     @Test
     void editRolesNeverOnOwnOrPublisherAccount() {
         for (Newsroom requester : List.of(PUBLISHER, CHIEF, SECTION_EDITOR)) {
-            assertThat(AccountPolicy.permitted(EDIT_ROLES, requester, self(requester))).isFalse();
-            assertThat(AccountPolicy.permitted(EDIT_ROLES, requester, OTHER_PUBLISHER)).isFalse();
+            assertThat(permitted(EDIT_ROLES, requester, self(requester))).isFalse();
+            assertThat(permitted(EDIT_ROLES, requester, OTHER_PUBLISHER)).isFalse();
         }
     }
 
     @Test
     void editRolesComesFirst() {
-        assertThat(AccountAction.values()).containsExactly(EDIT_ROLES, RESET_PASSWORD, LOCK, UNLOCK);
-        assertThat(AccountPolicy.allowedActions(CHIEF, PLAIN_READER)).containsExactly(EDIT_ROLES, RESET_PASSWORD);
+        assertThat(AccountAction.values()).containsExactly(EDIT_ROLES, RESET_PASSWORD, LOCK, UNLOCK, DELETE);
+        assertThat(actions(CHIEF, PLAIN_READER)).containsExactly(EDIT_ROLES, RESET_PASSWORD);
     }
 }

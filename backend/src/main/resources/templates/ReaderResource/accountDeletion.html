@@ -1,0 +1,13 @@
+{#include layout/reader}
+{#title}{msg:accountDeletion} – {page.name}{/title}
+<main data-view="account-deletion">
+  {#masthead page=page linked=true /}
+  <h1 class="legal-notice__title">{msg:accountDeletion}</h1>
+  <div class="legal-notice">
+    <p>{msg:accountDeletionWho}</p>
+    <p>{msg:accountDeletionHow}{#if page.legalNotice} {msg:accountDeletionContact} <a href="/legal-notice">{msg:legalNotice}</a>.{/if}</p>
+    <p>{msg:accountDeletionContent}</p>
+    <p>{msg:accountDeletionDevice}</p>
+  </div>
+</main>
+{/include}

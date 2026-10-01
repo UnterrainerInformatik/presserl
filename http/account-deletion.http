@@ -1,0 +1,205 @@
+### Token for the publisher
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{username}}&password={{password}}
+
+> {%
+    client.global.set("accessToken", response.body.access_token);
+    client.global.set("doomedUsername", "weg-" + Math.random().toString(36).slice(2, 8));
+%}
+
+### Token for the editor-in-chief
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{chiefUsername}}&password={{chiefPassword}}
+
+> {%
+    client.global.set("chiefToken", response.body.access_token);
+%}
+
+### Create a reader to delete later
+POST {{baseUrl}}/api/accounts
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "firstName": "Weg", "username": "{{doomedUsername}}", "roles": ["READER"] }
+
+> {%
+    client.test("201", () => client.assert(response.status === 201, "status " + response.status));
+    client.global.set("doomedId", response.body.account.id);
+    client.global.set("doomedPassword", response.body.password);
+%}
+
+### Token for the new reader
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{doomedUsername}}&password={{doomedPassword}}
+
+> {%
+    client.test("token issued", () => client.assert(response.status === 200, "status " + response.status));
+    client.global.set("doomedToken", response.body.access_token);
+%}
+
+### No deletion request yet
+GET {{baseUrl}}/api/me
+Authorization: Bearer {{doomedToken}}
+
+> {%
+    client.test("deletionRequestedAt null", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.deletionRequestedAt === null, JSON.stringify(response.body));
+    });
+%}
+
+### The reader requests the deletion of their account
+POST {{baseUrl}}/api/me/deletion-request
+Authorization: Bearer {{doomedToken}}
+
+> {%
+    client.test("200 with the time of the request", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(/^\d{4}-\d\d-\d\dT/.test(response.body.deletionRequestedAt), JSON.stringify(response.body));
+    });
+    client.global.set("requestedAt", response.body.deletionRequestedAt);
+%}
+
+### A repeated request keeps the first time
+POST {{baseUrl}}/api/me/deletion-request
+Authorization: Bearer {{doomedToken}}
+
+> {%
+    client.test("same time", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.deletionRequestedAt === client.global.get("requestedAt"), JSON.stringify(response.body));
+    });
+%}
+
+### GET /api/me reports the request
+GET {{baseUrl}}/api/me
+Authorization: Bearer {{doomedToken}}
+
+> {%
+    client.test("deletionRequestedAt set", () => {
+        client.assert(response.body.deletionRequestedAt === client.global.get("requestedAt"), JSON.stringify(response.body));
+    });
+%}
+
+### Withdraw the request
+DELETE {{baseUrl}}/api/me/deletion-request
+Authorization: Bearer {{doomedToken}}
+
+> {%
+    client.test("200 with null", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.deletionRequestedAt === null, JSON.stringify(response.body));
+    });
+%}
+
+### Request again
+POST {{baseUrl}}/api/me/deletion-request
+Authorization: Bearer {{doomedToken}}
+
+> {%
+    client.test("200", () => client.assert(response.status === 200, "status " + response.status));
+%}
+
+### The publisher sees the request and may delete
+GET {{baseUrl}}/api/accounts
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("deletionRequestedAt and DELETE listed", () => {
+        const doomed = response.body.accounts.find(a => a.id === client.global.get("doomedId"));
+        client.assert(doomed && doomed.deletionRequestedAt !== null, JSON.stringify(doomed));
+        client.assert(JSON.stringify(doomed.allowedActions) === '["EDIT_ROLES","RESET_PASSWORD","LOCK","DELETE"]',
+            JSON.stringify(doomed));
+        const own = response.body.accounts.find(a => a.username === "publisher");
+        client.assert(JSON.stringify(own.allowedActions) === '[]', JSON.stringify(own));
+    });
+    client.global.set("ownId", response.body.accounts.find(a => a.username === "publisher").id);
+%}
+
+### The editor-in-chief may not delete
+DELETE {{baseUrl}}/api/accounts/{{doomedId}}
+Authorization: Bearer {{chiefToken}}
+
+> {%
+    client.test("403 with error body", () => {
+        client.assert(response.status === 403, "status " + response.status);
+        client.assert(response.body.errors[0].message.includes("you may not delete account"), JSON.stringify(response.body));
+    });
+%}
+
+### Unknown account
+DELETE {{baseUrl}}/api/accounts/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### The publisher deletes the reader
+DELETE {{baseUrl}}/api/accounts/{{doomedId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("204", () => client.assert(response.status === 204, "status " + response.status));
+%}
+
+### The deleted account is gone from the list
+GET {{baseUrl}}/api/accounts
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("not listed", () => {
+        client.assert(!response.body.accounts.some(a => a.id === client.global.get("doomedId")), "still listed");
+    });
+%}
+
+### The deleted account can no longer log in
+POST {{issuer}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=presserl-http&username={{doomedUsername}}&password={{doomedPassword}}
+
+> {%
+    client.test("401", () => client.assert(response.status === 401, "status " + response.status));
+%}
+
+### Deleting again: the account is unknown
+DELETE {{baseUrl}}/api/accounts/{{doomedId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("404", () => client.assert(response.status === 404, "status " + response.status));
+%}
+
+### The publisher may not delete their own account
+DELETE {{baseUrl}}/api/accounts/{{ownId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+    client.test("403", () => client.assert(response.status === 403, "status " + response.status));
+%}
+
+### Without a token
+POST {{baseUrl}}/api/me/deletion-request
+
+> {%
+    client.test("401", () => client.assert(response.status === 401, "status " + response.status));
+%}
+
+### The reader page explains how to delete an account
+GET {{baseUrl}}/account-deletion
+Accept-Language: en
+
+> {%
+    client.test("200 with the page", () => {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.includes('data-view="account-deletion"'), "data-view");
+        client.assert(response.body.includes("Delete an account"), "title");
+    });
+%}

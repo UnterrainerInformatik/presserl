@@ -229,6 +229,42 @@ While the file exists, every reader page ends with a link **Impressum** / **Lega
 `https://<hostname>/legal-notice`, also for visitors of a private newspaper who are not logged in.
 Changes show on the next page load; without the file there is neither link nor page.
 
+### Deleting accounts
+
+Every user can request the deletion of their own account in the admin app (*My account*);
+publishers delete accounts in the account list. The content stays under "former newsroom member".
+Your legal notice is linked from `https://<hostname>/account-deletion`, which explains this to
+everyone.
+
+**The last publisher.** A publisher's account is deleted in the app only by another enabled
+publisher. To delete the last one, delete the user in the Keycloak admin console (realm → *Users*
+→ the user → *Delete*), then anonymise its data with the SQL below — the backend does not notice a
+deletion in Keycloak.
+
+**Recovery SQL for one account.** Run it for a sub (the Keycloak user id) whose user is already
+gone from Keycloak: after a deletion in the Keycloak admin console, after a deletion whose database
+commit failed (the backend logs an ERROR naming the sub), or for an article or image saved with a
+still-valid access token in the minutes after a deletion. It is idempotent.
+
+```sh
+docker compose exec -T postgres psql -U presserl presserl -v sub="'<keycloak-user-id>'" <<'SQL'
+BEGIN;
+UPDATE article SET pending_level = NULL,
+       status = CASE WHEN status = 'SUBMITTED' THEN 'DRAFT' ELSE status END,
+       updated_at = now(), version = version + 1
+ WHERE author_sub = :sub AND pending_level IS NOT NULL;
+UPDATE article SET author_username = NULL, author_display_name = NULL WHERE author_sub = :sub;
+UPDATE article_revision SET author_username = NULL, author_display_name = NULL WHERE author_sub = :sub;
+UPDATE article_review SET reviewer_username = NULL, reviewer_display_name = NULL WHERE reviewer_sub = :sub;
+UPDATE media SET uploader_username = NULL, uploader_display_name = NULL WHERE uploader_sub = :sub;
+DELETE FROM section_role WHERE account_id = :sub;
+DELETE FROM sectionless_reporter WHERE account_id = :sub;
+DELETE FROM trust WHERE account_id = :sub;
+DELETE FROM account_deletion_request WHERE account_id = :sub;
+COMMIT;
+SQL
+```
+
 ### Corrections by higher levels
 
 Section editors, editors-in-chief and publishers may correct the articles of those below them

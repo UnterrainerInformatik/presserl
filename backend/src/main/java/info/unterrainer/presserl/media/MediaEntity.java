@@ -12,7 +12,8 @@ import jakarta.persistence.Table;
 
 /**
  * An uploaded, re-encoded image; the bytes live in the object store under {@link #objectKey}. The
- * uploader is identified by the token subject; username and display name are snapshots.
+ * uploader is identified by the token subject; username and display name are snapshots, both
+ * {@code null} once the uploader's account was deleted.
  */
 @Entity
 @Table(name = "media")
@@ -46,10 +47,10 @@ public class MediaEntity extends PanacheEntityBase {
     @Column(name = "uploader_sub", columnDefinition = "text", nullable = false)
     public String uploaderSub;
 
-    @Column(name = "uploader_username", columnDefinition = "text", nullable = false)
+    @Column(name = "uploader_username", columnDefinition = "text")
     public String uploaderUsername;
 
-    @Column(name = "uploader_display_name", columnDefinition = "text", nullable = false)
+    @Column(name = "uploader_display_name", columnDefinition = "text")
     public String uploaderDisplayName;
 
     @Column(name = "created_at", nullable = false)

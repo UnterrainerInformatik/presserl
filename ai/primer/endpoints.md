@@ -143,7 +143,8 @@ The logged-in user as seen by the backend.
   { "username": "nogroups", "displayName": "No Groups", "roles": [],
     "sectionRoles": [ { "sectionId": 1, "sectionName": "Sport", "role": "SECTION_EDITOR" } ],
     "sectionlessReporter": false,
-    "allowedActions": ["WRITE_ARTICLES", "USE_MEDIA", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS"] }
+    "allowedActions": ["WRITE_ARTICLES", "USE_MEDIA", "ASSIGN_SECTION_ROLES", "ADMINISTER_ACCOUNTS"],
+    "deletionRequestedAt": null }
   ```
   The bootstrapped publisher:
   ```json
@@ -156,7 +157,7 @@ The logged-in user as seen by the backend.
   A sectionless reporter (marker only):
   ```json
   { "username": "pia", "displayName": "Pia", "roles": [], "sectionRoles": [], "sectionlessReporter": true,
-    "allowedActions": ["USE_MEDIA"] }
+    "allowedActions": ["USE_MEDIA"], "deletionRequestedAt": "2026-10-02T08:15:00Z" }
   ```
   - `username`: `preferred_username` claim, falling back to `sub`.
   - `displayName`: `name` claim, falling back to `username`.
@@ -183,8 +184,27 @@ The logged-in user as seen by the backend.
     | `CONFIGURE_NEWSPAPER` | `PUBLISHER` or `EDITOR_IN_CHIEF` | changing the newspaper settings (`PUT /api/newspaper/settings`) |
     | `CONFIGURE_SPELL_CHECK` | `PUBLISHER` | changing the newspaper's spell-check help (`spell-check.help` in `PUT /api/newspaper/settings`) |
     | `CONFIGURE_CORRECTIONS` | `PUBLISHER` | switching corrections by higher levels (`article.corrections` in `PUT /api/newspaper/settings`) |
+  - `deletionRequestedAt`: ISO-8601 instant of the user's pending deletion request, `null` without
+    one (see `POST /api/me/deletion-request`); read per call.
 - **Errors:** `401` (empty body) without a valid token.
 - **Side effects:** none.
+
+## `POST /api/me/deletion-request`, `DELETE /api/me/deletion-request`
+
+The user requests the deletion of their own account (`POST`) or withdraws the request (`DELETE`).
+A request deletes nothing: it is stored with its time until a publisher deletes the account
+(`DELETE /api/accounts/{id}`) or the user withdraws it; the user keeps working meanwhile. Both are
+idempotent; a repeated `POST` keeps the time of the first request.
+
+- **Auth:** bearer token, any authenticated user whatever their roles (also without any role);
+  service accounts → `403` (empty body)
+- **Body:** none
+- **Response `200`:** `{ "deletionRequestedAt": "2026-10-02T08:15:00Z" }` after `POST`,
+  `{ "deletionRequestedAt": null }` after `DELETE`
+- **Errors:** `401` (empty body) without a valid token, `403` (empty body) service account.
+- **Side effects:** row in `account_deletion_request` stored or removed. Logged at INFO
+  `Account '<username>' requested its deletion` / `Account '<username>' withdrew its deletion
+  request`. The request shows in `GET /api/me` and as `deletionRequestedAt` in the account list.
 
 ---
 
@@ -407,7 +427,9 @@ front-page-weight. Content fields are those of the latest revision (`revision`).
 }
 ```
 - `author`: username and display name as `GET /api/me` returned them when the article was created
-  (the byline; a correction never changes it).
+  (the byline; a correction never changes it). Both `null` once the author's account was deleted
+  (show "former newsroom member"); the same holds for every name snapshot below — revision
+  `author`, `lastEditor`, review `reviewer`, media `uploadedBy` and the `author` of media usages.
 - `lastEditor`: the author of the latest revision (`revision`), same shape; equals `author` unless
   someone corrected the article.
 - `section`: the article's section with its current name and palette colour.
@@ -693,7 +715,7 @@ role edit that sends `"sectionlessReporter": false` is honoured under the assign
 the Keycloak user outside Presserl leaves a stale marker without effect.
 
 **Account actions** (`allowedActions`; the server decides, clients render buttons from it). Nobody
-acts on their own account or on an account holding `PUBLISHER`:
+acts on their own account, and on an account holding `PUBLISHER` only to delete it:
 
 | Action | Requesting user holds | Target account |
 |---|---|---|
@@ -702,6 +724,18 @@ acts on their own account or on an account holding `PUBLISHER`:
 | `EDIT_ROLES`, `RESET_PASSWORD` | `SECTION_EDITOR` | newspaper roles ⊆ {`READER`}, at least one section role, every section role `REPORTER` in a section the requesting user is `SECTION_EDITOR` of |
 | `LOCK` | `PUBLISHER` | enabled |
 | `UNLOCK` | `PUBLISHER` | disabled |
+| `DELETE` | `PUBLISHER` | not holding `PUBLISHER` (locked or not, with or without deletion request); holding `PUBLISHER` only with a pending deletion request and while at least one **other enabled** account holding `PUBLISHER` remains besides it |
+
+**Deletion requests and deleting.** Every user may request the deletion of their own account
+(`POST /api/me/deletion-request`); publishers delete accounts (`DELETE /api/accounts/{id}`, with or
+without a request for non-publishers). Deleting keeps the account's content and anonymises it: its
+articles (every status), revisions, reviews and images stay, every name snapshot of it becomes
+`null` (= "former newsroom member"); its section roles, sectionless-reporter marker, the trust
+entries placed on it and its deletion request are removed, pending submissions of articles it
+authored are withdrawn (status and live revision stay, no review entry). Section roles, markers and
+trust entries it set for others stay; review notes and article texts are not touched. The last
+enabled publisher is deleted only by the operator in the Keycloak admin console
+(`deploy/INSTALL.md`).
 
 **Trust** (`trusts`, `trustScopes`, `PUT /api/accounts/{id}/trust`; the server decides). A trust
 entry = approval level × trusted account (× section for `SECTION_EDITOR`; `sectionId` `null` for the
@@ -730,21 +764,22 @@ account endpoint answers `503` with
 ```json
 { "id": "5f0c…", "username": "chief", "firstName": "Chief", "lastName": "Editor",
   "roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [ { "sectionId": 1, "role": "REPORTER" } ],
-  "sectionlessReporter": false, "enabled": true,
+  "sectionlessReporter": false, "enabled": true, "deletionRequestedAt": null,
   "trusts": [ { "level": "PUBLISHER", "sectionId": null } ],
   "trustScopes": [ { "level": "PUBLISHER", "sectionId": null } ],
-  "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK"] }
+  "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK", "DELETE"] }
 ```
 `id` is the Keycloak user id. `firstName`/`lastName` are `""` when unset. `roles` are the newspaper
 roles from the account's groups in the order `PUBLISHER`, `EDITOR_IN_CHIEF`, `READER` (`[]` for
 none). `sectionRoles` are the account's section roles ordered by section position (`[]` for none).
 `sectionlessReporter` is the marker "reporter without a section". `enabled` is `false` for a locked
-account. `trusts` are the account's trust entries (`level`
+account. `deletionRequestedAt` is the ISO-8601 instant of the account's pending deletion request,
+`null` for none (clients list such accounts first). `trusts` are the account's trust entries (`level`
 `SECTION_EDITOR` | `EDITOR_IN_CHIEF` | `PUBLISHER`, `sectionId` for `SECTION_EDITOR`, else `null`),
 ordered `PUBLISHER`, `EDITOR_IN_CHIEF`, then `SECTION_EDITOR` by section position; `trustScopes`
 are the entries the requesting user may set or clear on it (same shape and order, see the trust
 table; render one switch each, on when the entry is in `trusts`). `allowedActions` are the actions the requesting user may
-perform on the account now, in the order `EDIT_ROLES`, `RESET_PASSWORD`, `LOCK`, `UNLOCK` (see the
+perform on the account now, in the order `EDIT_ROLES`, `RESET_PASSWORD`, `LOCK`, `UNLOCK`, `DELETE` (see the
 account actions table; `LOCK` only for enabled, `UNLOCK` only for disabled accounts). Clients ignore
 values they do not know.
 
@@ -759,8 +794,9 @@ Every account of the realm except service accounts, sorted by `username`. At mos
   { "assignableRoles": ["PUBLISHER", "EDITOR_IN_CHIEF", "READER"], "mayAssignSectionlessReporter": true,
     "accounts": [ { "id": "5f0c…", "username": "chief", "firstName": "Chief", "lastName": "Editor",
                     "roles": ["EDITOR_IN_CHIEF"], "sectionRoles": [], "sectionlessReporter": false, "enabled": true,
+                    "deletionRequestedAt": null,
                     "trusts": [], "trustScopes": [ { "level": "PUBLISHER", "sectionId": null } ],
-                    "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK"] } ] }
+                    "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "LOCK", "DELETE"] } ] }
   ```
   `assignableRoles` are the newspaper roles only (`[]` for a section editor); the section roles a
   user may assign are reported per section by `GET /api/sections`. `mayAssignSectionlessReporter`:
@@ -917,7 +953,7 @@ Idempotent: locking a locked account (or unlocking an enabled one) answers `200`
 - **Auth:** `PUBLISHER`; never an account holding `PUBLISHER`, never the own account
 - **Body:** none
 - **Response `200`:** the `AccountDto` with its new state, e.g. after a lock
-  `{ "id": "…", "username": "reader", …, "enabled": false, "trusts": [], "trustScopes": [], "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "UNLOCK"] }`
+  `{ "id": "…", "username": "reader", …, "enabled": false, "trusts": [], "trustScopes": [], "allowedActions": ["EDIT_ROLES", "RESET_PASSWORD", "UNLOCK", "DELETE"] }`
 - **Errors:** `403` empty body (no account access), `403` error body when refused (field `null`,
   e.g. `you may not lock account 'reader'`), `404` error body for an unknown id or a service
   account, `503`.
@@ -925,6 +961,26 @@ Idempotent: locking a locked account (or unlocking an enabled one) answers `200`
   rejected at once; **access tokens issued before the lock stay valid until they expire**, Keycloak
   default a few minutes). Logged at INFO `Account '<username>' locked|unlocked by '<user>'` when the
   state changed.
+
+## `DELETE /api/accounts/{id}`
+
+Deletes the account (see "Deletion requests and deleting" above): in one database transaction its
+data is anonymised and cleaned up, then the Keycloak user is deleted; when Keycloak fails, the
+database is rolled back and nothing changed.
+
+- **Auth:** `PUBLISHER`; `DELETE` in `allowedActions` (never the own account; an account holding
+  `PUBLISHER` only with a pending request and while another enabled publisher remains)
+- **Body:** none
+- **Response `204`:** no body; the account is gone from `GET /api/accounts`
+- **Errors:** `403` empty body (no account access), `403` error body when refused (field `null`,
+  e.g. `you may not delete account 'chief'`), `404` error body for an unknown id or a service
+  account, `503` Keycloak unavailable (nothing changed).
+- **Side effects:** Keycloak user deleted — its sessions end, login and slip stop working at once;
+  **an access token issued before stays valid until it expires** (realm default 5 minutes), and an
+  article or upload saved in those minutes writes a fresh name snapshot (the recovery SQL in
+  `deploy/INSTALL.md` anonymises it). Content kept with `null` names, pending submissions of its
+  articles withdrawn, section roles / marker / trust entries on it / deletion request removed.
+  Logged at INFO `Account '<username>' deleted by '<user>'`.
 
 ## `PUT /api/accounts/{id}/trust`
 
@@ -1576,6 +1632,8 @@ Server-rendered reader pages and their helpers; no bearer token, noted here beca
 app and forks rely on them. Every reader surface shows only articles **visible to readers**
 (`PUBLISHED` in a published issue, `readerVisible` in the API); any other article is treated like a
 draft (`404`).
+The byline of an article whose author's account was deleted reads "Ehemaliges Redaktionsmitglied" /
+"Former newsroom member" on every reader page.
 
 ## `GET /` and `GET /?section=<id>`
 
@@ -1598,6 +1656,17 @@ visitors who may read); `Cache-Control: private, no-store` only for a logged-in 
 the file or with whitespace only: the `404` page. While the notice exists, every reader page except
 the print views ends with `<footer class="presserl-footer">` linking it ("Impressum" / "Legal
 notice"). The file is never served under `/theme/`.
+
+## `GET /account-deletion`
+
+How accounts of this newspaper are deleted (`data-view="account-deletion"`, German / English by
+`Accept-Language`): created by the newsroom, deleted by the publishers; request in the presserl app
+under "My account" or ask the publishers / operator — with a link to `/legal-notice` while a legal
+notice exists; content stays as "former newsroom member", deleting cannot be undone; logging out or
+uninstalling removes the app's data from a phone. Public in every newspaper with the cache rules of
+`/legal-notice`. The legal notice page ends with a link to it ("Konto löschen" / "Delete an
+account"). This per-newspaper URL complements the developer's page for the Play Data safety form
+(`https://unterrainer.info/app/presserl/account-deletion`).
 
 ## `POST /text-size`
 

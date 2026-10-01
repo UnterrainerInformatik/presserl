@@ -113,7 +113,7 @@ class AccountServiceTest {
             }
         };
         AccountDto reader = new AccountDto("id-6", "reader", "Reader", "", List.of(NewspaperRole.READER), List.of(),
-                false, true, List.of(), List.of(), List.of());
+                false, true, null, List.of(), List.of(), List.of());
         EditRolesRequest request = new EditRolesRequest(List.of(NewspaperRole.EDITOR_IN_CHIEF),
                 List.of(new SectionRoleDto(7L, SectionRole.REPORTER)), null);
 
@@ -234,7 +234,7 @@ class AccountServiceTest {
     @Test
     void createdAccountHidesThePasswordInToString() {
         CreatedAccountDto created = new CreatedAccountDto(
-                new AccountDto("id", "lena", "Lena", "", List.of(NewspaperRole.READER), List.of(), false, true, List.of(),
+                new AccountDto("id", "lena", "Lena", "", List.of(NewspaperRole.READER), List.of(), false, true, null, List.of(),
                         List.of(), List.of()), "tiger-wolke-apfel-leiter");
 
         assertThat(created.toString()).contains("lena").doesNotContain("tiger");

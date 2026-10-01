@@ -108,4 +108,34 @@ public interface ReaderMessagesEn extends ReaderMessages {
     @Override
     @Message("Legal notice")
     String legalNotice();
+
+    @Override
+    @Message("Former newsroom member")
+    String bylineFormer();
+
+    @Override
+    @Message("Delete an account")
+    String accountDeletion();
+
+    @Override
+    @Message("Accounts of this newspaper are created by its newsroom and deleted by the newspaper's publishers.")
+    String accountDeletionWho();
+
+    @Override
+    @Message("To have your own account deleted, request it in the presserl app under “My account”, or ask the "
+            + "newspaper's publishers or operator directly.")
+    String accountDeletionHow();
+
+    @Override
+    @Message("Their contact details are in the")
+    String accountDeletionContact();
+
+    @Override
+    @Message("The account's articles and images stay and are then credited to “former newsroom member”. Deleting "
+            + "cannot be undone.")
+    String accountDeletionContent();
+
+    @Override
+    @Message("The data the app stores on a phone is removed by logging out or uninstalling the app.")
+    String accountDeletionDevice();
 }

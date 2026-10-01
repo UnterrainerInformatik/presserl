@@ -238,7 +238,7 @@ private fun ArticleRow(article: ArticleSummaryDto, onClick: () -> Unit) {
             stringResource(Res.string.unpublished_changes).takeIf { article.hasUnpublishedChanges },
             article.pendingLevel?.let { waitingText(it) },
             stringResource(Res.string.locked).takeIf { article.locked },
-            article.author.displayName,
+            authorLabel(article.author),
             stringResource(Res.string.changed_at, formatTimestamp(article.updatedAt)),
         )
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

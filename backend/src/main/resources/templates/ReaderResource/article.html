@@ -17,7 +17,7 @@
     {#if article.lead}
     <p class="lead">{article.lead}</p>
     {/if}
-    <p class="byline">{msg:byline(article.byline)} · <time datetime="{article.publishedAt.isoDate}">{msg:published(article.publishedAt.longDate)}</time>{#if article.updated} · <time datetime="{article.revisedAt.isoDate}">{msg:updated(article.revisedAt.longDate)}</time>{/if}</p>
+    <p class="byline">{#if article.byline}{msg:byline(article.byline)}{#else}{msg:bylineFormer}{/if} · <time datetime="{article.publishedAt.isoDate}">{msg:published(article.publishedAt.longDate)}</time>{#if article.updated} · <time datetime="{article.revisedAt.isoDate}">{msg:updated(article.revisedAt.longDate)}</time>{/if}</p>
     <p class="print-link"><a href="/print/article/{article.id}">{msg:print}</a></p>
     {#articleBody blocks=blocks print=false /}
   </article>

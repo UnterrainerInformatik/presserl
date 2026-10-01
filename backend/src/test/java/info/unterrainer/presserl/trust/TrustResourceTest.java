@@ -194,7 +194,7 @@ class TrustResourceTest {
     void publisherTrustsTheEditorInChief() {
         ValidatableResponse response = trust(publisher, "chief", "PUBLISHER", null, true).statusCode(200)
                 .body("username", equalTo("chief"))
-                .body("allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "LOCK"));
+                .body("allowedActions", contains("EDIT_ROLES", "RESET_PASSWORD", "LOCK", "DELETE"));
         assertThat(entries(response, "trusts")).containsExactly("PUBLISHER:null");
         assertThat(entries(response, "trustScopes")).containsExactly("PUBLISHER:null");
         assertThat(entries(listedAs(publisher, "chief"), "trusts")).containsExactly("PUBLISHER:null");
