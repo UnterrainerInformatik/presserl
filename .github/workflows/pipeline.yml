@@ -33,6 +33,10 @@ jobs:
     name: Android release to Google Play 📱
     needs: bump
     runs-on: [self-hosted, Linux, X64, babylon5]
+    # id-token: the Play upload authenticates through Workload Identity Federation (design D4).
+    permissions:
+      contents: read
+      id-token: write
     env:
       RELEASE_VERSION: ${{ needs.bump.outputs.version }}
     steps:
@@ -86,27 +90,27 @@ jobs:
         if: steps.changes.outputs.changed == 'true'
         uses: gradle/actions/setup-gradle@v4
 
-      # Secrets only ever pass through env and files in $RUNNER_TEMP, removed by the last step (design D4).
-      - name: Write signing and Play credentials 🔑
+      # Secrets only ever pass through env and a file in $RUNNER_TEMP, removed by the last step (design D4).
+      - name: Write signing credentials 🔑
         if: steps.changes.outputs.changed == 'true'
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
-          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
           ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
           ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          PLAY_SERVICE_ACCOUNT: ${{ vars.PLAY_SERVICE_ACCOUNT }}
         run: |
           missing=""
-          for name in KEYSTORE_BASE64 PLAY_SERVICE_ACCOUNT_JSON ANDROID_UPLOAD_STORE_PASSWORD ANDROID_UPLOAD_KEY_ALIAS ANDROID_UPLOAD_KEY_PASSWORD; do
+          for name in KEYSTORE_BASE64 ANDROID_UPLOAD_STORE_PASSWORD ANDROID_UPLOAD_KEY_ALIAS ANDROID_UPLOAD_KEY_PASSWORD GCP_WORKLOAD_IDENTITY_PROVIDER PLAY_SERVICE_ACCOUNT; do
             [ -n "${!name}" ] || missing="$missing $name"
           done
           if [ -n "$missing" ]; then
-            echo "::error::Missing repository secrets:$missing"
+            echo "::error::Missing repository secrets or variables:$missing"
             exit 1
           fi
           umask 077
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
-          printf '%s' "$PLAY_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/play.json"
 
       - name: Build release bundle 🏗️
         if: steps.changes.outputs.changed == 'true'
@@ -129,12 +133,22 @@ jobs:
             admin/androidApp/build/outputs/mapping/release/mapping.txt
           retention-days: 7
 
+      # Short-lived credentials through GitHub OIDC, no service account key; the action's post step
+      # deletes its credentials file (design D4).
+      - name: Authenticate to Google Cloud 🪪
+        id: gcp-auth
+        if: steps.changes.outputs.changed == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.PLAY_SERVICE_ACCOUNT }}
+
       # Until the first internal release is rolled out by hand, Play accepts drafts only (design D5).
       - name: Upload to Google Play (internal) 🚚
         if: steps.changes.outputs.changed == 'true'
         uses: r0adkll/upload-google-play@v1.1.5
         with:
-          serviceAccountJson: ${{ runner.temp }}/play.json
+          serviceAccountJson: ${{ steps.gcp-auth.outputs.credentials_file_path }}
           packageName: info.unterrainer.presserl
           releaseFiles: admin/androidApp/build/outputs/bundle/release/androidApp-release.aab
           mappingFile: admin/androidApp/build/outputs/mapping/release/mapping.txt
@@ -144,7 +158,7 @@ jobs:
 
       - name: Remove credentials 🧹
         if: always()
-        run: rm -f "$RUNNER_TEMP/upload.jks" "$RUNNER_TEMP/play.json"
+        run: rm -f "$RUNNER_TEMP/upload.jks"
 
   dispatch-staging:
     name: Trigger staging deploy 🚀

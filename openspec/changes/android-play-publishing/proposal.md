@@ -26,7 +26,7 @@ itself follows as a separate change once the closed test has run its course.
   `presserl.unterrainer.info`, which is reachable from the internet since 2026-09-30; the docs that
   still call staging "LAN/VPN only" (this repo and `../presserl-deployment`) are corrected.
 - Manual Play Console tasks for Gerald: create the app, first bundle upload (registers the upload
-  key, Play App Signing), service account with API access, GitHub secrets, forms, closed test
+  key, Play App Signing), service account with API access via Workload Identity Federation, GitHub secrets, forms, closed test
   track with testers once 12 are found.
 - Backlog: the entries "M8 — Google Play publishing" and "Homepage: private legal notice, LeRoi's
   e-mail" (done in the homepage repo) are removed; a new entry "M8 — Play production release"
@@ -53,11 +53,11 @@ itself follows as a separate change once the closed test has run its course.
 - **admin**: `admin/androidApp/build.gradle.kts` (version from Gradle properties), new
   `admin/androidApp/play/` (listing texts and graphics).
 - **CI**: `.github/workflows/pipeline.yml` gets the `android-release` job; new repository secrets
-  (`ANDROID_UPLOAD_KEYSTORE`, `ANDROID_UPLOAD_PROPERTIES` values, `PLAY_SERVICE_ACCOUNT_JSON`) and a
-  variable for the release status.
+  (`ANDROID_UPLOAD_KEYSTORE`, `ANDROID_UPLOAD_PROPERTIES` values) and variables for the release
+  status and the Workload Identity Federation provider and service account.
 - **docs**: `docs/play-console.md`; staging reachability in `.claude/CLAUDE.md`, `openspec/config.yaml`
   and `../presserl-deployment/README.md`.
 - **deploy**: none in `deploy/`; staging gets a reviewer account (realm data, no file change).
 - **backend, reader**: none.
 - **ai/**: `ai/open-proposals.md`, build/test memory (release pipeline, Play).
-- **External**: Google Play Console, Google Cloud service account (Gerald).
+- **External**: Google Play Console, Google Cloud service account and workload identity pool (Gerald).

@@ -65,17 +65,30 @@ only configures the Android path. The image build's Gradle and this job do not s
 *Alternative:* a container image with the SDK (`cirruslabs/android-sdk`) — tag lags compileSdk 37,
 and job containers on these runners would need the docker socket dance again.
 
-### D4 — Signing from secrets, written to `$RUNNER_TEMP` and removed
+### D4 — Signing from secrets, written to `$RUNNER_TEMP` and removed; Play via Workload Identity Federation
 Secrets: `ANDROID_UPLOAD_KEYSTORE_BASE64` (the `.jks`, base64), `ANDROID_UPLOAD_STORE_PASSWORD`,
-`ANDROID_UPLOAD_KEY_ALIAS`, `ANDROID_UPLOAD_KEY_PASSWORD`, `PLAY_SERVICE_ACCOUNT_JSON`. The build
+`ANDROID_UPLOAD_KEY_ALIAS`, `ANDROID_UPLOAD_KEY_PASSWORD`. The build
 script gets a second source for the signing config: when `ai/secrets/android-upload.properties` is
 missing it looks at the environment variables `ANDROID_UPLOAD_STORE_FILE`,
 `ANDROID_UPLOAD_STORE_PASSWORD`, `ANDROID_UPLOAD_KEY_ALIAS`, `ANDROID_UPLOAD_KEY_PASSWORD`. The job
-decodes the keystore to `$RUNNER_TEMP/upload.jks`, writes the service account JSON to
-`$RUNNER_TEMP/play.json`, and an `if: always()` step deletes both. Secrets are only passed through
+decodes the keystore to `$RUNNER_TEMP/upload.jks` and an `if: always()` step deletes it. Secrets are only passed through
 `env:`, never echoed; GitHub masks them additionally. A release build in CI without a signing config
 fails (`bundleRelease` would otherwise produce an unsigned bundle Play refuses later and less
 clearly): the job checks the env vars before building.
+
+The Play upload uses no service account key. The job has `permissions: id-token: write`;
+`google-github-actions/auth` exchanges GitHub's OIDC token at the Google Cloud workload identity
+pool `github` (provider `presserl`) for short-lived credentials of the service account
+`play-publisher`, which Play Console has invited with release rights. The provider accepts only
+tokens with `repository == UnterrainerInformatik/presserl` and `ref == refs/heads/master`; the
+service account grants `roles/iam.workloadIdentityUser` to that repository's principal set. The
+provider resource name and the service account e-mail are not secret and live in the repository
+variables `GCP_WORKLOAD_IDENTITY_PROVIDER` and `PLAY_SERVICE_ACCOUNT`; the job checks them together
+with the secrets. The auth action writes an external-account credentials file (no key inside) that
+its post step deletes; `r0adkll/upload-google-play` reads it via `serviceAccountJson`.
+*Alternative:* a JSON service account key in a secret (`PLAY_SERVICE_ACCOUNT_JSON`) — the original
+plan; Gerald's Google Cloud organisation enforces `iam.disableServiceAccountKeyCreation`, and a
+long-lived key is the weaker option anyway.
 
 ### D5 — Upload with `r0adkll/upload-google-play`
 Pinned to a release tag; inputs `packageName: info.unterrainer.presserl`, `releaseFiles` = the AAB,

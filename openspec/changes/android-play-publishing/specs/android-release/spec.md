@@ -50,14 +50,16 @@ NOT promote a release to the closed, open or production track.
 - **THEN** the Android job fails with Google Play's message, and the image build and staging deployment still complete
 
 ### Requirement: Signing and Play credentials stay out of the repository
-The upload keystore, its passwords and the Play service account key SHALL NOT be committed to any
-repository. The pipeline SHALL read them from repository secrets and SHALL NOT print them to the
-job log. Files written from them during the job SHALL be removed when the job ends, whether it
-succeeds or fails.
+The upload keystore and its passwords SHALL NOT be committed to any repository. The pipeline SHALL
+read them from repository secrets and SHALL NOT print them to the job log. The pipeline SHALL
+authenticate to Google Play with short-lived credentials obtained for the job (no long-lived
+service account key exists), granted only to pipeline runs of this repository's `master` branch.
+Files written from secrets or credentials during the job SHALL be removed when the job ends,
+whether it succeeds or fails.
 
 #### Scenario: Job log
 - **WHEN** the Android job runs, successfully or not
-- **THEN** its log contains neither keystore content, passwords nor the service account key, and no keystore or key file is left in the runner's workspace afterwards
+- **THEN** its log contains neither keystore content, passwords nor Google credentials, and no keystore or credentials file is left in the runner's workspace afterwards
 
 ### Requirement: Store listing is kept in the repository
 The repository SHALL keep the Google Play store listing of the app in German and English: title

@@ -172,12 +172,24 @@ calendar, web browsing, installed apps, crash logs (no crash reporting), adverti
 1. **Repository secrets** (Settings → Secrets and variables → Actions):
    `ANDROID_UPLOAD_KEYSTORE_BASE64` (`base64 -w0 ai/secrets/android-upload.jks`),
    `ANDROID_UPLOAD_STORE_PASSWORD`, `ANDROID_UPLOAD_KEY_ALIAS`, `ANDROID_UPLOAD_KEY_PASSWORD` (values
-   from `ai/secrets/android-upload.properties`), `PLAY_SERVICE_ACCOUNT_JSON` (content of
-   `ai/secrets/play-service-account.json`). Without them the `android-release` job fails before
-   building.
-2. **Service account:** Google Cloud project → enable "Google Play Android Developer API" → service
-   account with a JSON key → Play Console → Users and permissions → invite its e-mail with release
-   rights (release to testing tracks, manage testing tracks) for presserl.
+   from `ai/secrets/android-upload.properties`); repository **variables**
+   `GCP_WORKLOAD_IDENTITY_PROVIDER` and `PLAY_SERVICE_ACCOUNT` (see 2). Without them the
+   `android-release` job fails before building.
+2. **Play API access without a key (Workload Identity Federation):** service account keys are
+   disabled by organisation policy (`iam.disableServiceAccountKeyCreation`) and not needed. In the
+   Google Cloud project (Cloud Shell): enable `androidpublisher`, `iamcredentials` and `sts` APIs;
+   create the service account `play-publisher`; create the workload identity pool `github` with
+   the OIDC provider `presserl` (issuer `https://token.actions.githubusercontent.com`, mapping
+   `google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref`,
+   condition `assertion.repository=='UnterrainerInformatik/presserl' && assertion.ref=='refs/heads/master'`);
+   grant `roles/iam.workloadIdentityUser` on the service account to
+   `principalSet://iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/github/attribute.repository/UnterrainerInformatik/presserl`.
+   The provider resource name
+   (`projects/<number>/locations/global/workloadIdentityPools/github/providers/presserl`) goes to
+   `GCP_WORKLOAD_IDENTITY_PROVIDER`, the service account e-mail to `PLAY_SERVICE_ACCOUNT`. Then
+   Play Console → Users and permissions → invite the service account e-mail with release rights
+   (release to testing tracks, manage testing tracks) for presserl. Pipeline runs from other
+   branches or forks get no token.
 3. **First upload by hand:** the Play Developer API cannot create an app or its first release.
    Create the app in the Console (name "presserl", default language German, app, free), download
    the AAB from the workflow artifact `presserl-android-X.Y.Z` of a pipeline run (kept 7 days) and
