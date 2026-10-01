@@ -5,12 +5,11 @@ change — never tick it off.
 
 Milestones from `docs/vision.md`; details in `docs/`.
 
-## M8 — Google Play publishing
-Publish the Android app (android-app-qr-login) on Google Play: store listing (de/en, screenshots,
-icon), Families policy and target-audience questionnaire, data safety form, the mandatory closed
-test for new personal developer accounts (12 testers, 14 days), Play App Signing enrolment with the
-upload key from `ai/secrets/`, version code handling and a CI bundle build. Privacy policy is
-done in android-app-qr-login (`https://unterrainer.info/app/presserl/privacy`).
+## M8 — Play production release
+Follows android-play-publishing (closed track prepared, internal releases from CI). Find 12 testers
+(Google accounts) and add them to the closed track; after 14 consecutive days with at least 12
+opted-in testers apply for production access in the Play Console (questions on the test), then roll
+out to production and switch the pipeline's track if releases should go there directly.
 
 ## Admin app on phones — layout polish
 Non-blocking findings of the phone-size check in android-app-qr-login (Pixel 7 emulator, 412 dp):
@@ -28,28 +27,6 @@ Non-blocking findings of the phone-size check in android-app-qr-login (Pixel 7 e
 ## M8 — iOS (later)
 iOS target of the admin app with the same QR login as Android; App Store publishing. Blocked
 until an Apple developer account exists — not before the Android part is done.
-
-## Homepage: private legal notice, LeRoi's e-mail
-The company Unterrainer Informatik OG no longer exists; `unterrainer.info` (homepage repo
-`/mnt/data/source/JAVASCRIPT/homepage`, deployed by pushing `master`) must present Gerald as a private
-person. Gerald's decisions (2026-09-30):
-- **Legal notice** (`src/locales/parts/about_{de,en}.ts`, key `impressum`): only Gerald Unterrainer
-  as a private person, with the name "Unterrainer Informatik" **without "OG"**; address Flurstraße 17,
-  4470 Enns (already live); contact e-mail. Remove everything of the company: "Offene Gesellschaft",
-  UID-Nr ATU66981117, FN 374582 g, Landesgericht Steyr, WKÖ/WKOÖ membership, Bezirkshauptmannschaft
-  Linz-Land, the shareholders (Gerald 50 %, Günter 50 %) and the company purpose. Keep only what
-  Austrian law requires of a private website: the disclosure under § 25 Mediengesetz (name, place of
-  residence; for a site beyond personal presentation also ownership and basic orientation). The
-  site is **not commercial, private only** (Gerald, 2026-09-30), so no § 5 ECG details. Gerald
-  (2026-09-30): "Unterrainer Informatik" is the name of his sole-trader business and stays.
-- **Logo:** the header image `src/assets/logo.png` reads "UNTERRAINER INFORMATIK OG" — Gerald
-  wants "OG" removed there too (image file, not text).
-- **About us** (`members` in `about_{de,en}.ts`): remove LeRoi's e-mail (`leroi@unterrainer.info`)
-  only; keep his entry, name and description as they are. `src/components/peopleStream.vue` builds
-  both the `mailto:` link and the Gravatar from `mail`, so it must show an entry without a mail
-  (no link, a neutral avatar).
-- The presserl app's privacy policy refers to this legal notice; recheck that its controller line
-  still fits afterwards.
 
 ## Shared npm-build-workflow ignores the lockfile
 `UnterrainerInformatik/npm-build-workflow` runs `rm -rf node_modules package-lock.json && npm install`
