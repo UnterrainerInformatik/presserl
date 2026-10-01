@@ -1,6 +1,6 @@
 ---
 name: reference_ci_runners
-description: Self-hosted GitHub runners on babylon5 (fast) and dev1 (slow VM); presserl pinned to babylon5 with persistent buildx builder 'presserl'; reset commands
+description: Self-hosted GitHub runners on babylon5 (fast) and dev1 (slow VM); presserl builds and homepage/alexpresse deploys pinned to babylon5 with persistent buildx builder 'presserl'; reset commands
 metadata:
   type: reference
 ---
@@ -38,6 +38,17 @@ push 39 s); fully cached 18 s (job 35 s). Brotli now runs in the admin stage, so
 pushes keep Gradle and Brotli cached. Not yet observed: a second babylon5 runner attaching to the
 existing node container (both measured runs ran on runner3). babylon5 busy/down ⇒ presserl builds
 queue; drop the label in `pipeline.yml` as fallback.
+
+**Deploys pinned to babylon5** (pin-deploys-to-babylon5, 2026-10-01). `deploy-workflow` (since
+`b53bedb`) takes an optional `runs-on` input (JSON label array, default
+`'["self-hosted","Linux","X64"]'`, same as `docker-build-workflow`). The **homepage**
+(`UnterrainerInformatik/homepage`) and **alexpresse** (`guFalcon/alexpresse`) deploy jobs pass
+`'["self-hosted","Linux","X64","babylon5"]'`. Reason: dev1 cannot reach the homepage deploy host
+(SSH `Connection timed out`, run 36850891421 on dev1-runner1/2), babylon5 can. The alexpresse repo
+runner `ghar-priv-alexpresse` (`babylon5-runner11-priv-ALEXPRESSE`, compose service
+`worker11-gufalcon`) carries the `babylon5` label via its compose `LABELS` — set it there, not via
+the labels API (lost on re-registration), otherwise alexpresse deploys queue forever.
+`presserl-deployment` and the other callers stay unpinned (default).
 
 **Current-builder pointer pitfall** (seen 2026-09-30, run 36754878179: `Multi-platform build is
 not supported for the docker driver`). Each runner container has its own `~/.docker/buildx/`

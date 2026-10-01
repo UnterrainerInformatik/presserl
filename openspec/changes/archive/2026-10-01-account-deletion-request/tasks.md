@@ -46,4 +46,4 @@
 - [x] 7.1 `./mvnw verify` (backend) and `./gradlew check` (admin) green
 - [x] 7.2 Admin web app headless against `quarkus:dev`: reporter requests deletion, publisher sees it first and deletes, byline in the reader shows "ehemaliges Redaktionsmitglied", deleted login fails
 - [x] 7.3 Android (A54) against `quarkus:dev`: "My account" request/withdraw works on the phone
-- [ ] 7.4 After deployment: `https://presserl.unterrainer.info/account-deletion` and the homepage page reachable from outside
+- [x] 7.4 After deployment: `https://presserl.unterrainer.info/account-deletion` and the homepage page reachable from outside (staging checked 2026-10-01 via the public IP; homepage live 2026-10-01 after pin-deploys-to-babylon5, German and English verified headless)
