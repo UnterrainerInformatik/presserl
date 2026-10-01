@@ -373,6 +373,7 @@
     <string name="connect_address_submit">Connect</string>
     <string name="connect_checking">Looking for the newspaper…</string>
     <string name="connect_error_no_presserl">No presserl newspaper was found at this address.</string>
+    <string name="connect_error_unreachable">The server %1$s cannot be reached. Check the network and VPN.</string>
     <string name="connect_error_http">Please enter an address starting with https://.</string>
     <string name="connect_error_not_a_slip">This code is not a presserl account slip.</string>
     <string name="connect_error_scanner">The scanner is not available on this device. Please enter the address.</string>

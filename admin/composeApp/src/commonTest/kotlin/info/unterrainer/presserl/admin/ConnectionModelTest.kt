@@ -14,6 +14,7 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.io.IOException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -32,7 +33,7 @@ class ConnectionModelTest {
 
     private val requested = mutableListOf<String>()
 
-    /** Answers `GET /api/client-config` per host: a presserl server, a 404, or an HTML page. */
+    /** Answers `GET /api/client-config` per host: a presserl server, a 404, an HTML page, or no answer at all. */
     private fun TestScope.http() = HttpClient(MockEngine.create {
         dispatcher = UnconfinedTestDispatcher(testScheduler)
         addHandler { request ->
@@ -43,6 +44,7 @@ class ConnectionModelTest {
                     HttpStatusCode.OK,
                     headersOf(HttpHeaders.ContentType, "application/json"),
                 )
+                "down.example.org" -> throw IOException("Unable to resolve host \"down.example.org\"")
                 "html.example.org" -> respond("<html></html>", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "text/html"))
                 else -> respond("", HttpStatusCode.NotFound)
             }
@@ -96,6 +98,29 @@ class ConnectionModelTest {
         model.enterAddress("https://html.example.org")
 
         assertEquals(ConnectionState.Start(ConnectError.NO_PRESSERL_SERVER), model.state.value)
+    }
+
+    @Test
+    fun unreachableAddressNamesTheServer() = runTest {
+        val store = MemoryStore()
+        val model = model(store)
+
+        model.enterAddress("down.example.org/")
+
+        assertEquals(ConnectionState.Start(ConnectError.UNREACHABLE, address = "https://down.example.org"), model.state.value)
+        assertNull(store.stored)
+    }
+
+    @Test
+    fun scannedSlipOfAnUnreachableServerNamesOnlyTheBase() = runTest {
+        val store = MemoryStore()
+        val model = model(store)
+
+        model.scanned("https://down.example.org/qr?u=anna#pw=tiger-wolke-apfel-leiter")
+
+        assertEquals(listOf("https://down.example.org/api/client-config"), requested)
+        assertEquals(ConnectionState.Start(ConnectError.UNREACHABLE, address = "https://down.example.org"), model.state.value)
+        assertNull(store.stored)
     }
 
     @Test

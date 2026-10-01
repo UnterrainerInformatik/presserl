@@ -31,6 +31,10 @@ val json = Json { ignoreUnknownKeys = true }
 /** The backend gives LanguageTool 5 s; a little more covers the way there and back. */
 private const val SPELL_CHECK_TIMEOUT_MILLIS = 8_000L
 
+/** The connection check gives up in time on a slow mobile network instead of spinning forever (design D3). */
+private const val CLIENT_CONFIG_TIMEOUT_MILLIS = 15_000L
+private const val CLIENT_CONFIG_CONNECT_TIMEOUT_MILLIS = 10_000L
+
 fun HttpClient.withJson(): HttpClient = config {
     expectSuccess = true
     install(ContentNegotiation) { json(json) }
@@ -48,7 +52,12 @@ class ApiClient(
 ) {
     private val http = http.withJson()
 
-    suspend fun clientConfig(): ClientConfigDto = http.get("$baseUrl/api/client-config").body()
+    suspend fun clientConfig(): ClientConfigDto = http.get("$baseUrl/api/client-config") {
+        timeout {
+            requestTimeoutMillis = CLIENT_CONFIG_TIMEOUT_MILLIS
+            connectTimeoutMillis = CLIENT_CONFIG_CONNECT_TIMEOUT_MILLIS
+        }
+    }.body()
 
     /**
      * Checks [text] for spelling, grammar and punctuation mistakes; `null` when the check is unavailable (`503`, any

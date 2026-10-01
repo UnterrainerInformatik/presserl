@@ -40,6 +40,7 @@ import info.unterrainer.presserl.admin.resources.connect_error_http
 import info.unterrainer.presserl.admin.resources.connect_error_no_presserl
 import info.unterrainer.presserl.admin.resources.connect_error_not_a_slip
 import info.unterrainer.presserl.admin.resources.connect_error_scanner
+import info.unterrainer.presserl.admin.resources.connect_error_unreachable
 import info.unterrainer.presserl.admin.resources.connect_intro
 import info.unterrainer.presserl.admin.resources.connect_or_address
 import info.unterrainer.presserl.admin.resources.connect_scan
@@ -56,7 +57,8 @@ import org.jetbrains.compose.resources.stringResource
 fun StartScreen(state: ConnectionState, onScan: () -> Unit, onAddress: (String) -> Unit, onPrivacyPolicy: () -> Unit) {
     var address by rememberSaveable { mutableStateOf("") }
     val checking = state is ConnectionState.Checking
-    val error = (state as? ConnectionState.Start)?.error
+    val start = state as? ConnectionState.Start
+    val error = start?.error
     Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier.widthIn(max = 480.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
@@ -64,7 +66,7 @@ fun StartScreen(state: ConnectionState, onScan: () -> Unit, onAddress: (String) 
         ) {
             Text("presserl", style = MaterialTheme.typography.headlineMedium)
             Text(stringResource(Res.string.connect_intro), style = MaterialTheme.typography.bodyLarge)
-            if (error != null) Banner(stringResource(error.text))
+            if (error != null) Banner(stringResource(error.text, start.address.orEmpty()))
             Button(onClick = onScan, enabled = !checking, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(Res.string.connect_scan))
             }
@@ -98,6 +100,7 @@ fun StartScreen(state: ConnectionState, onScan: () -> Unit, onAddress: (String) 
 private val ConnectError.text: StringResource
     get() = when (this) {
         ConnectError.NO_PRESSERL_SERVER -> Res.string.connect_error_no_presserl
+        ConnectError.UNREACHABLE -> Res.string.connect_error_unreachable
         ConnectError.HTTP_REFUSED -> Res.string.connect_error_http
         ConnectError.NOT_A_SLIP -> Res.string.connect_error_not_a_slip
         ConnectError.SCANNER_UNAVAILABLE -> Res.string.connect_error_scanner

@@ -373,6 +373,7 @@
     <string name="connect_address_submit">Verbinden</string>
     <string name="connect_checking">Zeitung wird gesucht …</string>
     <string name="connect_error_no_presserl">Unter dieser Adresse wurde keine presserl-Zeitung gefunden.</string>
+    <string name="connect_error_unreachable">Der Server %1$s ist nicht erreichbar. Prüfe Netzwerk und VPN.</string>
     <string name="connect_error_http">Bitte gib eine Adresse mit https:// ein.</string>
     <string name="connect_error_not_a_slip">Dieser Code ist kein presserl-Zugangszettel.</string>
     <string name="connect_error_scanner">Der Scanner ist auf diesem Gerät nicht verfügbar. Gib bitte die Adresse ein.</string>

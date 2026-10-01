@@ -4,22 +4,43 @@ import info.unterrainer.presserl.admin.api.ClientConfigDto
 import info.unterrainer.presserl.admin.api.OidcDto
 import info.unterrainer.presserl.admin.ui.account.SlipCredentials
 import info.unterrainer.presserl.admin.ui.account.SlipQr
+import info.unterrainer.presserl.admin.ui.logWarning
+import io.ktor.client.call.NoTransformationFoundException
+import io.ktor.client.plugins.ResponseException
 import io.ktor.http.URLProtocol
 import io.ktor.http.parseUrl
+import io.ktor.serialization.ContentConvertException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.SerializationException
 
 /** Why the start screen refused an address or a scanned code. */
-enum class ConnectError { NO_PRESSERL_SERVER, HTTP_REFUSED, NOT_A_SLIP, SCANNER_UNAVAILABLE }
+enum class ConnectError { NO_PRESSERL_SERVER, UNREACHABLE, HTTP_REFUSED, NOT_A_SLIP, SCANNER_UNAVAILABLE }
+
+/**
+ * Why `GET <base>/api/client-config` failed: the server answered, but not with a client config (an error status or a
+ * body that is no [ClientConfigDto]), or no answer arrived at all. Anything unanticipated counts as unreachable, which
+ * points at the network (design D1).
+ */
+internal fun classify(e: Throwable): ConnectError = when (e) {
+    is ResponseException,
+    is ContentConvertException,
+    is NoTransformationFoundException,
+    is SerializationException -> ConnectError.NO_PRESSERL_SERVER
+    else -> ConnectError.UNREACHABLE
+}
 
 /** Where the app stands on the way to a newspaper (design D7). */
 sealed interface ConnectionState {
-    /** The start screen: scan a slip or enter an address; [error] explains the last refusal. */
-    data class Start(val error: ConnectError? = null) : ConnectionState
+    /**
+     * The start screen: scan a slip or enter an address; [error] explains the last refusal, [address] names the server
+     * that could not be reached ([ConnectError.UNREACHABLE] only).
+     */
+    data class Start(val error: ConnectError? = null, val address: String? = null) : ConnectionState
 
     /** `GET <base>/api/client-config` is running. */
     data class Checking(val base: String) : ConnectionState
@@ -120,14 +141,24 @@ class ConnectionModel(
     private fun check(base: String, credentials: SlipCredentials?) {
         _state.value = ConnectionState.Checking(base)
         scope.launch {
-            val oidc = try {
-                clientConfig(base).oidc.takeIf { it.issuer.isNotBlank() && it.clientId.isNotBlank() }
+            val config = try {
+                clientConfig(base)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
-                null
+                val error = classify(e)
+                // only the base goes into the log, never the slip or its credentials
+                if (e is ResponseException) {
+                    logWarning("client-config check of $base failed: $error (HTTP ${e.response.status.value})", null)
+                } else {
+                    logWarning("client-config check of $base failed: $error (${e::class.simpleName}: ${e.message})", e)
+                }
+                _state.value = ConnectionState.Start(error, address = base.takeIf { error == ConnectError.UNREACHABLE })
+                return@launch
             }
+            val oidc = config.oidc.takeIf { it.issuer.isNotBlank() && it.clientId.isNotBlank() }
             if (oidc == null) {
+                logWarning("client-config check of $base failed: ${ConnectError.NO_PRESSERL_SERVER} (no issuer or client id)", null)
                 _state.value = ConnectionState.Start(ConnectError.NO_PRESSERL_SERVER)
                 return@launch
             }

@@ -62,7 +62,8 @@ if (gradle.extra["presserl.androidSdkPresent"] == true) {
             compileSdk = libs.versions.android.compileSdk.get().toInt()
             minSdk = libs.versions.android.minSdk.get().toInt()
             androidResources { enable = true }
-            withHostTest {}
+            // android.util.Log (logWarning) answers defaults instead of throwing "not mocked" on the host JVM
+            withHostTest { isReturnDefaultValues = true }
             withDeviceTest { instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
         }
         sourceSets.getByName("androidMain").dependencies {
