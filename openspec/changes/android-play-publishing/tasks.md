@@ -40,7 +40,7 @@
 - [x] 6.2 Create a Google Cloud service account, enable the Play Android Developer API, set up Workload Identity Federation for this repository's `master` (no JSON key: the organisation policy forbids keys), invite the service account in Play Console → Users and permissions with release rights for this app
 - [x] 6.3 Set the repository secrets (`ANDROID_UPLOAD_KEYSTORE_BASE64`, `ANDROID_UPLOAD_STORE_PASSWORD`, `ANDROID_UPLOAD_KEY_ALIAS`, `ANDROID_UPLOAD_KEY_PASSWORD`) and variables (`GCP_WORKLOAD_IDENTITY_PROVIDER`, `PLAY_SERVICE_ACCOUNT`) — Claude sets them with `gh secret set` / `gh variable set` from `ai/secrets/`; switch the pipeline's Play upload to Workload Identity Federation (`google-github-actions/auth`, `id-token: write`)
 - [x] 6.4 Upload the first AAB (workflow artifact of 2.3) to the internal track by hand; confirm Play App Signing enrolment
-- [ ] 6.5 Fill in store listing (from 3.x) and all declarations (from 4.x); internal testers list (Gerald's own account at least)
+- [x] 6.5 Fill in store listing (from 3.x) and all declarations (from 4.x); internal testers list (Gerald's own account at least)
 - [x] 6.6 Roll out the first internal release, set repository variable `PLAY_RELEASE_STATUS=completed`
 - [ ] 6.7 Create the closed testing track with the tester list/Google Group and put the current release in it (start of the 14 days waits for 12 testers)
 
