@@ -1,5 +1,6 @@
 package info.unterrainer.presserl.admin.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,10 +10,10 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -30,6 +31,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import info.unterrainer.presserl.admin.api.ApiClient
 import info.unterrainer.presserl.admin.api.AccountDto
@@ -409,13 +412,19 @@ private fun Header(
                 stringResource(Res.string.deletion_requested_marker).takeIf { screen.me.deletionRequestedAt != null },
             )
             // the user line opens "My account" for everyone, whatever the navigation offers
-            TextButton(
-                onClick = onMyAccount,
-                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
-                modifier = Modifier.heightIn(min = 44.dp),
-            ) {
-                Text(userLine.joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
-            }
+            // a plain clickable Text keeps wrapped lines start-aligned; a TextButton centres them and clips
+            Text(
+                userLine.joinToString(" · "),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Start,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 44.dp)
+                    .clickable(role = Role.Button, onClick = onMyAccount)
+                    .padding(vertical = 4.dp)
+                    .wrapContentHeight(Alignment.CenterVertically),
+            )
         }
     }
     val navigation = @Composable {
