@@ -63,3 +63,6 @@ pnpm-debug.log*
 # --- Claude / AI ---
 .claude/settings.local.json
 /ai/secrets/
+
+# --- Obsidian: vault settings are tracked, the per-machine workspace layout is not ---
+.obsidian/workspace.json
