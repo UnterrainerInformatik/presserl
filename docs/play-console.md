@@ -78,6 +78,13 @@ Assessment:
   Families policy still applies to the child users.
 - **Designed for Families programme:** not joined. *Reason:* not primarily child-directed; the
   programme adds review requirements without benefit for a tool that needs a newspaper account.
+- **Store listing matches these answers:** no age range and no "made for children" wording in the
+  listing texts or feature graphics (the vision's 6–16 is not a Play claim); Play compares the
+  listing with the target audience, and "from 6" against a declared 9+ is a Families rejection
+  reason.
+- **Expert Approved programme (Kids tab):** "Do not include my app". *Reason:* same as above — the
+  app is not primarily for children and is useless without an invitation to a newspaper, so a
+  Kids-tab listing would only attract installs that cannot sign in.
 - **Neutral age screen:** none. *Reason:* the app collects nothing from children for the
   developer; the only SDK collection is the code scanner's metrics (see above).
 
@@ -157,6 +164,8 @@ calendar, web browsing, installed apps, crash logs (no crash reporting), adverti
   are invited members; the developer publishes no news, and the newspapers are not news publishers
   in Play's sense (no general news distribution to the public through the app — reading happens in
   the browser).
+- **News aggregator:** No. *Reason:* the app collects no content from other publishers; it only
+  edits the one newspaper the user has an account on.
 - **Government app:** No. **Financial features:** none. **Health:** none / not a health app.
 - **COVID-19 contact tracing or status:** No.
 - **Data deletion (account deletion requirement):** met by the account-deletion-request change —
@@ -191,7 +200,7 @@ calendar, web browsing, installed apps, crash logs (no crash reporting), adverti
    (release to testing tracks, manage testing tracks) for presserl. Pipeline runs from other
    branches or forks get no token.
 3. **First upload by hand:** the Play Developer API cannot create an app or its first release.
-   Create the app in the Console (name "presserl", default language German, app, free), download
+   Create the app in the Console (name "Presserl App", package `info.unterrainer.presserl`, default language German, app, free), download
    the AAB from the workflow artifact `presserl-android-X.Y.Z` of a pipeline run (kept 7 days) and
    upload it to **Testing → Internal testing**. This enrols the app in Play App Signing (Google
    holds the app signing key) and registers our key as upload key.

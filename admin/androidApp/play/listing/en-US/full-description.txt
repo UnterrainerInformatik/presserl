@@ -1,14 +1,14 @@
-presserl is a newspaper that children write themselves – for the family, the class or the club. This app is where the newsroom works: write articles, add pictures, approve texts and put issues together.
+presserl is a newspaper that young people write together with their parents or teachers – for the family, the class or the club. This app is where the newsroom works: write articles, add pictures, approve texts and put issues together.
 
 Important: the app needs a presserl newspaper and an account on it. A presserl newspaper is run by someone on their own server, usually the parents or the school. You get your account slip with its QR code from your newspaper's newsroom. There is no sign-up in the app.
 
 LOG IN
 • Scan your account slip – and you are logged in without typing.
 • Or enter the newspaper's address and log in with name and password.
-• Logging out makes the app forget the account and the newspaper, so another child can take over the phone.
+• Logging out makes the app forget the account and the newspaper, so someone else can take over the phone.
 
 WRITE
-• An editor made for children: kicker, headline, subheadline, lead, paragraphs, subheads, quotes, lists and pictures.
+• A clear, simple editor: kicker, headline, subheadline, lead, paragraphs, subheads, quotes, lists and pictures.
 • A "?" next to every field explains what it is for.
 • Everything is saved automatically; undo and redo are always at hand.
 • Help with German spelling, grammar and punctuation – if your newspaper has switched it on.

@@ -1,14 +1,14 @@
-presserl ist eine Zeitung, die Kinder selbst schreiben – für die Familie, die Klasse oder den Verein. Mit dieser App arbeitet die Redaktion: Artikel schreiben, Bilder einbinden, Texte freigeben und Ausgaben zusammenstellen.
+presserl ist eine Zeitung, die Kinder und Jugendliche gemeinsam mit Eltern oder Lehrkräften schreiben – für die Familie, die Klasse oder den Verein. Mit dieser App arbeitet die Redaktion: Artikel schreiben, Bilder einbinden, Texte freigeben und Ausgaben zusammenstellen.
 
 Wichtig: Die App braucht eine presserl-Zeitung und einen Zugang dazu. Eine presserl-Zeitung betreibt jemand selbst auf einem eigenen Server, meist die Eltern oder die Schule. Den Zugangszettel mit QR-Code bekommst du von der Redaktion deiner Zeitung. In der App kann man sich nicht selbst registrieren.
 
 ANMELDEN
 • Zugangszettel scannen – und du bist angemeldet, ganz ohne Tippen.
 • Oder die Adresse der Zeitung eingeben und mit Name und Passwort anmelden.
-• Beim Abmelden vergisst die App Zugang und Zeitung, so kann das Handy ein anderes Kind übernehmen.
+• Beim Abmelden vergisst die App Zugang und Zeitung, so kann jemand anderer das Handy übernehmen.
 
 SCHREIBEN
-• Ein Editor, der für Kinder gemacht ist: Dachzeile, Schlagzeile, Unterzeile, Vorspann, Absätze, Zwischentitel, Zitate, Aufzählungen und Bilder.
+• Ein übersichtlicher Editor: Dachzeile, Schlagzeile, Unterzeile, Vorspann, Absätze, Zwischentitel, Zitate, Aufzählungen und Bilder.
 • Zu jedem Feld erklärt ein „?“, wofür es da ist.
 • Alles wird automatisch gespeichert, Rückgängig und Wiederherstellen sind immer zur Hand.
 • Hilfe bei Rechtschreibung, Grammatik und Satzzeichen – wenn eure Zeitung sie eingeschaltet hat.

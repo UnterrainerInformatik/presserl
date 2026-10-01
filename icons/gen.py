@@ -33,8 +33,8 @@ SKY, SUN, HILL, HILL_LIGHT = "#6ea8f0", "#e3c24a", "#2e7d32", "#6cc070"
 FAVICON_SIZES = [16, 32, 48, 180, 192, 512]
 ICO_SIZES = [16, 32, 48]
 FEATURE_TEXT = {
-    "de": ("Schreib für deine eigene Zeitung.", "Für Kinder von 6 bis 16 –<br>ohne Werbung, ohne Tracking."),
-    "en": ("Write for your own newspaper.", "For kids aged 6 to 16 –<br>no ads, no tracking."),
+    "de": ("Schreib für deine eigene Zeitung.", "Für Familie, Klasse und Verein –<br>ohne Werbung, ohne Tracking."),
+    "en": ("Write for your own newspaper.", "For family, class and club –<br>no ads, no tracking."),
 }
 
 # The front page on the 512 grid, upright and centred on 256/256 (D1)
