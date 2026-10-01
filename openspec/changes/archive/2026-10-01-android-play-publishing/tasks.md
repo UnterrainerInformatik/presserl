@@ -42,13 +42,13 @@
 - [x] 6.4 Upload the first AAB (workflow artifact of 2.3) to the internal track by hand; confirm Play App Signing enrolment
 - [x] 6.5 Fill in store listing (from 3.x) and all declarations (from 4.x); internal testers list (Gerald's own account at least)
 - [x] 6.6 Roll out the first internal release, set repository variable `PLAY_RELEASE_STATUS=completed`
-- [ ] 6.7 Create the closed testing track with the tester list/Google Group and put the current release in it (start of the 14 days waits for 12 testers)
+- [x] 6.7 ~~Create the closed testing track with the tester list/Google Group and put the current release in it~~ — moved to `ai/open-proposals.md` "M8 — Play production release" (waits for 12 testers)
 
 ## 7. Verification
 
-- [ ] 7.1 Push an admin change: the job uploads to internal, Gerald's phone gets the update from Play; job log shows no secrets, `$RUNNER_TEMP` files gone
-- [ ] 7.2 Push a backend-only change: no Android upload, image and staging deployment as before
-- [ ] 7.3 Internal build from Play: QR login against staging works (Play App Signing re-signs — check the code scanner and login work with the Play-signed build)
+- [x] 7.1 Push an admin change: the job uploads to internal, Gerald's phone gets the update from Play; job log shows no secrets, `$RUNNER_TEMP` files gone
+- [x] 7.2 Push a backend-only change: no Android upload, image and staging deployment as before (verified with the `.github/`-only push 1b69112: same path filter, no admin/ change)
+- [x] 7.3 Internal build from Play: QR login against staging works (Play App Signing re-signs — check the code scanner and login work with the Play-signed build)
 
 ## 8. Docs and backlog
 

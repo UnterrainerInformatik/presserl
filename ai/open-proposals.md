@@ -6,8 +6,10 @@ change — never tick it off.
 Milestones from `docs/vision.md`; details in `docs/`.
 
 ## M8 — Play production release
-Follows android-play-publishing (closed track prepared, internal releases from CI). Find 12 testers
-(Google accounts) and add them to the closed track; after 14 consecutive days with at least 12
+Follows android-play-publishing (internal releases from CI since 0.0.44). Find 12 testers
+(Google accounts), create the closed testing track with them (e-mail list or Google Group) and
+promote the current internal release to it — this submits the app for its first review, after
+which the store page shows the real icon and listing; after 14 consecutive days with at least 12
 opted-in testers apply for production access in the Play Console (questions on the test), then roll
 out to production and switch the pipeline's track if releases should go there directly.
 

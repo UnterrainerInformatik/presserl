@@ -113,7 +113,10 @@ Verified 2026-09-26 on Gerald's machine (JDK 21, Docker running) unless marked o
   babylon5) builds `bundleRelease` with the bump version only when the push changed `admin/` (manual
   run: always), keeps AAB + mapping as workflow artifact `presserl-android-X.Y.Z` (7 days) and uploads
   to the Play **internal** track (`r0adkll/upload-google-play`). Status from repo variable
-  `PLAY_RELEASE_STATUS` (default `draft`; `completed` after the first manual rollout). Secrets, release
+  `PLAY_RELEASE_STATUS` (`completed` since 2026-10-01). Play auth via Workload Identity Federation
+  (no key; vars `GCP_WORKLOAD_IDENTITY_PROVIDER`, `PLAY_SERVICE_ACCOUNT`; only `master` of this repo).
+  A Play-installed app refuses updates from an adb-installed local build (different signature):
+  `adb uninstall info.unterrainer.presserl` first. Secrets, release
   flow and all Play Console answers: `docs/play-console.md`. Store listing + `check.sh`:
   `admin/androidApp/play/`. Play screenshots must be ≤ 2:1 — crop the A54's 1080×2340 to 1080×1920.
 - **Play screenshots (verified 2026-10-01):** A54 against staging, demo account `lena` (slip

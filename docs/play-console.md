@@ -198,7 +198,8 @@ calendar, web browsing, installed apps, crash logs (no crash reporting), adverti
    `GCP_WORKLOAD_IDENTITY_PROVIDER`, the service account e-mail to `PLAY_SERVICE_ACCOUNT`. Then
    Play Console → Users and permissions → invite the service account e-mail with release rights
    (release to testing tracks, manage testing tracks) for presserl. Pipeline runs from other
-   branches or forks get no token.
+   branches or forks get no token. App permissions belong to one app: a recreated app has to be added
+   again, otherwise the upload fails with "The caller does not have permission".
 3. **First upload by hand:** the Play Developer API cannot create an app or its first release.
    Create the app in the Console (name "Presserl App", package `info.unterrainer.presserl`, default language German, app, free), download
    the AAB from the workflow artifact `presserl-android-X.Y.Z` of a pipeline run (kept 7 days) and

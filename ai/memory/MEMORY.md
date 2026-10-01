@@ -15,7 +15,6 @@
 - [Product vision in docs/](project_vision.md) — Principles, roles, approval chain, config layers, design guidelines; proposals must fit them
 - [Deployment repos](project_deployment_repo.md) — ../presserl-deployment = staging (auto-deployed); ../alexpresse = first public fork alexpresse.net (merge upstream + push); pushed in the archive step of the change that touched them
 - [Deployment via docker compose](project_deployment_docker_compose.md) — Compose ships presserl + postgres + rustfs (media); proxy (Traefik/Caddy) and Keycloak are external
-- [android-play-publishing paused](project_android_play_publishing_resume.md) — 26/33 done; WIF instead of JSON key; internal release live; next: 6.5 listing, 6.7 closed track, 7.x; leftovers on staging/phone; delete on archive
 - [Machine JDK setup](reference_machine_jdk.md) — Default JDK is 21 (Lombok-safe); backend targets release 21; JDK 26 installed but not default
 - [Machine Android SDK](reference_machine_android_sdk.md) — Android Studio's SDK at /home/psilo/Android/Sdk; add components there, never a second SDK
 - [Build and test commands](reference_build_and_test.md) — Verified dev/test/image/.http/e2e commands for backend and admin (web + Android, emulator)
