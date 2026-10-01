@@ -1,37 +1,37 @@
 ## 1. Admin — version and signing
 
-- [ ] 1.1 `admin/androidApp/build.gradle.kts`: read `presserl.version`, compute `versionName`/`versionCode` (D1), fail on malformed or out-of-range versions, fallback `0.0.0-local`/`1`; add `printAndroidVersion` task
-- [ ] 1.2 Signing config falls back to the `ANDROID_UPLOAD_*` environment variables when `ai/secrets/android-upload.properties` is missing (D4); local behaviour unchanged
-- [ ] 1.3 Check `printAndroidVersion` with `0.0.42` → `42`, `0.1.0` → `100000`, no property → `0.0.0-local`/`1`, `0.100.0` → build fails with the range message
-- [ ] 1.4 `./gradlew :androidApp:bundleRelease -Ppresserl.version=0.0.42` locally, signed with the env-var path (properties file temporarily out of reach) — verify the AAB's version and signature (`bundletool dump manifest`, `jarsigner -verify`)
+- [x] 1.1 `admin/androidApp/build.gradle.kts`: read `presserl.version`, compute `versionName`/`versionCode` (D1), fail on malformed or out-of-range versions, fallback `0.0.0-local`/`1`; add `printAndroidVersion` task
+- [x] 1.2 Signing config falls back to the `ANDROID_UPLOAD_*` environment variables when `ai/secrets/android-upload.properties` is missing (D4); local behaviour unchanged
+- [x] 1.3 Check `printAndroidVersion` with `0.0.42` → `42`, `0.1.0` → `100000`, no property → `0.0.0-local`/`1`, `0.100.0` → build fails with the range message
+- [x] 1.4 `./gradlew :androidApp:bundleRelease -Ppresserl.version=0.0.42` locally, signed with the env-var path (properties file temporarily out of reach) — verify the AAB's version and signature (`bundletool dump manifest`, `jarsigner -verify`)
 
 ## 2. CI — android-release job
 
-- [ ] 2.1 `pipeline.yml`: job `android-release` (`needs: bump`, babylon5) with the `admin/` change check (D2), setup-java 21, setup-android + explicit `sdkmanager` packages, setup-gradle (D3)
-- [ ] 2.2 Signing/Play secrets to `$RUNNER_TEMP`, env-var check before the build, `if: always()` cleanup step (D4)
-- [ ] 2.3 Build `bundleRelease -Ppresserl.version=<bump version>`, upload the AAB as workflow artifact (7 days), upload to Play via `r0adkll/upload-google-play` (pinned tag) with mapping file, track `internal`, status from `vars.PLAY_RELEASE_STATUS` defaulting to `draft` (D5)
-- [ ] 2.4 Confirm `dispatch-staging` still depends only on `bump` and `docker-build`
+- [x] 2.1 `pipeline.yml`: job `android-release` (`needs: bump`, babylon5) with the `admin/` change check (D2), setup-java 21, setup-android + explicit `sdkmanager` packages, setup-gradle (D3)
+- [x] 2.2 Signing/Play secrets to `$RUNNER_TEMP`, env-var check before the build, `if: always()` cleanup step (D4)
+- [x] 2.3 Build `bundleRelease -Ppresserl.version=<bump version>`, upload the AAB as workflow artifact (7 days), upload to Play via `r0adkll/upload-google-play` (pinned tag) with mapping file, track `internal`, status from `vars.PLAY_RELEASE_STATUS` defaulting to `draft` (D5)
+- [x] 2.4 Confirm `dispatch-staging` still depends only on `bump` and `docker-build`
 
 ## 3. Store listing
 
-- [ ] 3.1 `admin/androidApp/play/listing/{de-DE,en-US}/`: title, short and full description (say that a presserl newspaper and a newsroom account slip are needed; nothing the app lacks)
+- [x] 3.1 `admin/androidApp/play/listing/{de-DE,en-US}/`: title, short and full description (say that a presserl newspaper and a newsroom account slip are needed; nothing the app lacks)
 - [x] 3.2 Icon 512×512 PNG and feature graphics 1024×500 per language (`feature-1024x500-{de-DE,en-US}.png`) copied from `icons/` via `icons/sync.sh` (done in app-icon-and-favicon)
-- [ ] 3.3 Prepare a demo state on staging (newspaper with a few sample articles and images, the `play-review` account of 5.1) for screenshots
-- [ ] 3.4 Screenshots on the A54 against staging, German and English phone language: start screen, scanner/slip login, "My articles", editor, media, account slip — at least 4 per language, no personal data on them
-- [ ] 3.5 `admin/androidApp/play/check.sh`: text length limits and image sizes/formats; run it
+- [x] 3.3 Prepare a demo state on staging (newspaper with a few sample articles and images, the `play-review` account of 5.1) for screenshots
+- [x] 3.4 Screenshots on the A54 against staging, German and English phone language: start screen, scanner/slip login, "My articles", editor, media, account slip — at least 4 per language, no personal data on them
+- [x] 3.5 `admin/androidApp/play/check.sh`: text length limits and image sizes/formats; run it
 
 ## 4. Play Console answers
 
-- [ ] 4.1 Check Google's current Families policy, Families SDK requirements and the ML Kit/code scanner data disclosure; record the result in `docs/play-console.md` — **stop and ask Gerald** if the code scanner is not allowed
-- [ ] 4.2 `docs/play-console.md`: target audience, ads, data safety, content rating, app access, privacy URL, news app, government/financial/health and any other declaration, each with answer and reason (D8)
-- [ ] 4.3 Compare the data safety answers with the privacy policy at `https://unterrainer.info/app/presserl/privacy`; list any mismatch for Gerald (homepage changes are outside this repo)
-- [ ] 4.4 Section "Release flow" in `docs/play-console.md`: first manual upload, `PLAY_RELEASE_STATUS` switch, promoting internal → closed, required secrets
+- [x] 4.1 Check Google's current Families policy, Families SDK requirements and the ML Kit/code scanner data disclosure; record the result in `docs/play-console.md` — **stop and ask Gerald** if the code scanner is not allowed
+- [x] 4.2 `docs/play-console.md`: target audience, ads, data safety, content rating, app access, privacy URL, news app, government/financial/health and any other declaration, each with answer and reason (D8)
+- [x] 4.3 Compare the data safety answers with the privacy policy at `https://unterrainer.info/app/presserl/privacy`; list any mismatch for Gerald (homepage changes are outside this repo)
+- [x] 4.4 Section "Release flow" in `docs/play-console.md`: first manual upload, `PLAY_RELEASE_STATUS` switch, promoting internal → closed, required secrets
 
 ## 5. Staging and reviewer access
 
-- [ ] 5.1 Create reporter account `play-review` on staging via the admin app, no trust entries, in a section without auto-approval; slip PDF to `ai/secrets/`
-- [ ] 5.2 Verify from outside (A54 on mobile data, Wi-Fi off): address login and QR login work, a submitted article waits for approval
-- [ ] 5.3 Correct "LAN/VPN only" for staging in `.claude/CLAUDE.md`, `openspec/config.yaml` and `../presserl-deployment/README.md`
+- [x] 5.1 Create reporter account `play-review` on staging via the admin app, no trust entries, in a section without auto-approval; slip PDF to `ai/secrets/`
+- [x] 5.2 Verify from outside (A54 on mobile data, Wi-Fi off): address login and QR login work, a submitted article waits for approval
+- [x] 5.3 Correct "LAN/VPN only" for staging in `.claude/CLAUDE.md`, `openspec/config.yaml` and `../presserl-deployment/README.md` (plus the stale entrypoints comment in `../presserl-deployment/deploy/site.env`)
 
 ## 6. Gerald — Play Console and Google Cloud
 
@@ -52,5 +52,5 @@
 ## 8. Docs and backlog
 
 - [x] 8.1 `ai/open-proposals.md`: remove "M8 — Google Play publishing" and "Homepage: private legal notice, LeRoi's e-mail"; add "M8 — Play production release" (12 testers, 14 days, production access application, production rollout)
-- [ ] 8.2 Memory `reference_build_and_test.md`: release pipeline, version property, Play upload, `PLAY_RELEASE_STATUS`
-- [ ] 8.3 Push `../presserl-deployment` (README) in the archive step
+- [x] 8.2 Memory `reference_build_and_test.md`: release pipeline, version property, Play upload, `PLAY_RELEASE_STATUS`
+- [x] 8.3 Push `../presserl-deployment` (README) in the archive step

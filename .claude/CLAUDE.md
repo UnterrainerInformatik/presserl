@@ -17,6 +17,6 @@
 - `ai/` — memory, primer, open proposals, captures. Not shipped.
 - `http/` — `.http` request files exercising the backend REST API.
 
-Two deployment repositories hold name, `.env` and theme only: `../presserl-deployment` is staging (`presserl.unterrainer.info`, LAN/VPN, redeployed on every upstream image), `../alexpresse` is the first public fork (`alexpresse.net`, remote `upstream` = presserl-deployment, updated by merging upstream). Claude maintains both; their changes are recorded in this repo's OpenSpec changes.
+Two deployment repositories hold name, `.env` and theme only: `../presserl-deployment` is staging (`presserl.unterrainer.info`, public, redeployed on every upstream image), `../alexpresse` is the first public fork (`alexpresse.net`, remote `upstream` = presserl-deployment, updated by merging upstream). Claude maintains both; their changes are recorded in this repo's OpenSpec changes.
 
 Build/test commands are recorded in memory (`reference_build_and_test.md`) once the projects are scaffolded.

@@ -101,6 +101,30 @@ Verified 2026-09-26 on Gerald's machine (JDK 21, Docker running) unless marked o
   androidApp/build/outputs/mapping/release/mapping.txt <trace>`. R8 full mode strips members that
   only reflection uses (ML Kit registrars, fixed in `androidApp/proguard-rules.pro`); `mapping.txt`
   omits unrenamed members — check the DEX (`unzip` the AAB's `base/dex`, `build-tools/*/dexdump`).
+- **Android version (verified 2026-10-01):** `-Ppresserl.version=X.Y.Z` sets `versionName`, and
+  `versionCode = X*10^7 + Y*10^5 + Z` (minor ≤ 99, patch ≤ 99999, else the build fails); without it
+  `0.0.0-local`/`1`. `./gradlew -q :androidApp:printAndroidVersion -Ppresserl.version=…` prints both.
+  Signing falls back to env `ANDROID_UPLOAD_STORE_FILE`/`_STORE_PASSWORD`/`_KEY_ALIAS`/`_KEY_PASSWORD`
+  when `ai/secrets/android-upload.properties` is missing (CI path). Check an AAB: `jarsigner -verify`;
+  bundletool has no runnable jar locally — run `com.android.tools.build.bundletool.BundleToolMain`
+  from the Gradle cache jars (bundletool, protobuf-java, guava, aapt2-proto, dagger, javax.inject,
+  jose4j …) with `dump manifest --bundle <aab>`.
+- **Play release pipeline:** job `android-release` in `.github/workflows/pipeline.yml` (`needs: bump`,
+  babylon5) builds `bundleRelease` with the bump version only when the push changed `admin/` (manual
+  run: always), keeps AAB + mapping as workflow artifact `presserl-android-X.Y.Z` (7 days) and uploads
+  to the Play **internal** track (`r0adkll/upload-google-play`). Status from repo variable
+  `PLAY_RELEASE_STATUS` (default `draft`; `completed` after the first manual rollout). Secrets, release
+  flow and all Play Console answers: `docs/play-console.md`. Store listing + `check.sh`:
+  `admin/androidApp/play/`. Play screenshots must be ≤ 2:1 — crop the A54's 1080×2340 to 1080×1920.
+- **Play screenshots (verified 2026-10-01):** A54 against staging, demo account `lena` (slip
+  `ai/secrets/demo-lena-slip.pdf`), language per set via `cmd locale set-app-locales … --locales
+  en-US|de-DE`, reset with `--locales ""`. Capture: `adb exec-out screencap -p > raw.png; magick
+  raw.png -crop 1080x1920+0+0 +repage -alpha off NN-name.png`, then `admin/androidApp/play/check.sh`.
+  The fish/zsh shell does not word-split `$A` — wrap `adb -s <serial>` in a small bash script.
+- **Reachability from outside (verified 2026-10-01):** `adb shell svc wifi disable` puts the A54 on
+  mobile data (check `dumpsys connectivity`), `svc wifi enable` afterwards. ICMP to staging is
+  blocked — test through the app. Slip QR content: `pdftoppm -r 200 -png <slip.pdf>` + `zbarimg --raw`,
+  feed it to the debug `--es qr` intent (debug builds only; does not exercise the camera scanner).
 - **Android against quarkus dev:** `adb reverse tcp:8080 tcp:<quarkus port>` and `adb reverse tcp:8180 tcp:8180`,
   then the app uses `http://localhost:8080` exactly like the web app (dev realm redirect
   `http://localhost:8080/admin/*`). Debug intent: `adb shell "am start -n

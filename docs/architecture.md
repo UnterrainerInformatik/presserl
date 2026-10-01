@@ -44,14 +44,14 @@ presserl/                     # monorepo (upstream)
 ├── openspec/
 └── ai/
 
-../presserl-deployment/       # staging: presserl.unterrainer.info (LAN/VPN only)
+../presserl-deployment/       # staging: presserl.unterrainer.info (public)
 ../alexpresse/                # first public fork: alexpresse.net (fork of presserl-deployment)
 ```
 
 A fork copies the templates from `deploy/`, sets name, `.env` and theme, and runs the upstream container images. Both deployment repositories are maintained alongside this repository; changes to them are recorded in this repository's OpenSpec changes.
 
 - **Staging** — `../presserl-deployment` (GitHub `UnterrainerInformatik/presserl-deployment`) serves
-  `presserl.unterrainer.info`, reachable from LAN/VPN only. Upstream's pipeline dispatches to it after
+  `presserl.unterrainer.info`, reachable from the internet (Google Play reviewers use it). Upstream's pipeline dispatches to it after
   every image build, so staging always runs the newest image.
 - **First fork** — `../alexpresse` (GitHub `guFalcon/alexpresse`, remote `upstream` =
   `presserl-deployment`) serves the family newspaper *Alex-Presse* at `alexpresse.net`. Upstream does

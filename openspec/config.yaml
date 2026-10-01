@@ -9,7 +9,7 @@ context: |
                   first, Android/iOS later. Talks to /api with bearer tokens.
                   Tests: Kotlin (kotlin.test, Compose UI tests where useful).
     - deploy/   : reference deployment + templates (INSTALL.md, compose, realm, .env.example, theme).
-                  Staging deployment: ../presserl-deployment (presserl.unterrainer.info, LAN/VPN).
+                  Staging deployment: ../presserl-deployment (presserl.unterrainer.info, public).
                   First public fork: ../alexpresse (alexpresse.net), a fork of the staging repo.
                   Deployment repos hold name, .env and theme only.
     - http/     : .http request files that exercise the backend REST API.

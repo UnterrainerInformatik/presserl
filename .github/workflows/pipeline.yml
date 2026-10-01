@@ -29,6 +29,123 @@ jobs:
       DOCKER_HUB_PASSWORD: ${{ secrets.DOCKER_HUB_PASSWORD }}
       DOCKER_IMAGE_NAME: ${{ secrets.DOCKER_IMAGE_NAME }}
 
+  android-release:
+    name: Android release to Google Play 📱
+    needs: bump
+    runs-on: [self-hosted, Linux, X64, babylon5]
+    env:
+      RELEASE_VERSION: ${{ needs.bump.outputs.version }}
+    steps:
+      - name: Checkout 📦
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Only pushes that touch admin/ produce an Android release; a manual run always builds (design D2).
+      - name: Check for admin changes 🔍
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" != "push" ]; then
+            echo "Manual run: building."
+            changed=true
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
+              || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "Previous commit unknown ($BEFORE): building."
+            changed=true
+          elif git diff --name-only "$BEFORE" "$GITHUB_SHA" -- admin/ | grep -q .; then
+            echo "admin/ changed since $BEFORE: building."
+            changed=true
+          else
+            echo "No change under admin/ since $BEFORE: skipping the Android release."
+            changed=false
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java ☕
+        if: steps.changes.outputs.changed == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK 🤖
+        if: steps.changes.outputs.changed == 'true'
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+
+      # Installed explicitly instead of relying on AGP's auto-download (design D3).
+      - name: Install SDK packages 📥
+        if: steps.changes.outputs.changed == 'true'
+        run: sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;36.0.0"
+
+      - name: Set up Gradle 🐘
+        if: steps.changes.outputs.changed == 'true'
+        uses: gradle/actions/setup-gradle@v4
+
+      # Secrets only ever pass through env and files in $RUNNER_TEMP, removed by the last step (design D4).
+      - name: Write signing and Play credentials 🔑
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          missing=""
+          for name in KEYSTORE_BASE64 PLAY_SERVICE_ACCOUNT_JSON ANDROID_UPLOAD_STORE_PASSWORD ANDROID_UPLOAD_KEY_ALIAS ANDROID_UPLOAD_KEY_PASSWORD; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing"
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          printf '%s' "$PLAY_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/play.json"
+
+      - name: Build release bundle 🏗️
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: admin
+        env:
+          ANDROID_UPLOAD_STORE_FILE: ${{ runner.temp }}/upload.jks
+          ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon :androidApp:bundleRelease "-Ppresserl.version=$RELEASE_VERSION"
+
+      # Kept for the first upload by hand (design D6) and for inspecting a release.
+      - name: Keep the bundle as workflow artifact 📎
+        if: steps.changes.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: presserl-android-${{ env.RELEASE_VERSION }}
+          path: |
+            admin/androidApp/build/outputs/bundle/release/androidApp-release.aab
+            admin/androidApp/build/outputs/mapping/release/mapping.txt
+          retention-days: 7
+
+      # Until the first internal release is rolled out by hand, Play accepts drafts only (design D5).
+      - name: Upload to Google Play (internal) 🚚
+        if: steps.changes.outputs.changed == 'true'
+        uses: r0adkll/upload-google-play@v1.1.5
+        with:
+          serviceAccountJson: ${{ runner.temp }}/play.json
+          packageName: info.unterrainer.presserl
+          releaseFiles: admin/androidApp/build/outputs/bundle/release/androidApp-release.aab
+          mappingFile: admin/androidApp/build/outputs/mapping/release/mapping.txt
+          releaseName: ${{ env.RELEASE_VERSION }}
+          tracks: internal
+          status: ${{ vars.PLAY_RELEASE_STATUS || 'draft' }}
+
+      - name: Remove credentials 🧹
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.jks" "$RUNNER_TEMP/play.json"
+
   dispatch-staging:
     name: Trigger staging deploy 🚀
     needs: [bump, docker-build]
