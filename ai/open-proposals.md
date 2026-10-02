@@ -26,15 +26,6 @@ silently leave phones on the previous version.
 iOS target of the admin app with the same QR login as Android; App Store publishing. Blocked
 until an Apple developer account exists — not before the Android part is done.
 
-## Shared npm-build-workflow ignores the lockfile
-`UnterrainerInformatik/npm-build-workflow` runs `rm -rf node_modules package-lock.json && npm install`
-before every build, so each build takes the newest versions allowed by `package.json`. On
-2026-09-30 this broke `unterrainer.info` completely (a newer `on-headers`, pulled in by a
-`compression` import in the browser app, read `http.ServerResponse` at load time; fixed in the
-homepage by dropping the import). Builds should use `npm ci` with the committed lockfile, and
-resolve platform-native dependencies another way if that was the reason. Lives outside this repo;
-affects every npm caller.
-
 ## Shared deploy-workflow lands on runners that cannot reach the server
 `UnterrainerInformatik/deploy-workflow` has no `runs-on` input and runs on any self-hosted runner.
 On 2026-09-30 the homepage deploy's SSH to the server timed out three times from `dev1-runner*`

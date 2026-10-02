@@ -1,6 +1,6 @@
 ---
 name: reference_ci_runners
-description: Self-hosted GitHub runners on babylon5 (fast) and dev1 (slow VM); presserl builds and homepage/alexpresse deploys pinned to babylon5 with persistent buildx builder 'presserl'; reset commands
+description: Self-hosted GitHub runners on babylon5 (fast) and dev1 (slow VM); presserl builds and homepage/alexpresse deploys pinned to babylon5 with persistent buildx builder 'presserl'; reset commands; npm-build-workflow uses npm ci (callers need an in-sync lockfile)
 metadata:
   type: reference
 ---
@@ -70,5 +70,15 @@ Fix on babylon5: `cd ~/scripts/github-runner && docker compose build --pull && d
 dev1 (`ssh dev1`, needs VPN; user `elite`, `~/scripts/github-runner`, not a git repo) needs the same
 commands; there the failed update left the containers restart-looping with `Cannot configure the
 runner because it is already configured` (exit 2) — recreating the containers clears that too.
+
+**npm-build-workflow installs with `npm ci`** (npm-build-workflow-lockfile, `a581196`,
+2026-10-02). Before, it deleted `package-lock.json` and ran `npm install`, so every build took the
+newest allowed versions (took unterrainer.info down 2026-09-30). Callers (homepage, overmind-gui,
+js-cms-gui, js-cms-gui-v2, guFalcon/flowers-frontend — the last on `main`) must commit a lockfile in
+sync with `package.json` that carries the Linux-native optional entries; drift fails loudly at
+`npm ci`. Node 14 callers (npm 6) need a lockfile npm 6 can read: homepage's npm ≥7 v2 lockfile
+failed with `bindings not accessible from watchpack-chokidar2:fsevents` and was regenerated as v1
+in `node:14` (`67ba07b`). Verify a caller locally with `docker run node:<.nvmrc>` →
+`npm ci && npm run build`. No `actions/cache` step any more (setup-node caches `~/.npm`).
 
 See [[reference_build_and_test]].

@@ -21,6 +21,6 @@
 - [Diagrams always PlantUML](feedback_diagrams_plantuml.md) — .puml + rendered SVG; render via plantuml.unterrainer.info with -L and charset=utf-8
 - [Click through UI checks myself](feedback_ui_tests_myself.md) — Manual-check tasks: drive the apps headless (Playwright) myself, don't hand click steps to Gerald
 - [Stop own servers](feedback_stop_own_servers.md) — Stop every server/daemon/container I started and verify with ps/ss/docker
-- [CI runners](reference_ci_runners.md) — babylon5 (fast, label `babylon5`) vs dev1 (3–4× slower); presserl pinned to babylon5 + persistent builder `presserl` (reset cmds, cap)
+- [CI runners](reference_ci_runners.md) — babylon5 (fast, label `babylon5`) vs dev1 (3–4× slower); presserl pinned to babylon5 + persistent builder `presserl` (reset cmds, cap); npm-build-workflow installs with `npm ci`
 - [Push all touched repos on archive](feedback_push_shared_ci_without_asking.md) — End of /opsx:archive: commit + push every repo the change touched, no question; ask only when something is off
 - [Prefer the A54 over the emulator](feedback_prefer_a54_over_emulator.md) — Gerald's Samsung A54 via adb is always fine for Android checks; faster, less RAM
