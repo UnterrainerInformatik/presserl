@@ -12,10 +12,14 @@
 ## 3. Verification
 
 - [x] 3.1 `gh workflow run deploy.yml -R UnterrainerInformatik/presserl-deployment` (deploy-workflow path, no `self_hosted`). Verify the run is green, the `Init Runner` step's log resolves `actions/checkout@v7`, and the run's annotations (`gh api repos/UnterrainerInformatik/presserl-deployment/check-runs/<job id>/annotations`) contain no Node 20 deprecation for `actions/checkout`.
-- [ ] 3.2 Run a pipeline whose `bump-semver-workflow` job uses `self_hosted: 'true'` (`gh workflow run pipeline.yml -R UnterrainerInformatik/homepage`, or this change's own presserl push if it comes first). Verify the bump job is green, its pre-fetch log lists the six new refs as fetched/available, and the version tag push succeeded (new tag visible via `git ls-remote --tags`). On failure in 3.1/3.2: revert in `../init-runner-action`, push, and report to Gerald.
+- [x] 3.2 Run a pipeline whose `bump-semver-workflow` job uses `self_hosted: 'true'` (`gh workflow run pipeline.yml -R UnterrainerInformatik/homepage`, or this change's own presserl push if it comes first). Verify the bump job is green, its pre-fetch log lists the six new refs as fetched/available, and the version tag push succeeded (new tag visible via `git ls-remote --tags`). On failure in 3.1/3.2: revert in `../init-runner-action`, push, and report to Gerald.
 
 > Note (2026-10-02): 3.1 green (presserl-deployment run 37006497870). 3.2 partially verified via
 > homepage run 37007325263 (self_hosted pre-fetch cloned all six refs, checkout@v7, all green), but
 > `github-tag-action` skipped ("No new commits since previous tag"), so the tag push is unproven.
 > Decision: verify 3.2 on presserl's own pipeline after the archive commit is pushed (its bump job
 > must push a new tag); tick 3.2 only then, revert `init-runner-action` on failure.
+>
+> Resolved (2026-10-02): presserl pipeline run 37018464824 (manual dispatch after the archive
+> commit, which `paths-ignore` skips) — bump job green, pre-fetch fetched all six new refs,
+> checkout@v7, tag `0.0.48` pushed on `6bc6a42`. 3.2 ticked.
