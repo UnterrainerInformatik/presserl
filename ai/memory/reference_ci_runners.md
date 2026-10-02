@@ -50,6 +50,15 @@ runner `ghar-priv-alexpresse` (`babylon5-runner11-priv-ALEXPRESSE`, compose serv
 the labels API (lost on re-registration), otherwise alexpresse deploys queue forever.
 `presserl-deployment` and the other callers stay unpinned (default).
 
+**Homepage deploys through WireGuard** (homepage-deploy-wireguard, 2026-10-02). The homepage
+`deploy` job passes `WG_CONFIG` (no `ovpn_enabled`, no `VPN_*` secrets — `deploy-workflow` picks
+the VPN from the secrets: `WG_CONFIG` → WireGuard, else `VPN_OVPN_FILE` → OpenVPN, else none).
+Before this every homepage deploy ran without VPN. Verified with run 37011845901 (babylon5-runner1).
+Evidence that the tunnel carries traffic: `deploy-workflow` prints `wg show` right after
+`wg-quick up`, so no `latest handshake` ever appears in the job log; check the UniFi VPN event log
+instead ("homepage has connected to WG - Pipelines Deployments's VPN", ~50 s, ~28 KB up/down per
+deploy — same pattern as the `presserl`/`alexpresse` peers).
+
 **Current-builder pointer pitfall** (seen 2026-09-30, run 36754878179: `Multi-platform build is
 not supported for the docker driver`). Each runner container has its own `~/.docker/buildx/`
 (`instances/`, `current`), shared by every repo's jobs on that runner. Other callers create an

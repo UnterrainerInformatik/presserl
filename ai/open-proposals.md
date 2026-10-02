@@ -17,14 +17,6 @@ out to production and switch the pipeline's track if releases should go there di
 iOS target of the admin app with the same QR login as Android; App Store publishing. Blocked
 until an Apple developer account exists — not before the Android part is done.
 
-## Shared deploy-workflow lands on runners that cannot reach the server
-`UnterrainerInformatik/deploy-workflow` has no `runs-on` input and runs on any self-hosted runner.
-On 2026-09-30 the homepage deploy's SSH to the server timed out three times from `dev1-runner*`
-and succeeded from `babylon5-runner*` (VPN step skipped in both cases). Add a `runs-on` input
-(as docker-build-workflow has) or fix the route from dev1. The homepage pipeline also passes
-`ovpn_enabled: true` while its repository holds a `WG_CONFIG` secret and no OpenVPN secrets —
-check which VPN is meant.
-
 ## init-runner-action on Node 24
 `UnterrainerInformatik/init-runner-action` (used by every shared workflow, incl.
 docker-build-workflow) still checks out with `actions/checkout@v4` and pre-fetches v4/v3 actions,
