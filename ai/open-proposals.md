@@ -13,15 +13,6 @@ which the store page shows the real icon and listing; after 14 consecutive days 
 opted-in testers apply for production access in the Play Console (questions on the test), then roll
 out to production and switch the pipeline's track if releases should go there directly.
 
-## Retry the Play upload on transient errors
-The `Upload to Google Play (internal)` step in `.github/workflows/pipeline.yml`
-(`r0adkll/upload-google-play`) tries once. On 2026-10-02 release 0.0.46 uploaded fine but
-"Committing the Edit" failed with `The service is currently unavailable.`, so the edit was
-discarded and nothing reached the internal track until the job was re-run by hand
-(`gh run rerun <id> --failed`). Retry the step a few times with a back-off (e.g. a second
-`if: failure()` attempt after a pause, or a retry wrapper), so a short Google outage does not
-silently leave phones on the previous version.
-
 ## M8 — iOS (later)
 iOS target of the admin app with the same QR login as Android; App Store publishing. Blocked
 until an Apple developer account exists — not before the Android part is done.

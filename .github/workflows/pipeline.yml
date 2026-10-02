@@ -144,10 +144,14 @@ jobs:
           service_account: ${{ vars.PLAY_SERVICE_ACCOUNT }}
 
       # Until the first internal release is rolled out by hand, Play accepts drafts only (design D5).
+      # Up to three attempts survive short Play API outages; a failed edit is discarded by Play, so
+      # repeating the step is safe. Only the last attempt may fail the job.
       - name: Upload to Google Play (internal) 🚚
+        id: play-upload-1
         if: steps.changes.outputs.changed == 'true'
+        continue-on-error: true
         uses: r0adkll/upload-google-play@v1.1.5
-        with:
+        with: &play-upload-inputs
           serviceAccountJson: ${{ steps.gcp-auth.outputs.credentials_file_path }}
           packageName: info.unterrainer.presserl
           releaseFiles: admin/androidApp/build/outputs/bundle/release/androidApp-release.aab
@@ -155,6 +159,31 @@ jobs:
           releaseName: ${{ env.RELEASE_VERSION }}
           tracks: internal
           status: ${{ vars.PLAY_RELEASE_STATUS || 'draft' }}
+
+      - name: Wait before retrying the Play upload ⏳
+        if: steps.changes.outputs.changed == 'true' && steps.play-upload-1.outcome == 'failure'
+        run: |
+          echo "::warning::Google Play upload attempt 1 failed, retrying in 60 s"
+          sleep 60
+
+      - name: Upload to Google Play (internal), attempt 2 🚚
+        id: play-upload-2
+        if: steps.changes.outputs.changed == 'true' && steps.play-upload-1.outcome == 'failure'
+        continue-on-error: true
+        uses: r0adkll/upload-google-play@v1.1.5
+        with: *play-upload-inputs
+
+      - name: Wait before the last Play upload attempt ⏳
+        if: steps.changes.outputs.changed == 'true' && steps.play-upload-2.outcome == 'failure'
+        run: |
+          echo "::warning::Google Play upload attempt 2 failed, retrying in 180 s"
+          sleep 180
+
+      - name: Upload to Google Play (internal), attempt 3 🚚
+        id: play-upload-3
+        if: steps.changes.outputs.changed == 'true' && steps.play-upload-2.outcome == 'failure'
+        uses: r0adkll/upload-google-play@v1.1.5
+        with: *play-upload-inputs
 
       - name: Remove credentials 🧹
         if: always()
