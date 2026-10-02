@@ -17,8 +17,11 @@ out to production and switch the pipeline's track if releases should go there di
 iOS target of the admin app with the same QR login as Android; App Store publishing. Blocked
 until an Apple developer account exists — not before the Android part is done.
 
-## init-runner-action on Node 24
-`UnterrainerInformatik/init-runner-action` (used by every shared workflow, incl.
-docker-build-workflow) still checks out with `actions/checkout@v4` and pre-fetches v4/v3 actions,
-which GitHub forces onto Node 24 with a deprecation annotation. Raise to the current majors
-(checkout v7 at the time of ci-build-speed). Lives outside this repo; affects all callers.
+## Callers still pinning Node 20 action majors
+`init-runner-action` checks out with `actions/checkout@v7` since init-runner-action-node24, but
+callers still pin Node 20 majors themselves and keep emitting the deprecation annotation:
+`npm-build-workflow` (`setup-node@v4`, `upload-artifact@v4`, `reedyuk/npm-version@1.1.1`), `maven-central-workflow`
+(`cache@v3`, `setup-java@v4`, `upload-artifact@v4`) and the pipelines' own cache steps
+(`cms-keycloak`, `htl-zeromq`, `java-cms-data-logger`, `java-elite-server`,
+`java-overmind-server` — check each). Raise to the current majors (upload-artifact v7,
+setup-node v7, setup-java v6, cache v6); separate repositories, verify each with a real run.

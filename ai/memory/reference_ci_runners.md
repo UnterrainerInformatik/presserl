@@ -90,4 +90,11 @@ failed with `bindings not accessible from watchpack-chokidar2:fsevents` and was 
 in `node:14` (`67ba07b`). Verify a caller locally with `docker run node:<.nvmrc>` →
 `npm ci && npm run build`. No `actions/cache` step any more (setup-node caches `~/.npm`).
 
+**init-runner-action on Node 24** (init-runner-action-node24, 2026-10-02). The shared
+`UnterrainerInformatik/init-runner-action` (referenced `@master`, first step of every shared
+workflow) checks out with `actions/checkout@v7` (Node 24, needs runner ≥ 2.327.1; v6+ stores the
+git credentials in a file under `$RUNNER_TEMP` instead of `.git/config`). Its `self_hosted: 'true'`
+pre-fetch list is on the current majors: checkout v7, upload-artifact v7, download-artifact v8,
+setup-node v7, setup-java v6, cache v6; old v4/v3 clones stay on the runners (path keyed by ref).
+
 See [[reference_build_and_test]].
