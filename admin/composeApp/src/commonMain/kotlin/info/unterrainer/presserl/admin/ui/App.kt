@@ -1,13 +1,14 @@
 package info.unterrainer.presserl.admin.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -15,14 +16,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -49,6 +54,7 @@ import info.unterrainer.presserl.admin.auth.AuthState
 import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.deletion_requested_marker
 import info.unterrainer.presserl.admin.resources.loading
+import info.unterrainer.presserl.admin.resources.menu
 import info.unterrainer.presserl.admin.resources.log_in_again
 import info.unterrainer.presserl.admin.resources.log_out
 import info.unterrainer.presserl.admin.resources.nav_accounts
@@ -85,6 +91,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 sealed interface Screen {
@@ -221,176 +228,180 @@ private fun LoggedIn(
     val afterBack = stackAfterBack(stack, screen.start)
     SystemBackHandler(enabled = afterBack != null) { afterBack?.let { stack = it } }
 
-    Column(Modifier.fillMaxSize()) {
-        Header(
-            screen,
-            entry = when (stack.firstOrNull()) {
-                null -> null
-                Route.Accounts -> NavEntry.ACCOUNTS
-                Route.Sections -> NavEntry.SECTIONS
-                Route.Issues -> NavEntry.ISSUES
-                Route.Newspaper -> NavEntry.NEWSPAPER
-                Route.Media -> NavEntry.IMAGES
-                Route.MyAccount -> null
-                else -> NavEntry.ARTICLES
-            },
-            onEntry = { entry ->
-                if (entry == NavEntry.IMAGES) mediaGrid = newMediaGrid()
-                stack = listOf(
-                    when (entry) {
-                        NavEntry.ARTICLES -> Route.ArticleList(ListTab.MINE)
-                        NavEntry.IMAGES -> Route.Media
-                        NavEntry.SECTIONS -> Route.Sections
-                        NavEntry.ISSUES -> Route.Issues
-                        NavEntry.ACCOUNTS -> Route.Accounts
-                        NavEntry.NEWSPAPER -> Route.Newspaper
-                    },
-                )
-            },
-            onLogout = onLogout,
-            onMyAccount = { if (stack.lastOrNull() != Route.MyAccount) push(Route.MyAccount) },
-        )
-        HorizontalDivider()
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            Box(Modifier.widthIn(max = 900.dp).fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
-                when (val route = stack.lastOrNull()) {
-                    null -> Text(stringResource(Res.string.no_writing_role), style = MaterialTheme.typography.titleMedium)
-                    is Route.ArticleList -> ArticleListScreen(
-                        api,
-                        route.tab,
-                        queue,
-                        onQueue = { queue = it },
-                        onTab = { stack = stack.dropLast(1) + Route.ArticleList(it) },
-                        onOpen = { push(Route.Editor(it)) },
-                        sort = sort,
-                        onSort = { sort = it },
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        CompositionLocalProvider(LocalCompactLayout provides (maxWidth < COMPACT_WIDTH)) {
+            Column(Modifier.fillMaxSize()) {
+                // the text being typed gets the whole height on a phone (design D3)
+                if (!hideChrome()) {
+                    Header(
+                        screen,
+                        entry = when (stack.firstOrNull()) {
+                            null -> null
+                            Route.Accounts -> NavEntry.ACCOUNTS
+                            Route.Sections -> NavEntry.SECTIONS
+                            Route.Issues -> NavEntry.ISSUES
+                            Route.Newspaper -> NavEntry.NEWSPAPER
+                            Route.Media -> NavEntry.IMAGES
+                            Route.MyAccount -> null
+                            else -> NavEntry.ARTICLES
+                        },
+                        onEntry = { entry ->
+                            if (entry == NavEntry.IMAGES) mediaGrid = newMediaGrid()
+                            stack = listOf(
+                                when (entry) {
+                                    NavEntry.ARTICLES -> Route.ArticleList(ListTab.MINE)
+                                    NavEntry.IMAGES -> Route.Media
+                                    NavEntry.SECTIONS -> Route.Sections
+                                    NavEntry.ISSUES -> Route.Issues
+                                    NavEntry.ACCOUNTS -> Route.Accounts
+                                    NavEntry.NEWSPAPER -> Route.Newspaper
+                                },
+                            )
+                        },
+                        onLogout = onLogout,
+                        onMyAccount = { if (stack.lastOrNull() != Route.MyAccount) push(Route.MyAccount) },
                     )
-                    is Route.Editor -> key(route) {
-                        EditorScreen(
-                            api,
-                            route.articleId,
-                            readerUrl = { "$siteUrl/articles/$it" },
-                            spellCheck = screen.spellCheck,
-                            onBack = back,
-                            onRevisions = { push(Route.Revisions(route.articleId)) },
-                            username = screen.me.username,
-                            onShowChanges = { push(Route.RevisionDiff(route.articleId, it)) },
-                            roles = screen.me.roles,
-                        )
-                    }
-                    is Route.Revisions -> RevisionsScreen(
-                        api,
-                        route.articleId,
-                        onBack = back,
-                        onOpen = { push(Route.Revision(route.articleId, it)) },
-                        onChanges = { push(Route.RevisionDiff(route.articleId, it)) },
-                    )
-                    is Route.Revision -> key(route) { RevisionScreen(api, route.articleId, route.number, onBack = back) }
-                    is Route.RevisionDiff -> key(route) { RevisionDiffScreen(api, route.articleId, route.number, onBack = back) }
-                    Route.Sections -> SectionListScreen(
-                        api,
-                        onNew = { push(Route.SectionForm(null, it)) },
-                        onEdit = { push(Route.SectionForm(it, it.color)) },
-                        onOpen = { push(Route.SectionMembers(it)) },
-                    )
-                    is Route.SectionForm -> key(route) {
-                        SectionFormScreen(
-                            api,
-                            route.section,
-                            route.defaultColor,
-                            spellCheck = screen.spellCheck,
-                            onBack = back,
-                            onSaved = { stack = listOf(Route.Sections) },
-                        )
-                    }
-                    is Route.SectionMembers -> key(route) { SectionMembersScreen(api, route.section, onBack = back) }
-                    Route.Issues -> IssueListScreen(api, onOpen = { push(Route.IssueDetail(it)) })
-                    is Route.IssueDetail -> key(route) {
-                        IssueDetailScreen(api, route.issueId, siteUrl, onBack = back, onDeleted = { stack = listOf(Route.Issues) })
-                    }
-                    Route.Accounts -> AccountListScreen(
-                        api,
-                        onNew = { roles, sections, marker -> push(Route.NewAccount(roles, sections, marker)) },
-                        onEditRoles = { account, roles, sections, marker -> push(Route.EditRoles(account, roles, sections, marker)) },
-                        onReset = { push(Route.AccountSlip(it)) },
-                    )
-                    is Route.NewAccount -> key(route) {
-                        NewAccountScreen(
-                            api,
-                            route.assignableRoles,
-                            route.sections,
-                            route.mayAssignSectionlessReporter,
-                            onBack = back,
-                            onCreated = { stack = stack.dropLast(1) + Route.AccountSlip(it) },
-                        )
-                    }
-                    is Route.EditRoles -> key(route) {
-                        EditRolesScreen(
-                            api,
-                            route.account,
-                            route.assignableRoles,
-                            route.sections,
-                            route.mayAssignSectionlessReporter,
-                            onBack = back,
-                            onSaved = { stack = listOf(Route.Accounts) },
-                        )
-                    }
-                    is Route.AccountSlip -> AccountSlipScreen(
-                        screen.newspaper.name,
-                        siteUrl,
-                        route.created,
-                        slipPrinter,
-                        onDone = { stack = listOf(Route.Accounts) },
-                    )
-                    Route.Newspaper -> NewspaperScreen(
-                        api,
-                        spellCheck = screen.spellCheck,
-                        mayConfigureSpellCheck = NewspaperAction.CONFIGURE_SPELL_CHECK in screen.me.allowedActions,
-                        mayConfigureCorrections = NewspaperAction.CONFIGURE_CORRECTIONS in screen.me.allowedActions,
-                    )
-                    Route.Media -> MediaGridScreen(
-                        api,
-                        mediaGrid,
-                        mediaThumbnails,
-                        maxUploadSize = screen.newspaper.settings[MAX_UPLOAD_SIZE]?.jsonPrimitive?.contentOrNull,
-                        onOpen = { push(Route.MediaDetail(it)) },
-                    )
-                    is Route.MediaDetail -> key(route) {
-                        MediaDetailScreen(
-                            api,
-                            route.mediaId,
-                            onBack = back,
-                            onEdit = { media, usage -> push(Route.MediaEdit(media, usage)) },
-                            onOpenArticle = { push(Route.Editor(it)) },
-                            onSaved = { mediaGrid.replace(it) },
-                            onTag = { tag ->
-                                mediaGrid.showFilter(MediaFilter(tags = listOf(tag)))
-                                stack = listOf(Route.Media)
-                            },
-                        )
-                    }
-                    Route.MyAccount -> MyAccountScreen(api, screen.me, onBack = back, onChanged = onDeletionRequest)
-                    is Route.MediaEdit -> key(route) {
-                        MediaEditScreen(
-                            api,
-                            route.media,
-                            route.usage,
-                            onBack = back,
-                            onSaved = { saved ->
-                                mediaThumbnails.invalidate(saved.id)
-                                mediaGrid.replace(saved)
-                                back()
-                            },
-                        )
+                    HorizontalDivider()
+                }
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                    Box(Modifier.widthIn(max = 900.dp).fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+                        when (val route = stack.lastOrNull()) {
+                            null -> Text(stringResource(Res.string.no_writing_role), style = MaterialTheme.typography.titleMedium)
+                            is Route.ArticleList -> ArticleListScreen(
+                                api,
+                                route.tab,
+                                queue,
+                                onQueue = { queue = it },
+                                onTab = { stack = stack.dropLast(1) + Route.ArticleList(it) },
+                                onOpen = { push(Route.Editor(it)) },
+                                sort = sort,
+                                onSort = { sort = it },
+                            )
+                            is Route.Editor -> key(route) {
+                                EditorScreen(
+                                    api,
+                                    route.articleId,
+                                    readerUrl = { "$siteUrl/articles/$it" },
+                                    spellCheck = screen.spellCheck,
+                                    onBack = back,
+                                    onRevisions = { push(Route.Revisions(route.articleId)) },
+                                    username = screen.me.username,
+                                    onShowChanges = { push(Route.RevisionDiff(route.articleId, it)) },
+                                    roles = screen.me.roles,
+                                )
+                            }
+                            is Route.Revisions -> RevisionsScreen(
+                                api,
+                                route.articleId,
+                                onBack = back,
+                                onOpen = { push(Route.Revision(route.articleId, it)) },
+                                onChanges = { push(Route.RevisionDiff(route.articleId, it)) },
+                            )
+                            is Route.Revision -> key(route) { RevisionScreen(api, route.articleId, route.number, onBack = back) }
+                            is Route.RevisionDiff -> key(route) { RevisionDiffScreen(api, route.articleId, route.number, onBack = back) }
+                            Route.Sections -> SectionListScreen(
+                                api,
+                                onNew = { push(Route.SectionForm(null, it)) },
+                                onEdit = { push(Route.SectionForm(it, it.color)) },
+                                onOpen = { push(Route.SectionMembers(it)) },
+                            )
+                            is Route.SectionForm -> key(route) {
+                                SectionFormScreen(
+                                    api,
+                                    route.section,
+                                    route.defaultColor,
+                                    spellCheck = screen.spellCheck,
+                                    onBack = back,
+                                    onSaved = { stack = listOf(Route.Sections) },
+                                )
+                            }
+                            is Route.SectionMembers -> key(route) { SectionMembersScreen(api, route.section, onBack = back) }
+                            Route.Issues -> IssueListScreen(api, onOpen = { push(Route.IssueDetail(it)) })
+                            is Route.IssueDetail -> key(route) {
+                                IssueDetailScreen(api, route.issueId, siteUrl, onBack = back, onDeleted = { stack = listOf(Route.Issues) })
+                            }
+                            Route.Accounts -> AccountListScreen(
+                                api,
+                                onNew = { roles, sections, marker -> push(Route.NewAccount(roles, sections, marker)) },
+                                onEditRoles = { account, roles, sections, marker -> push(Route.EditRoles(account, roles, sections, marker)) },
+                                onReset = { push(Route.AccountSlip(it)) },
+                            )
+                            is Route.NewAccount -> key(route) {
+                                NewAccountScreen(
+                                    api,
+                                    route.assignableRoles,
+                                    route.sections,
+                                    route.mayAssignSectionlessReporter,
+                                    onBack = back,
+                                    onCreated = { stack = stack.dropLast(1) + Route.AccountSlip(it) },
+                                )
+                            }
+                            is Route.EditRoles -> key(route) {
+                                EditRolesScreen(
+                                    api,
+                                    route.account,
+                                    route.assignableRoles,
+                                    route.sections,
+                                    route.mayAssignSectionlessReporter,
+                                    onBack = back,
+                                    onSaved = { stack = listOf(Route.Accounts) },
+                                )
+                            }
+                            is Route.AccountSlip -> AccountSlipScreen(
+                                screen.newspaper.name,
+                                siteUrl,
+                                route.created,
+                                slipPrinter,
+                                onDone = { stack = listOf(Route.Accounts) },
+                            )
+                            Route.Newspaper -> NewspaperScreen(
+                                api,
+                                spellCheck = screen.spellCheck,
+                                mayConfigureSpellCheck = NewspaperAction.CONFIGURE_SPELL_CHECK in screen.me.allowedActions,
+                                mayConfigureCorrections = NewspaperAction.CONFIGURE_CORRECTIONS in screen.me.allowedActions,
+                            )
+                            Route.Media -> MediaGridScreen(
+                                api,
+                                mediaGrid,
+                                mediaThumbnails,
+                                maxUploadSize = screen.newspaper.settings[MAX_UPLOAD_SIZE]?.jsonPrimitive?.contentOrNull,
+                                onOpen = { push(Route.MediaDetail(it)) },
+                            )
+                            is Route.MediaDetail -> key(route) {
+                                MediaDetailScreen(
+                                    api,
+                                    route.mediaId,
+                                    onBack = back,
+                                    onEdit = { media, usage -> push(Route.MediaEdit(media, usage)) },
+                                    onOpenArticle = { push(Route.Editor(it)) },
+                                    onSaved = { mediaGrid.replace(it) },
+                                    onTag = { tag ->
+                                        mediaGrid.showFilter(MediaFilter(tags = listOf(tag)))
+                                        stack = listOf(Route.Media)
+                                    },
+                                )
+                            }
+                            Route.MyAccount -> MyAccountScreen(api, screen.me, onBack = back, onChanged = onDeletionRequest)
+                            is Route.MediaEdit -> key(route) {
+                                MediaEditScreen(
+                                    api,
+                                    route.media,
+                                    route.usage,
+                                    onBack = back,
+                                    onSaved = { saved ->
+                                        mediaThumbnails.invalidate(saved.id)
+                                        mediaGrid.replace(saved)
+                                        back()
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
     }
 }
-
-/** Below this width the header takes two rows so the names never get squeezed. */
-private val NARROW_HEADER = 720.dp
 
 @Composable
 private fun Header(
@@ -400,68 +411,107 @@ private fun Header(
     onLogout: () -> Unit,
     onMyAccount: () -> Unit,
 ) {
-    val identity = @Composable { modifier: Modifier ->
-        Column(modifier) {
-            Text(screen.newspaper.name, style = MaterialTheme.typography.titleLarge)
-            val roles = screen.me.roles.map { roleText(it) } +
-                (if (screen.me.sectionlessReporter) listOf(stringResource(sectionlessReporterLabel)) else emptyList()) +
-                screen.me.sectionRoles.map { sectionRoleText(it.role) + " · " + it.sectionName }
-            val userLine = listOfNotNull(
-                screen.me.displayName,
-                if (roles.isEmpty()) stringResource(Res.string.no_roles) else roles.joinToString(", "),
-                stringResource(Res.string.deletion_requested_marker).takeIf { screen.me.deletionRequestedAt != null },
-            )
-            // the user line opens "My account" for everyone, whatever the navigation offers
-            // a plain clickable Text keeps wrapped lines start-aligned; a TextButton centres them and clips
-            Text(
-                userLine.joinToString(" · "),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-                textAlign = TextAlign.Start,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 44.dp)
-                    .clickable(role = Role.Button, onClick = onMyAccount)
-                    .padding(vertical = 4.dp)
-                    .wrapContentHeight(Alignment.CenterVertically),
-            )
-        }
+    val roles = screen.me.roles.map { roleText(it) } +
+        (if (screen.me.sectionlessReporter) listOf(stringResource(sectionlessReporterLabel)) else emptyList()) +
+        screen.me.sectionRoles.map { sectionRoleText(it.role) + " · " + it.sectionName }
+    val userLine = listOfNotNull(
+        screen.me.displayName,
+        if (roles.isEmpty()) stringResource(Res.string.no_roles) else roles.joinToString(", "),
+        stringResource(Res.string.deletion_requested_marker).takeIf { screen.me.deletionRequestedAt != null },
+    ).joinToString(" · ")
+    val name = @Composable { modifier: Modifier ->
+        Text(screen.newspaper.name, style = MaterialTheme.typography.titleLarge, modifier = modifier)
     }
-    val navigation = @Composable {
-        for (navEntry in screen.navEntries) {
-            val label = when (navEntry) {
-                NavEntry.ARTICLES -> Res.string.nav_articles
-                NavEntry.IMAGES -> Res.string.nav_images
-                NavEntry.SECTIONS -> Res.string.nav_sections
-                NavEntry.ISSUES -> Res.string.nav_issues
-                NavEntry.ACCOUNTS -> Res.string.nav_accounts
-                NavEntry.NEWSPAPER -> Res.string.nav_newspaper
-            }
-            NavButton(stringResource(label), entry == navEntry) { onEntry(navEntry) }
-        }
-    }
-    val logout = @Composable { OutlinedButton(onClick = onLogout) { Text(stringResource(Res.string.log_out)) } }
-    BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        if (maxWidth >= NARROW_HEADER) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                identity(Modifier.weight(1f))
-                navigation()
-                logout()
+    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        if (LocalCompactLayout.current) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                name(Modifier.weight(1f))
+                HeaderMenu(screen.navEntries, entry, userLine, onEntry, onLogout, onMyAccount)
             }
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    identity(Modifier.weight(1f))
-                    logout()
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(Modifier.weight(1f)) {
+                    name(Modifier)
+                    // the user line opens "My account" for everyone, whatever the navigation offers
+                    // a plain clickable Text keeps wrapped lines start-aligned; a TextButton centres them and clips
+                    Text(
+                        userLine,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 44.dp)
+                            .clickable(role = Role.Button, onClick = onMyAccount)
+                            .padding(vertical = 4.dp)
+                            .wrapContentHeight(Alignment.CenterVertically),
+                    )
                 }
-                if (screen.navEntries.isNotEmpty()) {
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        navigation()
-                    }
+                for (navEntry in screen.navEntries) {
+                    NavButton(stringResource(navLabel(navEntry)), entry == navEntry) { onEntry(navEntry) }
                 }
+                OutlinedButton(onClick = onLogout) { Text(stringResource(Res.string.log_out)) }
             }
         }
     }
+}
+
+/** The compact header's menu: navigation (current entry marked), the user line and "Log out" (design D2). */
+@Composable
+private fun HeaderMenu(
+    navEntries: List<NavEntry>,
+    entry: NavEntry?,
+    userLine: String,
+    onEntry: (NavEntry) -> Unit,
+    onLogout: () -> Unit,
+    onMyAccount: () -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            SymbolIcon(Icons.Menu, size = 24.dp, contentDescription = stringResource(Res.string.menu))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            val choose = { action: () -> Unit ->
+                open = false
+                action()
+            }
+            for (navEntry in navEntries) {
+                val selected = entry == navEntry
+                val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                DropdownMenuItem(
+                    text = { Text(stringResource(navLabel(navEntry)), color = color) },
+                    onClick = { choose { onEntry(navEntry) } },
+                    leadingIcon = { if (selected) SymbolIcon(Icons.Check, size = 24.dp, tint = color) else Spacer(Modifier.size(24.dp)) },
+                    modifier = if (selected) Modifier.background(MaterialTheme.colorScheme.secondaryContainer) else Modifier,
+                )
+            }
+            if (navEntries.isNotEmpty()) HorizontalDivider()
+            // wraps start-aligned inside the menu's width, never cut off
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        userLine,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                },
+                onClick = { choose(onMyAccount) },
+            )
+            DropdownMenuItem(text = { Text(stringResource(Res.string.log_out)) }, onClick = { choose(onLogout) })
+        }
+    }
+}
+
+private fun navLabel(navEntry: NavEntry): StringResource = when (navEntry) {
+    NavEntry.ARTICLES -> Res.string.nav_articles
+    NavEntry.IMAGES -> Res.string.nav_images
+    NavEntry.SECTIONS -> Res.string.nav_sections
+    NavEntry.ISSUES -> Res.string.nav_issues
+    NavEntry.ACCOUNTS -> Res.string.nav_accounts
+    NavEntry.NEWSPAPER -> Res.string.nav_newspaper
 }
 
 @Composable

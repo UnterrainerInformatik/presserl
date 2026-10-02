@@ -2,7 +2,6 @@ package info.unterrainer.presserl.admin.ui.editor
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -27,6 +26,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -50,6 +50,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.ui.material3.OutlinedRichTextEditor
@@ -133,6 +134,9 @@ import info.unterrainer.presserl.admin.ui.SystemBackHandler
 import info.unterrainer.presserl.admin.ui.Banner
 import info.unterrainer.presserl.admin.ui.IconLabel
 import info.unterrainer.presserl.admin.ui.Icons
+import info.unterrainer.presserl.admin.ui.LocalCompactLayout
+import info.unterrainer.presserl.admin.ui.SymbolIcon
+import info.unterrainer.presserl.admin.ui.hideChrome
 import info.unterrainer.presserl.admin.ui.LoadFailed
 import info.unterrainer.presserl.admin.ui.attempt
 import info.unterrainer.presserl.admin.ui.decisionText
@@ -349,54 +353,33 @@ private fun Editor(
     )
 
     SystemBackHandler { leave(onBack) }
+    val compact = LocalCompactLayout.current
+    val notices = @Composable {
+        EditorNotices(
+            article,
+            editable = actions.editable,
+            errors = errors.general,
+            notice = notice,
+            reviews = reviews,
+            readerUrl = readerUrl,
+            leave = ::leave,
+            onBack = onBack,
+            onRevisions = onRevisions,
+            onShowChanges = onShowChanges,
+            // in the wide layout the conflict banner keeps its place right below the status row
+            afterStatus = { if (!compact) ConflictBanner(saveState, onReload) },
+        )
+    }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        FlowRow(verticalArrangement = Arrangement.Center, horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-            BackButton { leave(onBack) }
-            Text(
-                listOfNotNull(
-                    statusText(article.status),
-                    issueWaitText(article.status, article.readerVisible, article.issue?.number),
-                    stringResource(Res.string.unpublished_changes).takeIf { article.hasUnpublishedChanges },
-                ).joinToString(" · "),
-                style = MaterialTheme.typography.labelLarge,
-            )
-            TextButton(onClick = { leave(onRevisions) }) { Text(stringResource(Res.string.revisions)) }
-            if (article.readerVisible) {
-                val uriHandler = LocalUriHandler.current
-                TextButton(onClick = { uriHandler.openUri(readerUrl(article.id)) }) { IconLabel(Icons.OpenInNew, stringResource(Res.string.view_in_reader), iconAfter = true) }
-            }
-        }
-        if (saveState == SaveState.Conflict) {
-            Banner(stringResource(Res.string.conflict_text)) {
-                Button(onClick = onReload) { Text(stringResource(Res.string.load_current)) }
-            }
-        }
-        errors.general.forEach { Banner(stringResource(Res.string.action_failed, it)) }
-        notice.correcting?.let {
-            Banner(stringResource(Res.string.correcting_notice, authorLabel(it)), color = MaterialTheme.colorScheme.tertiaryContainer)
-        }
-        notice.lastChangedBy?.let { editor ->
-            Banner(stringResource(Res.string.last_changed_by, authorLabel(editor)), color = MaterialTheme.colorScheme.secondaryContainer) {
-                OutlinedButton(onClick = { leave { onShowChanges(article.revision) } }) { Text(stringResource(Res.string.show_changes)) }
-            }
-        }
-        if (article.locked) {
-            Banner(stringResource(Res.string.locked_notice), color = MaterialTheme.colorScheme.errorContainer)
-        }
-        val pendingLevel = article.pendingLevel
-        if (pendingLevel != null) {
-            Banner(waitingText(pendingLevel), color = MaterialTheme.colorScheme.secondaryContainer)
-        } else if (!actions.editable) {
-            Banner(stringResource(Res.string.read_only), color = MaterialTheme.colorScheme.secondaryContainer)
-        }
-        rejectionToShow(reviews, pendingLevel)?.let { rejection ->
-            Banner(
-                stringResource(Res.string.rejected_by, authorLabel(rejection.reviewer), rejection.note.orEmpty()),
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-            )
+        if (compact) {
+            // blocks saving, so it stays in view while the rest scrolls away with the article (design D4)
+            ConflictBanner(saveState, onReload)
+        } else {
+            notices()
         }
 
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (compact) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { notices() }
             if (actions.editable) {
                 // One explanation at a time for the whole editor
                 val help = remember { FieldHelpState() }
@@ -512,6 +495,73 @@ private fun Editor(
     }
 }
 
+/** The status row and the notice banners above the article; the conflict banner is shown separately. */
+@Composable
+private fun EditorNotices(
+    article: ArticleDto,
+    editable: Boolean,
+    errors: List<String>,
+    notice: CorrectionNotice,
+    reviews: List<ReviewDto>,
+    readerUrl: (Long) -> String,
+    leave: (() -> Unit) -> Unit,
+    onBack: () -> Unit,
+    onRevisions: () -> Unit,
+    onShowChanges: (Int) -> Unit,
+    afterStatus: @Composable () -> Unit,
+) {
+    FlowRow(verticalArrangement = Arrangement.Center, horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+        BackButton { leave(onBack) }
+        Text(
+            listOfNotNull(
+                statusText(article.status),
+                issueWaitText(article.status, article.readerVisible, article.issue?.number),
+                stringResource(Res.string.unpublished_changes).takeIf { article.hasUnpublishedChanges },
+            ).joinToString(" · "),
+            style = MaterialTheme.typography.labelLarge,
+        )
+        TextButton(onClick = { leave(onRevisions) }) { Text(stringResource(Res.string.revisions)) }
+        if (article.readerVisible) {
+            val uriHandler = LocalUriHandler.current
+            TextButton(onClick = { uriHandler.openUri(readerUrl(article.id)) }) { IconLabel(Icons.OpenInNew, stringResource(Res.string.view_in_reader), iconAfter = true) }
+        }
+    }
+    afterStatus()
+    errors.forEach { Banner(stringResource(Res.string.action_failed, it)) }
+    notice.correcting?.let {
+        Banner(stringResource(Res.string.correcting_notice, authorLabel(it)), color = MaterialTheme.colorScheme.tertiaryContainer)
+    }
+    notice.lastChangedBy?.let { editor ->
+        Banner(stringResource(Res.string.last_changed_by, authorLabel(editor)), color = MaterialTheme.colorScheme.secondaryContainer) {
+            OutlinedButton(onClick = { leave { onShowChanges(article.revision) } }) { Text(stringResource(Res.string.show_changes)) }
+        }
+    }
+    if (article.locked) {
+        Banner(stringResource(Res.string.locked_notice), color = MaterialTheme.colorScheme.errorContainer)
+    }
+    val pendingLevel = article.pendingLevel
+    if (pendingLevel != null) {
+        Banner(waitingText(pendingLevel), color = MaterialTheme.colorScheme.secondaryContainer)
+    } else if (!editable) {
+        Banner(stringResource(Res.string.read_only), color = MaterialTheme.colorScheme.secondaryContainer)
+    }
+    rejectionToShow(reviews, pendingLevel)?.let { rejection ->
+        Banner(
+            stringResource(Res.string.rejected_by, authorLabel(rejection.reviewer), rejection.note.orEmpty()),
+            color = MaterialTheme.colorScheme.tertiaryContainer,
+        )
+    }
+}
+
+@Composable
+private fun ConflictBanner(saveState: SaveState, onReload: () -> Unit) {
+    if (saveState == SaveState.Conflict) {
+        Banner(stringResource(Res.string.conflict_text)) {
+            Button(onClick = onReload) { Text(stringResource(Res.string.load_current)) }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BottomBar(
@@ -549,8 +599,21 @@ private fun BottomBar(
         if (actions.submit) Button(onClick = onSubmit, enabled = !busy && saveState != SaveState.Conflict) { Text(stringResource(Res.string.submit)) }
         if (actions.publish) Button(onClick = onPublish, enabled = !busy && saveState != SaveState.Conflict) { Text(stringResource(Res.string.publish)) }
     }
-    BoxWithConstraints(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-        if (maxWidth < NARROW_BAR) {
+    Box(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        if (hideChrome()) {
+            // one line while typing; the article actions come back when the keyboard closes (design D5)
+            if (actions.editable) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { model.dispatch(EditorIntent.Undo) }, enabled = model.canUndo) {
+                        SymbolIcon(Icons.Undo, size = 24.dp, contentDescription = stringResource(Res.string.undo))
+                    }
+                    IconButton(onClick = { model.dispatch(EditorIntent.Redo) }, enabled = model.canRedo) {
+                        SymbolIcon(Icons.Redo, size = 24.dp, contentDescription = stringResource(Res.string.redo))
+                    }
+                    Text(saveStateText(saveState), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        } else if (LocalCompactLayout.current) {
             // One wrapping group: side by side the actions would squeeze undo and redo into broken words
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                 history()
@@ -568,9 +631,6 @@ private fun BottomBar(
         }
     }
 }
-
-/** Below this width the bottom bar wraps as one group. */
-private val NARROW_BAR = 720.dp
 
 /** The article's approvals and rejections, newest first, with their notes. */
 @Composable

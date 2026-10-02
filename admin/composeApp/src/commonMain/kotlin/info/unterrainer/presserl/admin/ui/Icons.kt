@@ -46,6 +46,13 @@ object Icons {
             "L19 6.41V10h2V3h-7z",
     )
     val PlayArrow = icon("PlayArrow", "M8 5v14l11-7z")
+    val Menu = icon("Menu", "M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z")
+    val Calendar = icon(
+        "Calendar",
+        "M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z" +
+            "m0 16H5V10h14v10zm0-12H5V6h14v2z",
+    )
+    val Check = icon("Check", "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z")
 
     private fun icon(name: String, pathData: String): ImageVector =
         ImageVector.Builder(name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)

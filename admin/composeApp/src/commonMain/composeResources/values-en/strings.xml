@@ -401,4 +401,7 @@
     <string name="action_delete">Delete</string>
     <string name="confirm_delete_title">Delete account?</string>
     <string name="confirm_delete_text">“%1$s” can no longer log in from now on, and the login slip stops working. Articles and images of the account stay with the byline “former newsroom member”. Deleting cannot be undone.</string>
+    <string name="menu">Menu</string>
+    <string name="choose_date">Choose date</string>
+    <string name="date_picker_confirm">OK</string>
 </resources>

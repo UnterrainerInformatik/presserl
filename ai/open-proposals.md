@@ -13,19 +13,6 @@ which the store page shows the real icon and listing; after 14 consecutive days 
 opted-in testers apply for production access in the Play Console (questions on the test), then roll
 out to production and switch the pipeline's track if releases should go there directly.
 
-## Admin app on phones — layout polish
-Non-blocking findings of the phone-size check in android-app-qr-login (Pixel 7 emulator, 412 dp):
-- The header (newspaper, user, navigation) and the editor's bottom bar (undo/redo/saved/delete,
-  publish) stay fixed and take about 40 % of the height; with the keyboard open only a few lines
-  of the paragraph being written are visible. Collapse the header while scrolling or typing and
-  shrink the bottom bar when the keyboard is shown.
-- The navigation row scrolls sideways and cuts the last entry ("Acc…") without a hint that more
-  follows; a menu or wrapping row would show all entries.
-- The issue publication date is typed as `YYYY-MM-DD`; a date picker suits phones better.
-- The photo picker offers every image type the phone has (e.g. HEIC); the server refuses
-  anything but JPEG, PNG and WebP with the usual upload error — check whether converting to JPEG
-  on the device is worth it.
-
 ## M8 — iOS (later)
 iOS target of the admin app with the same QR login as Android; App Store publishing. Blocked
 until an Apple developer account exists — not before the Android part is done.

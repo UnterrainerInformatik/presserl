@@ -401,4 +401,7 @@
     <string name="action_delete">Löschen</string>
     <string name="confirm_delete_title">Konto löschen?</string>
     <string name="confirm_delete_text">„%1$s“ kann sich sofort nicht mehr anmelden, auch der Zugangszettel funktioniert nicht mehr. Artikel und Bilder des Kontos bleiben mit der Autorenzeile „ehemaliges Redaktionsmitglied“ erhalten. Das Löschen lässt sich nicht rückgängig machen.</string>
+    <string name="menu">Menü</string>
+    <string name="choose_date">Datum wählen</string>
+    <string name="date_picker_confirm">Übernehmen</string>
 </resources>

@@ -16,19 +16,26 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
@@ -42,8 +49,10 @@ import info.unterrainer.presserl.admin.resources.Res
 import info.unterrainer.presserl.admin.resources.add_articles
 import info.unterrainer.presserl.admin.resources.cancel
 import info.unterrainer.presserl.admin.resources.candidate_in_issue
+import info.unterrainer.presserl.admin.resources.choose_date
 import info.unterrainer.presserl.admin.resources.clear_date
 import info.unterrainer.presserl.admin.resources.create
+import info.unterrainer.presserl.admin.resources.date_picker_confirm
 import info.unterrainer.presserl.admin.resources.delete
 import info.unterrainer.presserl.admin.resources.delete_issue_text
 import info.unterrainer.presserl.admin.resources.delete_issue_title
@@ -78,6 +87,7 @@ import info.unterrainer.presserl.admin.ui.Banner
 import info.unterrainer.presserl.admin.ui.IconLabel
 import info.unterrainer.presserl.admin.ui.Icons
 import info.unterrainer.presserl.admin.ui.LoadFailed
+import info.unterrainer.presserl.admin.ui.SymbolIcon
 import info.unterrainer.presserl.admin.ui.formatDate
 import info.unterrainer.presserl.admin.ui.section.ColorMarker
 import info.unterrainer.presserl.admin.ui.issueWaitText
@@ -164,6 +174,7 @@ private fun LiveChip(live: Boolean) {
 
 @Composable
 private fun DateField(value: String, invalid: Boolean, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    var picking by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = value,
         onValueChange = { changed -> onChange(changed.filterNot { it == '\n' || it == '\r' }) },
@@ -173,8 +184,49 @@ private fun DateField(value: String, invalid: Boolean, onChange: (String) -> Uni
         supportingText = {
             Text(stringResource(if (invalid) Res.string.publication_date_invalid else Res.string.publication_date_hint))
         },
+        // typing keeps working; the calendar is the easier way on a phone (design D6)
+        trailingIcon = {
+            IconButton(onClick = { picking = true }) {
+                SymbolIcon(Icons.Calendar, size = 24.dp, contentDescription = stringResource(Res.string.choose_date))
+            }
+        },
         modifier = modifier,
     )
+    if (picking) DatePickerFor(value, onPicked = onChange, onClose = { picking = false })
+}
+
+/** A date picker preselected with [value]; empty or invalid opens at the current month with nothing selected. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DatePickerFor(value: String, onPicked: (String) -> Unit, onClose: () -> Unit) {
+    val state = rememberDatePickerState(
+        initialSelectedDateMillis = (parseDate(value) as? DateInput.Valid)?.let { isoToEpochMillis(it.iso) },
+    )
+    DatePickerDialog(
+        onDismissRequest = onClose,
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    state.selectedDateMillis?.let { onPicked(epochMillisToIso(it)) }
+                    onClose()
+                },
+                enabled = state.selectedDateMillis != null,
+            ) { Text(stringResource(Res.string.date_picker_confirm)) }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text(stringResource(Res.string.cancel)) } },
+    ) {
+        // the default headline ("Ausgewähltes Datum" in headlineLarge) is cut off on a phone
+        DatePicker(
+            state,
+            headline = {
+                Text(
+                    state.selectedDateMillis?.let { formatDate(epochMillisToIso(it)) }.orEmpty(),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(start = 24.dp, end = 12.dp, bottom = 12.dp),
+                )
+            },
+        )
+    }
 }
 
 /**
