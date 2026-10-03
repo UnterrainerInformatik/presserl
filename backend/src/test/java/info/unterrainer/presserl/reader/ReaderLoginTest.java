@@ -3,6 +3,7 @@ package info.unterrainer.presserl.reader;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.URL;
+import java.time.Duration;
 import java.time.Instant;
 
 import javax.sql.DataSource;
@@ -162,6 +163,19 @@ class ReaderLoginTest {
             // Same origin as the admin app: a bearer token still works next to the reader cookie
             assertThat(browser.getWithBearer("/api/me", TestSupport.token("chief", "chief")).getContentAsString())
                     .contains("\"username\":\"chief\"");
+        }
+    }
+
+    @Test
+    void sessionCookieOutlivesTheAccessToken() {
+        try (ReaderBrowser browser = new ReaderBrowser()) {
+            browser.login("/login", "reader", "reader");
+
+            Cookie session = browser.sessionCookie();
+            assertThat(session).isNotNull();
+            // Persistent and as long-lived as the realm's 180-day SSO session
+            assertThat(session.getExpires()).isNotNull();
+            assertThat(session.getExpires().toInstant()).isAfter(Instant.now().plus(Duration.ofDays(179)));
         }
     }
 

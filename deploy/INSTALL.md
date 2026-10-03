@@ -60,7 +60,9 @@ Steps 1 and 3 above stay the same; instead of step 2, do the following in that r
    *Max login failures* 10, *Wait increment* 1 minute, *Max wait* 15 minutes,
    *Failure reset time* 12 hours. Save.
 3. **Realm settings → Tokens:** *Access token lifespan* 5 minutes. **Realm settings → Sessions:**
-   *SSO session idle* 30 minutes, *SSO session max* 10 hours. Save.
+   *SSO session idle* 180 days, *SSO session max* 180 days. Save. Readers stay logged in for half
+   a year on their device, while locking an account or resetting its password still cuts access
+   within the 5 minutes of the access token.
 4. **Realm settings → User profile:** open each of the attributes `email`, `firstName` and
    `lastName`, switch off *Required field*, save. The first publisher is created with a username
    only; with required fields left on, Keycloak asks them for these values at their first login

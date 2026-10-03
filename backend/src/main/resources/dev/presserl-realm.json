@@ -16,8 +16,8 @@
   "maxFailureWaitSeconds": 900,
   "maxDeltaTimeSeconds": 43200,
   "accessTokenLifespan": 300,
-  "ssoSessionIdleTimeout": 1800,
-  "ssoSessionMaxLifespan": 36000,
+  "ssoSessionIdleTimeout": 15552000,
+  "ssoSessionMaxLifespan": 15552000,
   "groups": [
     {
       "name": "publisher",
