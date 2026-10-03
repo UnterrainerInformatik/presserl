@@ -165,6 +165,11 @@ certificate and sets the forwarding headers by itself.
 The publisher is created only once. Changing the variables later does not change the account;
 manage it in Keycloak.
 
+Children who write for your newspaper may not be able to install the Android admin app if their
+Google account is supervised by Google Family Link. Send their parents
+[The admin app on children's phones](../docs/admin-app.md): it explains the cause, the Family Link
+setting and the alternatives.
+
 ### First article and first issue
 
 A new newspaper starts with issue 1, which is not live yet. Readers see an article only once it is

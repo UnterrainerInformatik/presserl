@@ -143,6 +143,77 @@ calendar, web browsing, installed apps, crash logs (no crash reporting), adverti
   web browser:** No — the app talks to the chosen newspaper server only (the reader opens in the
   phone's browser).
 
+### Issued ratings
+
+Issued on 2026-10-01 for the answers above:
+
+| Authority (region) | Rating |
+|---|---|
+| **PEGI (Europe, including Austria)** | **Parental guidance** |
+| USK (Germany) | Ages 6+ |
+| ESRB (North America) | Everyone 10+ |
+| ClassInd (Brazil) | All ages |
+| IARC Generic (rest of the world) | 12+ |
+| Google Play Russia | 12+ |
+| Google Play South Korea | 12+ |
+
+PEGI is the rating Google Play shows and filters on in Austria and most of Europe.
+
+### Why PEGI says "Parental guidance"
+
+PEGI gives non-game apps whose content comes from their users, and so cannot be rated by age
+(social networks, video platforms), "Parental guidance recommended" instead of an age number. The
+trigger is the answer **Yes** to "users can interact or exchange content" above. On 2026-10-03 the
+submitted questionnaire was checked against this section: every answer is as documented, so PG is
+the expected outcome, not a mistake.
+
+The answer stays **Yes**. Reporters' articles, captions and photos are user-generated content
+shared with other users of the newspaper; answering **No** to get an age-based PEGI rating would
+make the declaration false and risks enforcement by Google.
+
+### Effect on Family Link accounts
+
+A child's Google account supervised by Google Family Link has an app filter ("up to PEGI 3/7/12/16/18").
+Every such filter blocks a PG app. Google Play does not name the cause.
+
+Observed on 2026-10-03 with a supervised child account in Austria, internal test track:
+
+1. With the Family Link app filter "up to PEGI 12", installing from the opt-in link failed with
+   "An error occurred. Turn on Wi-Fi or mobile data and try again", although the phone was online.
+   No approval request reached the parent's Family Link app — parental approval does not help.
+2. Setting Google Play approvals to "never" alone changed nothing.
+3. With the rating filter and approvals both lifted ("Allow all"), the error changed to
+   "Item not found" ("Nicht gefunden"). Clearing the cache of Play Store and Play services and
+   opening the exact "Copy link" opt-in link on the phone did not help. A later retry is pending.
+4. The same release installs normally on the developer's own (not supervised) account.
+
+**Not verified:** whether supervised accounts can install from a test track (internal or closed) at
+all. Third-party developer reports say they cannot; Google's help does not say either way. Until
+this is settled, do not count supervised accounts among the 12 closed-test testers.
+
+What operators, parents and teachers are told: [The admin app on children's phones](admin-app.md).
+
+## Install problems
+
+Checklist when someone reports that the admin app cannot be installed from Google Play ("Turn on
+Wi-Fi or mobile data", "Item not found", no install button):
+
+- **Tester list:** the person's Google account is on a tester list (e-mail list or Google Group),
+  and that list is ticked for the track the release is on (Testing → Internal / Closed testing →
+  Testers).
+- **Play Store account:** the account the Play Store uses on the phone (Play Store → profile
+  picture) is the tester address, not another account on the same phone.
+- **Family Link:** if the account is supervised, the PEGI "Parental guidance" rating is blocked by
+  any app filter (see [Effect on Family Link accounts](#effect-on-family-link-accounts)); test
+  tracks may not work for supervised accounts at all.
+- **Opt-in link:** use the link from "Copy link" of the track's testers page, open it on the phone
+  with the tester account, accept the invitation, then follow the link to Google Play.
+- **Cache:** clear the cache of the Play Store and Google Play services apps, then retry; a fresh
+  tester opt-in can take some minutes to reach the Play Store.
+- **Last resort, developers only:** download the signed universal APK from Play Console → App
+  bundle explorer (the release → Downloads) and install it by hand. Not for operators, parents or
+  children: it bypasses Play's updates and Family Link.
+
 ## App access (for the review)
 
 - **All or some functionality is restricted:** Yes — everything after the start screen needs an

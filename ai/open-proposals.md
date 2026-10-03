@@ -12,6 +12,13 @@ promote the current internal release to it — this submits the app for its firs
 which the store page shows the real icon and listing; after 14 consecutive days with at least 12
 opted-in testers apply for production access in the Play Console (questions on the test), then roll
 out to production and switch the pipeline's track if releases should go there directly.
+Testers: supervised (Family Link) accounts probably cannot install from test tracks at all
+(not verified, see `docs/play-console.md` → Effect on Family Link accounts) — recruit adults or
+unsupervised accounts. Store description: add one sentence per language, e.g. "On children's
+phones with Google Family Link the app's PEGI rating 'Parental guidance' is blocked by any age
+filter; see <link to docs/admin-app.md>." (both descriptions are ~2,000 of 4,000 characters, run
+`check.sh`). With the production release, update or remove section 6 "During the test phase" of
+`docs/admin-app.md`.
 
 ## M8 — iOS (later)
 iOS target of the admin app with the same QR login as Android; App Store publishing. Blocked
