@@ -134,6 +134,7 @@ import info.unterrainer.presserl.admin.ui.SystemBackHandler
 import info.unterrainer.presserl.admin.ui.Banner
 import info.unterrainer.presserl.admin.ui.IconLabel
 import info.unterrainer.presserl.admin.ui.Icons
+import info.unterrainer.presserl.admin.ui.FitWidth
 import info.unterrainer.presserl.admin.ui.LocalCompactLayout
 import info.unterrainer.presserl.admin.ui.SymbolIcon
 import info.unterrainer.presserl.admin.ui.hideChrome
@@ -604,20 +605,20 @@ private fun BottomBar(
             // one line while typing; the article actions come back when the keyboard closes (design D5)
             if (actions.editable) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { model.dispatch(EditorIntent.Undo) }, enabled = model.canUndo) {
-                        SymbolIcon(Icons.Undo, size = 24.dp, contentDescription = stringResource(Res.string.undo))
-                    }
-                    IconButton(onClick = { model.dispatch(EditorIntent.Redo) }, enabled = model.canRedo) {
-                        SymbolIcon(Icons.Redo, size = 24.dp, contentDescription = stringResource(Res.string.redo))
-                    }
+                    HistoryIcons(model)
                     Text(saveStateText(saveState), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         } else if (LocalCompactLayout.current) {
-            // One wrapping group: side by side the actions would squeeze undo and redo into broken words
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-                history()
-                articleActions()
+            // One line that shrinks as a whole when too wide: wrapping took lines away from the article text
+            FitWidth {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (actions.editable) {
+                        Row(verticalAlignment = Alignment.CenterVertically) { HistoryIcons(model) }
+                        Text(saveStateText(saveState), style = MaterialTheme.typography.bodyMedium, maxLines = 1, softWrap = false)
+                    }
+                    articleActions()
+                }
             }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -629,6 +630,17 @@ private fun BottomBar(
                 }
             }
         }
+    }
+}
+
+/** Undo and redo as icon buttons, named "Undo" and "Redo" for screen readers. */
+@Composable
+private fun HistoryIcons(model: EditorModel) {
+    IconButton(onClick = { model.dispatch(EditorIntent.Undo) }, enabled = model.canUndo) {
+        SymbolIcon(Icons.Undo, size = 24.dp, contentDescription = stringResource(Res.string.undo))
+    }
+    IconButton(onClick = { model.dispatch(EditorIntent.Redo) }, enabled = model.canRedo) {
+        SymbolIcon(Icons.Redo, size = 24.dp, contentDescription = stringResource(Res.string.redo))
     }
 }
 

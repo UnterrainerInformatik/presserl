@@ -275,8 +275,10 @@ side by side.
 
 On narrow screens the editor's status row (back, status, revisions, reader link) and its notice
 banners SHALL scroll together with the article. The conflict banner SHALL stay fixed above the
-article. The editor's bottom bar (undo, redo, save state and the article actions) SHALL wrap as one
-group, keeping the primary action at the end.
+article. The editor's bottom bar SHALL be a single line: undo and redo as icons (keeping "Undo" and
+"Redo" as their accessible names), the save state, and the article actions with the primary action
+at the end. When that line does not fit the screen width, the whole bar SHALL be scaled down
+uniformly until it fits rather than wrap onto further lines; its tap targets SHALL scale with it.
 
 On narrow screens in the Android app, while the on-screen keyboard is shown, the header SHALL be
 hidden. The editor's bottom bar SHALL then shrink to a single line holding undo and redo as icons
@@ -320,8 +322,12 @@ SHALL wrap start-aligned with no character cut off.
 - **THEN** the header and the full bottom bar with the article actions are shown again
 
 #### Scenario: Editor bar at phone width
-- **WHEN** a publisher opens an article in the editor in a 390 px wide window without a keyboard shown
-- **THEN** "Undo", "Redo", the save state and the actions are shown with unbroken words, wrapping onto further lines as needed
+- **WHEN** a publisher opens a published article in the editor in a 390 px wide window without a keyboard shown
+- **THEN** the bottom bar is a single line with the undo and redo icons, the save state, "Delete", "Take offline" and "Publish", every word unbroken and nothing cut off
+
+#### Scenario: Editor bar too wide for the phone
+- **WHEN** the bottom bar's single line is wider than the screen (e.g. a publisher with several article actions on a narrow phone, in German)
+- **THEN** the bar is scaled down as a whole so that it fits on one line, its buttons still respond to taps where they are drawn, and it never wraps onto a second line
 
 #### Scenario: Desktop width
 - **WHEN** the window is 1280 px wide
