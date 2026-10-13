@@ -16,4 +16,5 @@
 
 - [x] 4.1 The pipeline run of this push is green (bump, docker-build, staging dispatch) and `docker buildx imagetools inspect` of the new tag lists only `linux/amd64`.
   - Run 38398749976 (d92c0b4) green: bump 11 s, docker-build 32 s with `platforms: linux/amd64`, staging dispatch; Android job skipped (no `admin/` change). `https://presserl.unterrainer.info/` 200.
-- [ ] 4.2 The next Android build (first push touching `admin/`, or a manual run) is green and shows no cache restore/save in `Set up Gradle` / `Post Set up Gradle`.
+- [x] 4.2 The next Android build (first push touching `admin/`, or a manual run) is green and shows no cache restore/save in `Set up Gradle` / `Post Set up Gradle`.
+  - Manual run 38399898064 green on `babylon5-runner3`: `Set up Gradle` 1 s ("Cache is disabled: will not restore state"), `Post Set up Gradle` 0 s -- was 27 s + 82 s. `Build release bundle` 213 s against 126 s before: runner3's container was recreated earlier the same day (shared npm/Maven mounts), so its `~/.gradle` was cold -- the one-off cost named in design. Job 325 s (was 334 s); warm runs should land near 215 s.
