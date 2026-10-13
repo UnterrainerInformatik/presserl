@@ -14,5 +14,6 @@
 
 ## 4. Verification
 
-- [ ] 4.1 The pipeline run of this push is green (bump, docker-build, staging dispatch) and `docker buildx imagetools inspect` of the new tag lists only `linux/amd64`.
+- [x] 4.1 The pipeline run of this push is green (bump, docker-build, staging dispatch) and `docker buildx imagetools inspect` of the new tag lists only `linux/amd64`.
+  - Run 38398749976 (d92c0b4) green: bump 11 s, docker-build 32 s with `platforms: linux/amd64`, staging dispatch; Android job skipped (no `admin/` change). `https://presserl.unterrainer.info/` 200.
 - [ ] 4.2 The next Android build (first push touching `admin/`, or a manual run) is green and shows no cache restore/save in `Set up Gradle` / `Post Set up Gradle`.
