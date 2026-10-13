@@ -98,3 +98,13 @@ pre-fetch list is on the current majors: checkout v7, upload-artifact v7, downlo
 setup-node v7, setup-java v6, cache v6; old v4/v3 clones stay on the runners (path keyed by ref).
 
 See [[reference_build_and_test]].
+
+**Local caches, amd64 only** (ci-local-caches, 2026-10-13). All babylon5 runner containers mount
+`/app/data/github-runner/cache/m2-repository` -> `/root/.m2/repository` and `.../npm` ->
+`/root/.npm` (details in `babylon5:~/scripts/github-runner/README.md`, "Shared package caches").
+No workflow round-trips caches through GitHub any more: `npm-build-workflow` has no `cache: npm`,
+`maven-central-workflow` no `actions/cache`, presserl's `setup-gradle` runs with
+`cache-disabled: true` (runner-local `~/.gradle`). `docker-build-workflow` takes `platforms`
+(default `linux/amd64`, QEMU only otherwise); ARM is needed only for the data logger and its
+modules, which build their own images.
+

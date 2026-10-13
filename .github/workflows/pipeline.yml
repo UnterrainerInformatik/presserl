@@ -89,6 +89,9 @@ jobs:
       - name: Set up Gradle 🐘
         if: steps.changes.outputs.changed == 'true'
         uses: gradle/actions/setup-gradle@v5
+        with:
+          # The self-hosted runner keeps ~/.gradle; the GitHub cache cost ~110 s per run (ci-local-caches).
+          cache-disabled: true
 
       # Secrets only ever pass through env and a file in $RUNNER_TEMP, removed by the last step (design D4).
       - name: Write signing credentials 🔑
