@@ -1,9 +1,15 @@
 ---
 name: reference_ci_runners
-description: Self-hosted GitHub runners on babylon5 (fast) and dev1 (slow VM); presserl builds and homepage/alexpresse deploys pinned to babylon5 with persistent buildx builder 'presserl'; reset commands; npm-build-workflow uses npm ci (callers need an in-sync lockfile)
+description: Self-hosted GitHub runners; since 2026-10-14 presserl builds and homepage deploys pinned to runners1 (alexpresse still babylon5) with persistent buildx builder 'presserl'; reset commands; npm-build-workflow uses npm ci (callers need an in-sync lockfile)
 metadata:
   type: reference
 ---
+
+**Since 2026-10-14 the pins point at `runners1`**, not `babylon5`: presserl's image build and Android
+job and the homepage deploy run on `runners1-runner1..4` (VM `runners1` on proxmox1 at work, 16 vCPU,
+label `runners1`; docs in starfury `~/scripts/github-runner/README.md`). The persistent builder
+`presserl` is recreated there on first use. alexpresse stays on its babylon5 repo runner (a guFalcon
+repo cannot use org runners). The babylon5/dev1 notes below are history.
 
 Two sets of org-scoped (`UnterrainerInformatik`) self-hosted runners, each `ghar-runner1..3`
 (image `myoung34/github-runner:ubuntu-noble` + maven), both registered with

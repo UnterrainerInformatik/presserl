@@ -22,7 +22,7 @@ jobs:
       major_version: ${{ needs.bump.outputs.major_version }}
       minor_version: ${{ needs.bump.outputs.minor_version }}
       build_version: ${{ needs.bump.outputs.build_version }}
-      runs-on: '["self-hosted","Linux","X64","babylon5"]'
+      runs-on: '["self-hosted","Linux","X64","runners1"]'
       builder-name: presserl
     secrets:
       DOCKER_HUB_USER: ${{ secrets.DOCKER_HUB_USER }}
@@ -32,7 +32,7 @@ jobs:
   android-release:
     name: Android release to Google Play 📱
     needs: bump
-    runs-on: [self-hosted, Linux, X64, babylon5]
+    runs-on: [self-hosted, Linux, X64, runners1]
     # id-token: the Play upload authenticates through Workload Identity Federation (design D4).
     permissions:
       contents: read
